@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:SpiffoCON.ViewModels"
         xmlns:controls="clr-namespace:SpiffoCON.Controls"
-        Title="SpiffoCON" Width="1320" Height="800" MinWidth="900" MinHeight="560"
+        Title="{Binding SelectedServer.DisplayName, StringFormat='{}{0} - SpiffoCON', FallbackValue=SpiffoCON}" Width="1320" Height="800" MinWidth="900" MinHeight="560"
         WindowStartupLocation="CenterScreen" Icon="Assets/spiffocon.ico">
     <Window.Resources>
         <!-- shared by the Options and Sandbox tabs -->
@@ -136,6 +136,19 @@
             <StackPanel>
                 <TextBlock Text="Server" Style="{StaticResource SectionTitle}" />
                 <StackPanel IsEnabled="{Binding CanEditConnection}">
+                    <ComboBox ItemsSource="{Binding Servers}" SelectedItem="{Binding SelectedServer}"
+                              DisplayMemberPath="DisplayName" HorizontalAlignment="Stretch" Margin="0,6,0,0"
+                              ToolTip="Saved servers (disconnect to switch)" />
+                    <UniformGrid Columns="3" Margin="0,6,0,0">
+                        <Button Content="New" Command="{Binding AddServerCommand}" HorizontalAlignment="Stretch" Margin="0,0,3,0"
+                                ToolTip="Add an empty server to the list" />
+                        <Button Content="Duplicate" Command="{Binding DuplicateServerCommand}" HorizontalAlignment="Stretch" Margin="3,0"
+                                ToolTip="Copy this server's settings into a new entry (e.g. another server on the same host)" />
+                        <Button Content="Delete" Command="{Binding DeleteServerCommand}" HorizontalAlignment="Stretch" Margin="3,0,0,0"
+                                ToolTip="Remove this server from the list" />
+                    </UniformGrid>
+                    <TextBlock Text="Name" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding ServerName, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBlock Text="Host (IP or name)" Style="{StaticResource FieldLabel}" />
                     <TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBlock Text="RCON port" Style="{StaticResource FieldLabel}" />

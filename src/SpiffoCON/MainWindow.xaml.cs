@@ -3,19 +3,54 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using SpiffoCON.Services;
 using SpiffoCON.ViewModels;
 
 namespace SpiffoCON;
 
 public partial class MainWindow : Window
 {
-    readonly MainViewModel _vm = new();
+    readonly ServerBook _book = ProfileStore.Load();
+    MainViewModel _vm = null!;
     bool _closing;
+    bool _switching;
 
     public MainWindow()
     {
         InitializeComponent();
+        Attach(new MainViewModel(_book));
+        Loaded += (_, _) => (string.IsNullOrEmpty(_vm.Host) ? (UIElement)ConnectButton : ConsoleInputBox).Focus();
+    }
+
+    /// <summary>
+    /// Every server gets its own view model, so nothing loaded for one server (catalog, logs,
+    /// accounts, bridge...) carries over to the next.
+    /// </summary>
+    async void OnSwitchRequested(object? sender, ServerProfile target)
+    {
+        if (_switching || _closing)
+            return;
+        _switching = true;
+        try
+        {
+            // let the server list finish its own selection change first
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            await _vm.ShutdownAsync();
+            _book.Selected = target.Id;
+            Attach(new MainViewModel(_book));
+            _vm.SaveProfile();
+        }
+        finally
+        {
+            _switching = false;
+        }
+    }
+
+    void Attach(MainViewModel vm)
+    {
+        _vm = vm;
         DataContext = _vm;
+        _vm.SwitchRequested += OnSwitchRequested;
         _vm.Confirm = question =>
             MessageBox.Show(this, question, "SpiffoCON", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
@@ -65,7 +100,6 @@ public partial class MainWindow : Window
             if (e.NewItems is { Count: > 0 })
                 Dispatcher.BeginInvoke(ScrollConsoleToEnd, DispatcherPriority.Background);
         };
-        Loaded += (_, _) => (string.IsNullOrEmpty(_vm.Host) ? (UIElement)ConnectButton : ConsoleInputBox).Focus();
     }
 
     void ScrollConsoleToEnd()

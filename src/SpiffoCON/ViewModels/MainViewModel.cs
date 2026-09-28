@@ -35,14 +35,18 @@ public sealed partial class MainViewModel : ObservableObject
     const int MaxConsoleLines = 5000;
 
     readonly RconClient _rcon = new();
+    readonly ServerBook _book;
     readonly ServerProfile _profile;
     readonly List<string> _history = [];
     int _historyIndex;
 
-    public MainViewModel()
+    /// <summary>Works on the book's selected server; switching server means a new view model.</summary>
+    public MainViewModel(ServerBook book)
     {
-        _profile = ProfileStore.Load();
+        _book = book;
+        _profile = book.Current;
         _loadingProfile = true;
+        ServerName = _profile.Name;
         Host = _profile.Host;
         RconPort = _profile.RconPort;
         RememberPasswords = _profile.RememberPasswords;
@@ -53,8 +57,10 @@ public sealed partial class MainViewModel : ObservableObject
         SftpPort = _profile.SftpPort;
         SftpUser = _profile.SftpUser;
         SftpSamePassword = _profile.SftpSamePassword;
-        RconPassword = ProfileStore.Unprotect(_profile.RconPassword);
-        SftpPassword = ProfileStore.Unprotect(_profile.SftpPassword);
+        // passwords typed earlier in this session count too (they may not be remembered on disk)
+        _book.SessionPasswords.TryGetValue(_profile.Id, out var typed);
+        RconPassword = ProfileStore.Unprotect(_profile.RconPassword) is { Length: > 0 } rcon ? rcon : typed.Rcon ?? "";
+        SftpPassword = ProfileStore.Unprotect(_profile.SftpPassword) is { Length: > 0 } sftp ? sftp : typed.Sftp ?? "";
 
         _rcon.ConnectionLost += (_, error) => Application.Current?.Dispatcher.BeginInvoke(() =>
         {
@@ -133,6 +139,79 @@ public sealed partial class MainViewModel : ObservableObject
         _profile.SftpZomboidFolder = null;
         _profile.SftpSandboxPath = null;
         _profile.SftpFoldersHost = target;
+    }
+
+    // ---- server list ----
+
+    public ObservableCollection<ServerProfile> Servers => _book.Servers;
+
+    /// <summary>Picking another server asks the window to switch (only while disconnected).</summary>
+    public ServerProfile SelectedServer
+    {
+        get => _profile;
+        set
+        {
+            if (value is null || value == _profile)
+                return;
+            if (!CanEditConnection)
+            {
+                OnPropertyChanged();
+                return;
+            }
+            SwitchRequested?.Invoke(this, value);
+        }
+    }
+
+    /// <summary>Raised to work on another server of the list; the window builds a new view model for it.</summary>
+    public event EventHandler<ServerProfile>? SwitchRequested;
+
+    [ObservableProperty] private string serverName = "";
+
+    partial void OnServerNameChanged(string value)
+    {
+        if (_profile is not null)
+            _profile.Name = value;
+    }
+
+    [RelayCommand]
+    private void AddServer()
+    {
+        SaveProfile();
+        var server = new ServerProfile { Name = UniqueName("New server") };
+        Servers.Add(server);
+        SwitchRequested?.Invoke(this, server);
+    }
+
+    [RelayCommand]
+    private void DuplicateServer()
+    {
+        SaveProfile();
+        var copy = _profile.Duplicate(UniqueName(_profile.DisplayName + " (copy)"));
+        _book.SessionPasswords[copy.Id] = (RconPassword, SftpPassword);
+        Servers.Insert(Servers.IndexOf(_profile) + 1, copy);
+        SwitchRequested?.Invoke(this, copy);
+    }
+
+    [RelayCommand]
+    private void DeleteServer()
+    {
+        if (Confirm?.Invoke($"Remove \"{_profile.DisplayName}\" from the server list?\n\n"
+                + "Its settings and saved passwords are deleted. The server itself is not touched.") != true)
+            return;
+        int index = Servers.IndexOf(_profile);
+        Servers.Remove(_profile);
+        _book.SessionPasswords.Remove(_profile.Id);
+        if (Servers.Count == 0)
+            Servers.Add(new ServerProfile { Name = "My server" });
+        SwitchRequested?.Invoke(this, Servers[Math.Clamp(index, 0, Servers.Count - 1)]);
+    }
+
+    string UniqueName(string name)
+    {
+        var candidate = name;
+        for (int n = 2; Servers.Any(s => s.DisplayName.Equals(candidate, StringComparison.CurrentCultureIgnoreCase)); n++)
+            candidate = $"{name} {n}";
+        return candidate;
     }
 
     // ---- connection ----
@@ -450,13 +529,19 @@ public sealed partial class MainViewModel : ObservableObject
         _profile.SftpUser = SftpUser.Trim();
         _profile.SftpSamePassword = SftpSamePassword;
         _profile.SftpPassword = RememberPasswords && !SftpSamePassword ? ProfileStore.Protect(SftpPassword) : null;
+        // a deleted server is saved one last time on the way out: leave the book alone then
+        if (_book.Servers.Contains(_profile))
+        {
+            _book.SessionPasswords[_profile.Id] = (RconPassword, SftpPassword);
+            _book.Selected = _profile.Id;
+        }
         try
         {
-            ProfileStore.Save(_profile);
+            ProfileStore.Save(_book);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            StatusText = "Could not save the profile: " + ex.Message;
+            StatusText = "Could not save the server list: " + ex.Message;
         }
     }
 

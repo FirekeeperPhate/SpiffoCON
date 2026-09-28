@@ -1,13 +1,37 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SpiffoCON.Services;
 
-public sealed class ServerProfile
+public sealed class ServerProfile : INotifyPropertyChanged
 {
-    public string Host { get; set; } = "";
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    string _name = "";
+    string _host = "";
+
+    /// <summary>The name shown in the server list.</summary>
+    public string Name
+    {
+        get => _name;
+        set { if (_name != value) { _name = value; Changed(nameof(Name)); Changed(nameof(DisplayName)); } }
+    }
+
+    public string Host
+    {
+        get => _host;
+        set { if (_host != value) { _host = value; Changed(nameof(Host)); Changed(nameof(DisplayName)); } }
+    }
+
+    [JsonIgnore]
+    public string DisplayName =>
+        Name.Trim() is { Length: > 0 } name ? name : Host.Trim() is { Length: > 0 } host ? host : "(unnamed)";
+
     public int RconPort { get; set; } = 27015;
     public bool RememberPasswords { get; set; } = true;
 
@@ -51,9 +75,58 @@ public sealed class ServerProfile
 
     /// <summary>The server's Zomboid folder (db, Saves), for the Accounts tab.</summary>
     public string? SftpZomboidFolder { get; set; }
+
+    /// <summary>
+    /// A copy under a new id and name. Folders found over SFTP belong to the original server
+    /// (another server on the same host has its own), so the copy looks them up again.
+    /// </summary>
+    public ServerProfile Duplicate(string name)
+    {
+        var copy = JsonSerializer.Deserialize<ServerProfile>(JsonSerializer.Serialize(this))!;
+        copy.Id = Guid.NewGuid().ToString("N");
+        copy.Name = name;
+        copy.SftpHostKeyFor ??= Host;
+        copy.SftpFoldersHost = null;
+        copy.SftpWorkshopFolder = null;
+        copy.SftpSandboxPath = null;
+        copy.SftpLogsFolder = null;
+        copy.SftpLuaFolder = null;
+        copy.SftpZomboidFolder = null;
+        return copy;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
-/// <summary>Stores the profile in %APPDATA%\SpiffoCON; passwords are encrypted with DPAPI.</summary>
+/// <summary>The saved servers and the one in use.</summary>
+public sealed class ServerBook
+{
+    public string? Selected { get; set; }
+
+    public ObservableCollection<ServerProfile> Servers { get; set; } = [];
+
+    /// <summary>Passwords typed in this session, by server id, also when they are not remembered on disk.</summary>
+    [JsonIgnore]
+    public Dictionary<string, (string? Rcon, string? Sftp)> SessionPasswords { get; } = [];
+
+    /// <summary>The selected server; adds an empty one when the book is empty.</summary>
+    [JsonIgnore]
+    public ServerProfile Current
+    {
+        get
+        {
+            if (Servers.Count == 0)
+                Servers.Add(new ServerProfile { Name = "My server" });
+            var current = Servers.FirstOrDefault(s => s.Id == Selected) ?? Servers[0];
+            Selected = current.Id;
+            return current;
+        }
+    }
+}
+
+/// <summary>Stores the server list in %APPDATA%\SpiffoCON; passwords are encrypted with DPAPI.</summary>
 public static class ProfileStore
 {
     static readonly byte[] Entropy = "SpiffoCON profile"u8.ToArray();
@@ -65,14 +138,32 @@ public static class ProfileStore
             ? dir
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpiffoCON");
 
-    static string FilePath => Path.Combine(Folder, "profile.json");
+    static string BookPath => Path.Combine(Folder, "servers.json");
 
-    public static ServerProfile Load()
+    /// <summary>The single profile of versions up to 0.9.2; read once, then left alone.</summary>
+    static string LegacyPath => Path.Combine(Folder, "profile.json");
+
+    public static ServerBook Load()
     {
         try
         {
-            if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<ServerProfile>(File.ReadAllText(FilePath)) ?? new();
+            if (File.Exists(BookPath))
+            {
+                var book = JsonSerializer.Deserialize<ServerBook>(File.ReadAllText(BookPath));
+                if (book is not null)
+                {
+                    // drop entries a hand edit may have broken
+                    foreach (var bad in book.Servers.Where(s => s is null || string.IsNullOrEmpty(s.Id)).ToList())
+                        book.Servers.Remove(bad);
+                    return book;
+                }
+            }
+            else if (File.Exists(LegacyPath) && JsonSerializer.Deserialize<ServerProfile>(File.ReadAllText(LegacyPath)) is { } old)
+            {
+                if (old.Name.Length == 0)
+                    old.Name = old.Host.Length > 0 ? old.Host : "My server";
+                return new ServerBook { Selected = old.Id, Servers = [old] };
+            }
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -80,12 +171,12 @@ public static class ProfileStore
         return new();
     }
 
-    public static void Save(ServerProfile profile)
+    public static void Save(ServerBook book)
     {
         Directory.CreateDirectory(Folder);
-        var temp = FilePath + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(profile, Json));
-        File.Move(temp, FilePath, overwrite: true);
+        var temp = BookPath + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(book, Json));
+        File.Move(temp, BookPath, overwrite: true);
     }
 
     public static string? Protect(string? secret)

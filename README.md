@@ -64,8 +64,11 @@ Windows, .NET 10, WPF.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.
-- The profile lives in `%APPDATA%\SpiffoCON\profile.json`; passwords are encrypted with
-  DPAPI (current Windows user).
+- Server list: save several servers (name, RCON, SFTP and the folders found on each), add,
+  duplicate or delete them, and switch while disconnected; every tab starts clean for the
+  new server. The list lives in `%APPDATA%\SpiffoCON\servers.json` (the single
+  `profile.json` of 0.9.2 and earlier is imported once); passwords are encrypted with DPAPI
+  (current Windows user).
 
 ## Build
 
