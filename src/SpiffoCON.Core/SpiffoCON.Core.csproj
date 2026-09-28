@@ -13,6 +13,8 @@
   <ItemGroup>
     <!-- base-game items and vehicles; regenerate with tools/MakeVanillaSnapshot.cs -->
     <EmbeddedResource Include="Data\vanilla-catalog.json.gz" LogicalName="SpiffoCON.Core.Data.vanilla-catalog.json.gz" />
+    <!-- server option metadata; regenerate with tools/MakeServerOptions.cs -->
+    <EmbeddedResource Include="Data\server-options.json" LogicalName="SpiffoCON.Core.Data.server-options.json" />
   </ItemGroup>
 
   <ItemGroup>

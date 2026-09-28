@@ -434,6 +434,147 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Options" DataContext="{Binding Options}">
+                <TabItem.Resources>
+                    <controls:OptionEditorSelector x:Key="OptionEditor">
+                        <controls:OptionEditorSelector.Boolean>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding BoolValue}" Content="Enabled" />
+                            </DataTemplate>
+                        </controls:OptionEditorSelector.Boolean>
+                        <controls:OptionEditorSelector.Enum>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding Info.Values}" SelectedIndex="{Binding EnumIndex}" />
+                            </DataTemplate>
+                        </controls:OptionEditorSelector.Enum>
+                        <controls:OptionEditorSelector.Text>
+                            <DataTemplate>
+                                <TextBox Text="{Binding EditText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True"
+                                         TextWrapping="Wrap" Height="96" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" />
+                            </DataTemplate>
+                        </controls:OptionEditorSelector.Text>
+                        <controls:OptionEditorSelector.Line>
+                            <DataTemplate>
+                                <TextBox Text="{Binding EditText, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </controls:OptionEditorSelector.Line>
+                    </controls:OptionEditorSelector>
+                </TabItem.Resources>
+                <Grid Margin="0,8,0,0" IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- toolbar -->
+                    <Grid Grid.ColumnSpan="2" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button Content="&#xE72C;" FontFamily="{StaticResource IconFont}" Command="{Binding RefreshCommand}"
+                                ToolTip="Read the options from the server again (showoptions)" />
+                        <TextBox Grid.Column="1" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Margin="8,0,0,0"
+                                 ToolTip="Search option names and descriptions (all pages)" />
+                        <CheckBox Grid.Column="2" Content="Only changed from default" IsChecked="{Binding OnlyNonDefault}" Margin="12,0,0,0" />
+                        <Button Grid.Column="3" Content="Reload .ini" Command="{Binding ReloadFromFileCommand}" Margin="12,0,0,0"
+                                ToolTip="reloadoptions: re-read the server's .ini after editing it by hand" />
+                    </Grid>
+
+                    <!-- pages -->
+                    <ListBox Grid.Row="1" ItemsSource="{Binding Pages}" SelectedItem="{Binding SelectedPage}" Margin="0,0,10,0"
+                             HorizontalContentAlignment="Stretch">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:OptionPage}">
+                                <DockPanel>
+                                    <Border DockPanel.Dock="Right" Background="#FFD28A1E" CornerRadius="8" Padding="6,0" Margin="6,0,0,0"
+                                            Visibility="{Binding Changed, Converter={StaticResource PositiveToVisible}}">
+                                        <TextBlock Text="{Binding Changed}" FontSize="11" Foreground="Black" />
+                                    </Border>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Count}" Opacity="0.5" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                </DockPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- options -->
+                    <ListBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding View}" HorizontalContentAlignment="Stretch"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.ScrollUnit="Pixel"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Focusable" Value="False" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter />
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:OptionItem}">
+                                <Border x:Name="Row" Margin="0,0,6,6" Padding="12,8" CornerRadius="6" Background="#12808080"
+                                        BorderThickness="3,0,0,0" BorderBrush="Transparent">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="300" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,14,0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Opacity="0.75" FontSize="12" Margin="0,2,0,0"
+                                                       Visibility="{Binding Description, Converter={StaticResource NullToCollapsed}}" />
+                                            <TextBlock Text="{Binding Warning}" Foreground="#F2C14E" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                       Visibility="{Binding Warning, Converter={StaticResource NullToCollapsed}}" />
+                                            <TextBlock Text="{Binding Hint}" Opacity="0.5" FontSize="11" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <ContentControl Content="{Binding}" ContentTemplateSelector="{StaticResource OptionEditor}" Focusable="False" />
+                                            <TextBlock Text="{Binding Error}" Foreground="#FF7A7A" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                       Visibility="{Binding Error, Converter={StaticResource NullToCollapsed}}" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <Button Content="Undo" FontSize="11" Padding="8,2" MinHeight="0"
+                                                        Command="{Binding DataContext.RevertItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                        CommandParameter="{Binding}"
+                                                        Visibility="{Binding IsChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                <Button Content="Default" FontSize="11" Padding="8,2" MinHeight="0" Margin="6,0,0,0"
+                                                        Command="{Binding DataContext.ResetToDefaultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                        CommandParameter="{Binding}"
+                                                        Visibility="{Binding IsDefault, Converter={StaticResource InverseBoolToVisibility}}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsChanged}" Value="True">
+                                        <Setter TargetName="Row" Property="BorderBrush" Value="#FFD28A1E" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- apply bar -->
+                    <DockPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                        <Button DockPanel.Dock="Right" Content="Apply changes" Command="{Binding ApplyCommand}" MinWidth="130"
+                                IsEnabled="{Binding HasChanges}" />
+                        <Button DockPanel.Dock="Right" Content="Discard" Command="{Binding DiscardCommand}" Margin="0,0,8,0"
+                                IsEnabled="{Binding HasChanges}" />
+                        <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0" />
+                    </DockPanel>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Broadcast">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>

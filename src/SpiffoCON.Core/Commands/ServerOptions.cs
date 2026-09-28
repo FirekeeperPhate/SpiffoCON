@@ -30,6 +30,8 @@ public sealed class ServerOptions
 
     public int Count => _values.Count;
 
+    public IEnumerable<string> Names => _values.Keys;
+
     /// <summary>Mod ids in load order, without B42's leading backslash.</summary>
     public IReadOnlyList<string> Mods => SplitList(this["Mods"]).Select(ModInfo.NormalizeId).Where(m => m.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 

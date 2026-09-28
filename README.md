@@ -30,6 +30,12 @@ Windows, .NET 10, WPF.
   `@CommandArgs` annotations, and replies were checked against a real B42 dedicated
   server (access levels are the lowercase B42 roles: user, priority, observer, gm,
   moderator, admin).
+- Options tab: all 144 server options grouped like the game's settings screen, with
+  descriptions, defaults and ranges (dumped from a real B42 server by
+  `tools/DumpServerOptions.lua`, built by `tools/MakeServerOptions.cs`). Values are
+  validated before `changeoption` and each reply is checked, since the server silently
+  keeps the old value on bad input. ResetID, ServerPlayerID and Seed have no default and
+  ask before changing.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.
@@ -38,7 +44,7 @@ Windows, .NET 10, WPF.
 
 ## Planned
 
-- Server options, chat log tail over SFTP,
+- Sandbox options (SandboxVars.lua, over SFTP), chat log tail over SFTP,
   optional server-side Lua bridge.
 - Base-game item icons (the dedicated server has no textures).
 

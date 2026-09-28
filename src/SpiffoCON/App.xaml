@@ -12,6 +12,7 @@
             <controls:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
             <controls:IconConverter x:Key="Icon" />
             <controls:NullToCollapsedConverter x:Key="NullToCollapsed" />
+            <controls:PositiveToVisibleConverter x:Key="PositiveToVisible" />
             <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
             <!-- The Fluent ListViewItem template has no GridViewRowPresenter, so GridView columns

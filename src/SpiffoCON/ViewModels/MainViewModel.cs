@@ -63,9 +63,12 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateMessagePreview();
         Catalog = new CatalogViewModel(this);
         Players = new PlayersViewModel(this);
+        Options = new OptionsViewModel(this);
     }
 
     public CatalogViewModel Catalog { get; }
+
+    public OptionsViewModel Options { get; }
 
     public PlayersViewModel Players { get; }
 
@@ -121,6 +124,7 @@ public sealed partial class MainViewModel : ObservableObject
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
             Log(ConsoleKind.Info, StatusText);
             await RefreshPlayersAsync();
+            await Options.RefreshCommand.ExecuteAsync(null);
             SaveProfile();
         }
         catch (RconException ex)

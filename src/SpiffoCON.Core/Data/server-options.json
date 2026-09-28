@@ -1,0 +1,1128 @@
+[
+  {
+    "name": "Details",
+    "title": "Details",
+    "options": [
+      {
+        "name": "DefaultPort",
+        "type": "integer",
+        "default": "16261",
+        "min": "0",
+        "max": "65535",
+        "description": "Default starting port for player data. If UDP, this is this one of two ports used."
+      },
+      {
+        "name": "PublicName",
+        "type": "string",
+        "default": "My PZ Server",
+        "description": "Name of the server displayed in the in-game browser and, if applicable, the Steam browser"
+      },
+      {
+        "name": "PublicDescription",
+        "type": "text",
+        "default": "",
+        "description": "Description displayed in the in-game public server browser. Typing \\n will create a new line in your description"
+      },
+      {
+        "name": "Public",
+        "type": "boolean",
+        "default": "false",
+        "description": "Shows the server on the in-game browser. (Note: Steam-enabled servers are always visible in the Steam server browser)"
+      },
+      {
+        "name": "Password",
+        "type": "string",
+        "default": "",
+        "description": "Clients must know this password to join the server. (Ignored when hosting a server via the Host button)"
+      },
+      {
+        "name": "PauseEmpty",
+        "type": "boolean",
+        "default": "true",
+        "description": "Game time stops when there are no players online"
+      },
+      {
+        "name": "ResetID",
+        "type": "integer",
+        "default": "",
+        "min": "0",
+        "max": "2147483647",
+        "noDefault": true,
+        "warning": "Changing it makes every player create a new character (soft reset).",
+        "description": "Reset ID determines if the server has undergone a soft-reset. If this number does match the client, the client must create a new character. Used in conjunction with PlayerServerID. It is strongly advised that you backup these IDs somewhere"
+      }
+    ]
+  },
+  {
+    "name": "Steam",
+    "title": "Steam",
+    "options": [
+      {
+        "name": "UDPPort",
+        "type": "integer",
+        "default": "16262",
+        "min": "0",
+        "max": "65535"
+      },
+      {
+        "name": "MaxAccountsPerUser",
+        "type": "integer",
+        "default": "0",
+        "min": "0",
+        "max": "2147483647",
+        "description": "Limits the number of different accounts a single Steam user may create on this server. Ignored when using the Hosts button."
+      },
+      {
+        "name": "SteamScoreboard",
+        "type": "boolean",
+        "default": "false",
+        "description": "Show Steam usernames and avatars in the Players list."
+      }
+    ]
+  },
+  {
+    "name": "Backups",
+    "title": "Backups",
+    "options": [
+      {
+        "name": "BackupsCount",
+        "type": "integer",
+        "default": "5",
+        "min": "1",
+        "max": "300"
+      },
+      {
+        "name": "BackupsOnStart",
+        "type": "boolean",
+        "default": "true"
+      },
+      {
+        "name": "BackupsOnVersionChange",
+        "type": "boolean",
+        "default": "true"
+      },
+      {
+        "name": "BackupsPeriod",
+        "type": "integer",
+        "default": "0",
+        "min": "0",
+        "max": "1500"
+      }
+    ]
+  },
+  {
+    "name": "Players",
+    "title": "Players",
+    "options": [
+      {
+        "name": "MaxPlayers",
+        "type": "integer",
+        "default": "32",
+        "min": "1",
+        "max": "254",
+        "description": "Maximum number of players that can be on the server at one time. This excludes admins.\nWARNING: Server player counts above 32 will potentially result in poor map streaming and desync. Please advance with caution."
+      },
+      {
+        "name": "Open",
+        "type": "boolean",
+        "default": "true",
+        "description": "Clients may join without already having an account in the whitelist. If set to false, administrators must manually create username/password combos."
+      },
+      {
+        "name": "DropOffWhiteListAfterDeath",
+        "type": "boolean",
+        "default": "false",
+        "description": "Remove player accounts from the whitelist after death. This prevents players creating a new character after death on Open=false servers"
+      },
+      {
+        "name": "DisplayUserName",
+        "type": "boolean",
+        "default": "true",
+        "description": "Display usernames above player's heads in-game."
+      },
+      {
+        "name": "ShowFirstAndLastName",
+        "type": "boolean",
+        "default": "false",
+        "description": "Display first & last name above player's heads."
+      },
+      {
+        "name": "SpawnItems",
+        "type": "string",
+        "default": "",
+        "description": "Item types new players spawn with.\nSeparate multiple item types with commas.\nExample: Base.Axe,Base.Bag_BigHikingBag"
+      },
+      {
+        "name": "PingLimit",
+        "type": "integer",
+        "default": "0",
+        "min": "0",
+        "max": "2147483647",
+        "description": "Ping limit, in milliseconds, before a player is kicked from the server. (Set to 0 to disable)"
+      },
+      {
+        "name": "ServerPlayerID",
+        "type": "string",
+        "default": "",
+        "noDefault": true,
+        "warning": "Changing it makes every player create a new character (soft reset).",
+        "description": "ServerPlayerID determines if a character is from another server, or single player. This value may be changed by soft resets. If this number does match the client, the client must create a new character. This is used in conjunction with ResetID. It is strongly advised that you backup these IDs somewhere"
+      },
+      {
+        "name": "SleepAllowed",
+        "type": "boolean",
+        "default": "false",
+        "description": "Players are allowed to sleep when their survivor becomes tired, but they do not NEED to sleep"
+      },
+      {
+        "name": "SleepNeeded",
+        "type": "boolean",
+        "default": "false",
+        "description": "Players get tired and need to sleep. (Ignored if SleepAllowed=false)"
+      },
+      {
+        "name": "PlayerRespawnWithSelf",
+        "type": "boolean",
+        "default": "false",
+        "description": "Players can respawn in-game at the coordinates where they died"
+      },
+      {
+        "name": "PlayerRespawnWithOther",
+        "type": "boolean",
+        "default": "false",
+        "description": "Players can respawn in-game at a split screen / Remote Play player's location"
+      },
+      {
+        "name": "RemovePlayerCorpsesOnCorpseRemoval",
+        "type": "boolean",
+        "default": "false",
+        "description": "If enabled, when HoursForCorpseRemoval triggers, it will also remove player's corpses from the ground."
+      },
+      {
+        "name": "TrashDeleteAll",
+        "type": "boolean",
+        "default": "false",
+        "description": "If true, player can use the \"delete all\" button on bins."
+      },
+      {
+        "name": "PVPMeleeWhileHitReaction",
+        "type": "boolean",
+        "default": "false",
+        "description": "If true, player can hit again when struck by another player."
+      },
+      {
+        "name": "MouseOverToSeeDisplayName",
+        "type": "boolean",
+        "default": "true",
+        "description": "If true, players will have to mouse over someone to see their display name."
+      },
+      {
+        "name": "UsernameDisguises",
+        "type": "boolean",
+        "default": "false"
+      },
+      {
+        "name": "HideDisguisedUserName",
+        "type": "boolean",
+        "default": "false"
+      },
+      {
+        "name": "HidePlayersBehindYou",
+        "type": "boolean",
+        "default": "true",
+        "description": "If true, automatically hide the player you can't see (like zombies)."
+      },
+      {
+        "name": "PlayerBumpPlayer",
+        "type": "boolean",
+        "default": "false",
+        "description": "Governs whether players bump (and knock over) other players when running through them."
+      },
+      {
+        "name": "MapRemotePlayerVisibility",
+        "type": "integer",
+        "default": "1",
+        "min": "1",
+        "max": "4",
+        "description": "Controls display of remote players on the in-game map.\n1=Hidden 2=Friends 3=Friends and nearby players 4=Everyone"
+      },
+      {
+        "name": "AllowCoop",
+        "type": "boolean",
+        "default": "true",
+        "description": "Allow co-op/splitscreen players"
+      }
+    ]
+  },
+  {
+    "name": "Admin",
+    "title": "Admin",
+    "options": [
+      {
+        "name": "ClientCommandFilter",
+        "type": "string",
+        "default": "-vehicle.*;+vehicle.damageWindow;+vehicle.fixPart;+vehicle.installPart;+vehicle.uninstallPart",
+        "description": "Semicolon-separated list of commands that will not be written to the cmd.txt server log. For example: \n-vehicle. Inputting * means do NOT write any vehicle command. Inputting: \n+vehicle.installPart means DO write that command"
+      },
+      {
+        "name": "ClientActionLogs",
+        "type": "string",
+        "default": "ISEnterVehicle;ISExitVehicle;ISTakeEngineParts;",
+        "description": "Semicolon-separated list of actions that will be written to the ClientActionLogs.txt server log."
+      },
+      {
+        "name": "PerkLogs",
+        "type": "boolean",
+        "default": "true",
+        "description": "Track changes in player perk levels in PerkLog.txt server log"
+      },
+      {
+        "name": "DisableRadioStaff",
+        "type": "boolean",
+        "default": "false",
+        "description": "Disables radio transmissions from players with an access level"
+      },
+      {
+        "name": "DisableRadioAdmin",
+        "type": "boolean",
+        "default": "true",
+        "description": "Disables radio transmissions from players with 'admin' access level"
+      },
+      {
+        "name": "DisableRadioGM",
+        "type": "boolean",
+        "default": "true",
+        "description": "Disables radio transmissions from players with 'gm' access level"
+      },
+      {
+        "name": "DisableRadioOverseer",
+        "type": "boolean",
+        "default": "false",
+        "description": "Disables radio transmissions from players with 'overseer' access level"
+      },
+      {
+        "name": "DisableRadioModerator",
+        "type": "boolean",
+        "default": "false",
+        "description": "Disables radio transmissions from players with 'moderator' access level"
+      },
+      {
+        "name": "DisableRadioInvisible",
+        "type": "boolean",
+        "default": "true",
+        "description": "Disables radio transmissions from invisible players"
+      }
+    ]
+  },
+  {
+    "name": "Fire",
+    "title": "Fire",
+    "options": [
+      {
+        "name": "NoFire",
+        "type": "boolean",
+        "default": "false",
+        "description": "All forms of fire are disabled - except for campfires"
+      }
+    ]
+  },
+  {
+    "name": "PVP",
+    "title": "PVP",
+    "options": [
+      {
+        "name": "PVP",
+        "type": "boolean",
+        "default": "true",
+        "description": "Players can hurt and kill other players"
+      },
+      {
+        "name": "SafetySystem",
+        "type": "boolean",
+        "default": "true",
+        "description": "Players can enter and leave PVP on an individual basis. A player can only hurt another player when at least one of them is in PVP mode - as shown by the unobscured skull and crossbones on the left of the screen. When SafetySystem=false, players are free to hurt each other at any time if PVP is enabled."
+      },
+      {
+        "name": "ShowSafety",
+        "type": "boolean",
+        "default": "true",
+        "description": "Display a skull icon over the head of players who have entered PVP mode"
+      },
+      {
+        "name": "SafetyToggleTimer",
+        "type": "integer",
+        "default": "2",
+        "min": "0",
+        "max": "1000",
+        "description": "The time it takes for a player to enter and leave PVP mode"
+      },
+      {
+        "name": "SafetyCooldownTimer",
+        "type": "integer",
+        "default": "3",
+        "min": "0",
+        "max": "1000",
+        "description": "The delay before a player can enter or leave PVP mode again, having recently done so"
+      },
+      {
+        "name": "PVPMeleeDamageModifier",
+        "type": "double",
+        "default": "30",
+        "min": "0",
+        "max": "500",
+        "description": "Damage multiplier for PVP melee attacks."
+      },
+      {
+        "name": "PVPFirearmDamageModifier",
+        "type": "double",
+        "default": "50",
+        "min": "0",
+        "max": "500",
+        "description": "Damage multiplier for PVP ranged attacks."
+      },
+      {
+        "name": "PVPLogToolChat",
+        "type": "boolean",
+        "default": "true",
+        "description": "PVP is logged to admin chat"
+      },
+      {
+        "name": "PVPLogToolFile",
+        "type": "boolean",
+        "default": "true",
+        "description": "PVP is logged to file"
+      },
+      {
+        "name": "SafetyDisconnectDelay",
+        "type": "integer",
+        "default": "60",
+        "min": "0",
+        "max": "60"
+      }
+    ]
+  },
+  {
+    "name": "Loot",
+    "title": "Loot",
+    "options": [
+      {
+        "name": "SafehousePreventsLootRespawn",
+        "type": "boolean",
+        "default": "true",
+        "description": "Items will not respawn in buildings that players have claimed as a safehouse"
+      },
+      {
+        "name": "ItemNumbersLimitPerContainer",
+        "type": "integer",
+        "default": "0",
+        "min": "0",
+        "max": "9000",
+        "description": "Maximum number of items that can be placed in a container.  Zero means there is no limit. (PLEASE NOTE: This includes individual small items such as nails. A limit of 50 will mean only 50 nails can be stored.)"
+      }
+    ]
+  },
+  {
+    "name": "War",
+    "title": "War",
+    "options": [
+      {
+        "name": "War",
+        "type": "boolean",
+        "default": "false"
+      },
+      {
+        "name": "WarStartDelay",
+        "type": "integer",
+        "default": "600",
+        "min": "60",
+        "max": "2147483647",
+        "description": "Time in seconds before the war starts."
+      },
+      {
+        "name": "WarDuration",
+        "type": "integer",
+        "default": "3600",
+        "min": "60",
+        "max": "2147483647",
+        "description": "War duration in seconds."
+      },
+      {
+        "name": "WarSafehouseHitPoints",
+        "type": "integer",
+        "default": "3",
+        "min": "0",
+        "max": "2147483647",
+        "description": "Safehouse hit points limit."
+      }
+    ]
+  },
+  {
+    "name": "Faction",
+    "title": "Faction",
+    "options": [
+      {
+        "name": "Faction",
+        "type": "boolean",
+        "default": "true",
+        "description": "Players can create factions when true"
+      },
+      {
+        "name": "FactionDaySurvivedToCreate",
+        "type": "integer",
+        "default": "0",
+        "min": "0",
+        "max": "2147483647",
+        "description": "Players must survive this number of in-game days before being allowed to create a faction"
+      },
+      {
+        "name": "FactionPlayersRequiredForTag",
+        "type": "integer",
+        "default": "1",
+        "min": "1",
+        "max": "2147483647",
+        "description": "Number of players required as faction members before the faction owner can create a group tag"
+      }
+    ]
+  },
+  {
+    "name": "Safehouse",
+    "title": "Safehouse",
+    "options": [
+      {
+        "name": "AdminSafehouse",
+        "type": "boolean",
+        "default": "false",
+        "description": "Only admins can claim safehouses"
+      },
+      {
+        "name": "PlayerSafehouse",
+        "type": "boolean",
+        "default": "false",
+        "description": "Both admins and players can claim safehouses"
+      },
+      {
+        "name": "SafehouseAllowTrepass",
+        "type": "boolean",
+        "default": "true",
+        "description": "Allow non-members to enter a safehouse without being invited"
+      },
+      {
+        "name": "SafehouseAllowFire",
+        "type": "boolean",
+        "default": "true",
+        "description": "Allow fire to damage safehouses"
+      },
+      {
+        "name": "SafehouseAllowLoot",
+        "type": "boolean",
+        "default": "true",
+        "description": "Allow non-members to take items from safehouses"
+      },
+      {
+        "name": "SafehouseAllowRespawn",
+        "type": "boolean",
+        "default": "false",
+        "description": "Players will respawn in a safehouse that they were a member of before they died"
+      },
+      {
+        "name": "SafehouseDaySurvivedToClaim",
+        "type": "integer",
+        "default": "0",
+        "min": "0",
+        "max": "2147483647",
+        "description": "Players must have survived this number of in-game days before they are allowed to claim a safehouse"
+      },
+      {
+        "name": "SafeHouseRemovalTime",
+        "type": "integer",
+        "default": "144",
+        "min": "0",
+        "max": "2147483647",
+        "description": "Players are automatically removed from a safehouse they have not visited for this many real-world hours"
+      },
+      {
+        "name": "DisableSafehouseWhenOwnerConnected",
+        "type": "boolean",
+        "default": "false",
+        "description": "Safehouse acts like a normal house if an owner of the safehouse is connected (so secure when the owner is offline)"
+      },
+      {
+        "name": "SafehouseAllowNonResidential",
+        "type": "boolean",
+        "default": "false",
+        "description": "Governs whether players can claim non-residential buildings."
+      },
+      {
+        "name": "SafehouseDisableDisguises",
+        "type": "boolean",
+        "default": "true"
+      }
+    ]
+  },
+  {
+    "name": "Chat",
+    "title": "Chat",
+    "options": [
+      {
+        "name": "GlobalChat",
+        "type": "boolean",
+        "default": "true",
+        "description": "Toggles global chat on or off."
+      },
+      {
+        "name": "AnnounceDeath",
+        "type": "boolean",
+        "default": "false",
+        "description": "If checked, every time a player dies a global message will be displayed in the chat"
+      },
+      {
+        "name": "AnnounceAnimalDeath",
+        "type": "boolean",
+        "default": "false",
+        "description": "If checked, every time an animal dies a global message will be displayed in the chat"
+      },
+      {
+        "name": "ServerWelcomeMessage",
+        "type": "text",
+        "default": "Welcome to Project Zomboid Multiplayer! <LINE> <LINE> To interact with the Chat panel: press Tab, T, or Enter. <LINE> <LINE> The Tab key will change the target stream of the message. <LINE> <LINE> Global Streams: /all <LINE> Local Streams: /say, /yell <LINE> Special Steams: /whisper, /safehouse, /faction. <LINE> <LINE> Press the Up arrow to cycle through your message history. Click the Gear icon to customize chat. <LINE> <LINE> Happy surviving!",
+        "description": "The first welcome message visible in the chat panel. This will be displayed immediately after player login. you can use RGB colours to chance the colour of the welcome message. You can also use < LINE>, without the space, to create a separate lines within your text. Use: \\<RGB:1,0,0> This message will show up red!"
+      },
+      {
+        "name": "ChatMessageCharacterLimit",
+        "type": "integer",
+        "default": "200",
+        "min": "64",
+        "max": "1024"
+      },
+      {
+        "name": "ChatMessageSlowModeTime",
+        "type": "integer",
+        "default": "3",
+        "min": "1",
+        "max": "30"
+      },
+      {
+        "name": "BadWordListFile",
+        "type": "string",
+        "default": "",
+        "description": "Path to the file with the list of words to be prohibited. Each word must be on a separate line"
+      },
+      {
+        "name": "BadWordPolicy",
+        "type": "enum",
+        "default": "3",
+        "min": "1",
+        "max": "3",
+        "values": [
+          "ban",
+          "kick",
+          "log"
+        ],
+        "description": "What to do with the sender of a bad word in the chat: 1 - ban, 2 - kick, 3 - record the violation in the database, 4 - mute"
+      },
+      {
+        "name": "BadWordReplacement",
+        "type": "string",
+        "default": "[HIDDEN]",
+        "description": "The symbol or piece of text that will replace the bad word"
+      },
+      {
+        "name": "ChatStreams",
+        "type": "string",
+        "default": "s,r,a,w,y,sh,f,all"
+      },
+      {
+        "name": "GoodWordListFile",
+        "type": "string",
+        "default": "",
+        "description": "Path to the file with the list of words that should be allowed, even if they contain bad word. Each word should be on a separate line."
+      }
+    ]
+  },
+  {
+    "name": "RCON",
+    "title": "RCON",
+    "options": [
+      {
+        "name": "RCONPort",
+        "type": "integer",
+        "default": "27015",
+        "min": "0",
+        "max": "65535",
+        "description": "The port for the RCON (Remote Console)"
+      },
+      {
+        "name": "RCONPassword",
+        "type": "string",
+        "default": "",
+        "description": "RCON password (Pick a strong password)"
+      }
+    ]
+  },
+  {
+    "name": "Discord",
+    "title": "Discord",
+    "options": [
+      {
+        "name": "DiscordEnable",
+        "type": "boolean",
+        "default": "false",
+        "description": "Enables global text chat integration with a Discord channel"
+      },
+      {
+        "name": "DiscordToken",
+        "type": "string",
+        "default": "",
+        "description": "Discord bot access token"
+      },
+      {
+        "name": "DiscordChatChannel",
+        "type": "string",
+        "default": "",
+        "description": "The Discord chat channel name"
+      },
+      {
+        "name": "DiscordLogChannel",
+        "type": "string",
+        "default": "",
+        "description": "The Discord logs channel name"
+      },
+      {
+        "name": "DiscordCommandChannel",
+        "type": "string",
+        "default": "",
+        "description": "The Discord commands channel name"
+      }
+    ]
+  },
+  {
+    "name": "UPnP",
+    "title": "UPnP",
+    "options": [
+      {
+        "name": "UPnP",
+        "type": "boolean",
+        "default": "true",
+        "description": "Attempt to configure a UPnP-enabled internet gateway to automatically setup port forwarding rules. The server will fall back to default ports if this fails"
+      }
+    ]
+  },
+  {
+    "name": "Vehicles",
+    "title": "Vehicles",
+    "options": [
+      {
+        "name": "SpeedLimit",
+        "type": "double",
+        "default": "70",
+        "min": "10",
+        "max": "150"
+      },
+      {
+        "name": "CarEngineAttractionModifier",
+        "type": "double",
+        "default": "0.5",
+        "min": "0",
+        "max": "10",
+        "description": "Modify the range of zombie attraction to cars. (Lower values can help with lag.)"
+      },
+      {
+        "name": "DisableBurntTowing",
+        "type": "boolean",
+        "default": "false",
+        "description": "Disables burnt vehicle towing"
+      },
+      {
+        "name": "DisableTrailerTowing",
+        "type": "boolean",
+        "default": "false",
+        "description": "Disables trailer towing"
+      },
+      {
+        "name": "DisableVehicleTowing",
+        "type": "boolean",
+        "default": "false",
+        "description": "Disables vehicle towing"
+      }
+    ]
+  },
+  {
+    "name": "Voice",
+    "title": "Voice",
+    "options": [
+      {
+        "name": "VoiceEnable",
+        "type": "boolean",
+        "default": "true",
+        "description": "VOIP is enabled when checked"
+      },
+      {
+        "name": "VoiceMinDistance",
+        "type": "double",
+        "default": "10",
+        "min": "0",
+        "max": "100000",
+        "description": "The minimum tile distance over which VOIP sounds can be heard."
+      },
+      {
+        "name": "VoiceMaxDistance",
+        "type": "double",
+        "default": "100",
+        "min": "0",
+        "max": "100000",
+        "description": "The maximum tile distance over which VOIP sounds can be heard."
+      },
+      {
+        "name": "Voice3D",
+        "type": "boolean",
+        "default": "true",
+        "description": "Toggle directional audio for VOIP"
+      }
+    ]
+  },
+  {
+    "name": "Anticheat",
+    "title": "Anti-cheat",
+    "options": [
+      {
+        "name": "AntiCheatChecksum",
+        "type": "enum",
+        "default": "2",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables checksum anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatHit",
+        "type": "enum",
+        "default": "2",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables character hit anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatNoClip",
+        "type": "enum",
+        "default": "4",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables character no-clipping anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatPacketException",
+        "type": "enum",
+        "default": "4",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables packet exception checks anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatPermission",
+        "type": "enum",
+        "default": "2",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables player permissions anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatPlayer",
+        "type": "enum",
+        "default": "2",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables player anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatSafeHouse",
+        "type": "enum",
+        "default": "2",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables safehouse anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatSafety",
+        "type": "enum",
+        "default": "2",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables safety system anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatSpeed",
+        "type": "enum",
+        "default": "2",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables character speed anti-cheat protection."
+      },
+      {
+        "name": "AntiCheatXP",
+        "type": "enum",
+        "default": "2",
+        "min": "1",
+        "max": "4",
+        "values": [
+          "ban",
+          "kick",
+          "log",
+          "disabled"
+        ],
+        "description": "Disables player XP anti-cheat protection."
+      },
+      {
+        "name": "MaxPacketsPerSecond",
+        "type": "integer",
+        "default": "300",
+        "min": "100",
+        "max": "1000",
+        "description": "Sets the limit for processing network packets from each client on the server."
+      },
+      {
+        "name": "SteamVAC",
+        "type": "boolean",
+        "default": "true",
+        "description": "Enable the Steam VAC system"
+      }
+    ]
+  },
+  {
+    "name": "ModsAndmap",
+    "title": "Mods & map",
+    "options": [
+      {
+        "name": "Map",
+        "type": "string",
+        "default": "Muldraugh, KY",
+        "description": "Enter the foldername of the mod found in \\Steam\\steamapps\\workshop\\modID\\mods\\modName\\media\\maps\\"
+      },
+      {
+        "name": "Mods",
+        "type": "string",
+        "default": "",
+        "description": "Enter the mod loading ID here. It can be found in \\Steam\\steamapps\\workshop\\modID\\mods\\modName\\info.txt"
+      },
+      {
+        "name": "Seed",
+        "type": "string",
+        "default": "",
+        "noDefault": true,
+        "warning": "Changing it changes how new parts of the map are generated; it is unique to this world.",
+        "description": "The worldgen seed used to generate the world.\nIf you want to change this, put a new value in and delete map_worldgen.bin in your save directory."
+      },
+      {
+        "name": "SpawnPoint",
+        "type": "string",
+        "default": "0,0,0",
+        "description": "Force every new player to spawn at these set x,y,z world coordinates. Find desired coordinates at map.projectzomboid.com. (Ignored when 0,0,0)"
+      },
+      {
+        "name": "WorkshopItems",
+        "type": "string",
+        "default": "",
+        "description": "List Workshop Mod IDs for the server to download. Each must be separated by a semicolon. Example: WorkshopItems=514427485;513111049"
+      }
+    ]
+  },
+  {
+    "name": "Other",
+    "title": "Other",
+    "options": [
+      {
+        "name": "DoLuaChecksum",
+        "type": "boolean",
+        "default": "true",
+        "description": "Kick clients whose game files don't match the server's."
+      },
+      {
+        "name": "AllowDestructionBySledgehammer",
+        "type": "boolean",
+        "default": "true",
+        "description": "Allow players to destroy world objects with sledgehammers"
+      },
+      {
+        "name": "SledgehammerOnlyInSafehouse",
+        "type": "boolean",
+        "default": "false",
+        "description": "Allow players to destroy world objects only in their safehouse (require AllowDestructionBySledgehammer to true)."
+      },
+      {
+        "name": "SaveWorldEveryMinutes",
+        "type": "integer",
+        "default": "0",
+        "min": "0",
+        "max": "2147483647",
+        "description": "Loaded parts of the map are saved after this set number of real-world minutes have passed. (The map is usually saved only after clients leave a loaded area)"
+      },
+      {
+        "name": "FastForwardMultiplier",
+        "type": "double",
+        "default": "40",
+        "min": "1",
+        "max": "100",
+        "description": "Governs how fast time passes while players sleep. Value multiplies the speed of the time that passes during sleeping."
+      },
+      {
+        "name": "AllowNonAsciiUsername",
+        "type": "boolean",
+        "default": "false",
+        "description": "Allow use of non-ASCII (cyrillic etc) characters in usernames"
+      },
+      {
+        "name": "BanKickGlobalSound",
+        "type": "boolean",
+        "default": "true"
+      },
+      {
+        "name": "BloodSplatLifespanDays",
+        "type": "integer",
+        "default": "0",
+        "min": "0",
+        "max": "365",
+        "description": "Number of days before old blood splats are removed.\nRemoval happens when map chunks are loaded.\nZero means they will never disappear"
+      },
+      {
+        "name": "DenyLoginOnOverloadedServer",
+        "type": "boolean",
+        "default": "true"
+      },
+      {
+        "name": "DisableScoreboard",
+        "type": "boolean",
+        "default": "false",
+        "description": "Disables scoreboard."
+      },
+      {
+        "name": "HideAdminsInPlayerList",
+        "type": "boolean",
+        "default": "false",
+        "description": "Hides admins in the player list."
+      },
+      {
+        "name": "KnockedDownAllowed",
+        "type": "boolean",
+        "default": "false",
+        "description": "WIP: Activating this setting may cause visual desynchronization of player positions."
+      },
+      {
+        "name": "LoginQueueConnectTimeout",
+        "type": "integer",
+        "default": "60",
+        "min": "20",
+        "max": "1200"
+      },
+      {
+        "name": "LoginQueueEnabled",
+        "type": "boolean",
+        "default": "false"
+      },
+      {
+        "name": "MaxSafezoneSize",
+        "type": "integer",
+        "default": "20000",
+        "min": "0",
+        "max": "2147483647"
+      },
+      {
+        "name": "MultiplayerStatisticsPeriod",
+        "type": "integer",
+        "default": "1",
+        "min": "0",
+        "max": "10",
+        "description": "Sets the multiplayer update period in seconds. Statistics is disabled if value is 0."
+      },
+      {
+        "name": "server_browser_announced_ip",
+        "type": "string",
+        "default": "",
+        "description": "Set the IP from which the server is broadcast. This is for network configurations with multiple IP addresses, such as server farms"
+      },
+      {
+        "name": "ShowCoordinates",
+        "type": "boolean",
+        "default": "false",
+        "description": "Shows player character coordinates in the lower right corner."
+      },
+      {
+        "name": "SneakModeHideFromOtherPlayers",
+        "type": "boolean",
+        "default": "true"
+      },
+      {
+        "name": "SwitchZombiesOwnershipEachUpdate",
+        "type": "boolean",
+        "default": "false"
+      },
+      {
+        "name": "UltraSpeedDoesnotAffectToAnimals",
+        "type": "boolean",
+        "default": "false"
+      },
+      {
+        "name": "UsePhysicsHitReaction",
+        "type": "boolean",
+        "default": "false"
+      },
+      {
+        "name": "WebhookAddress",
+        "type": "string",
+        "default": "",
+        "description": "The Slack incoming webhook URL"
+      }
+    ]
+  }
+]
