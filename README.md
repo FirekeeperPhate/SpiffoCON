@@ -86,6 +86,12 @@ dotnet run tools/MakeVanillaSnapshot.cs -- "<dedicated server folder>"
 
 ## Publishing the bridge mod
 
+The mod is on the Workshop, unlisted:
+[SpiffoCON Bridge](https://steamcommunity.com/sharedfiles/filedetails/?id=3809683986)
+(Workshop id `3809683986`; `bridge/SpiffoCONBridge/workshop.txt` keeps the id so new uploads
+update the same item). Unlisted items don't show in searches, nor in hosts' mod browsers: add
+`SpiffoCONBridge` to `Mods=` and `3809683986` to `WorkshopItems=` by hand. To upload an update:
+
 1. In SpiffoCON's Bridge tab press **Prepare Workshop upload**: it copies
    `bridge/SpiffoCONBridge` to `%USERPROFILE%\Zomboid\Workshop\SpiffoCONBridge` (keeping
    the `id=` line the game writes into `workshop.txt` after the first upload).

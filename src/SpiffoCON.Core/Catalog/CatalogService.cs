@@ -176,7 +176,9 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
             bool stale = info is { Exists: true } && (!state.TryGetValue(id, out var stamp) || stamp < info.Updated.ToUnixTimeSeconds());
             if (have && !stale)
                 folders[id] = (ModFileSource.SteamCmd, cached);
-            else if (info is null || info.Exists) // removed or private items can't be downloaded
+            else
+                // also when the web API says "not found": it says so for unlisted items (e.g. the
+                // SpiffoCON Bridge), which SteamCMD downloads fine; removed ones just fail there
                 toDownload.Add(id);
         }
         if (toDownload.Count == 0)

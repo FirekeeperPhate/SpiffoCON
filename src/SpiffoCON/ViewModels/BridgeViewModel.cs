@@ -24,7 +24,7 @@ public sealed partial class BridgeViewModel : ObservableObject
     {
         _main = main;
         _timer.Tick += async (_, _) => await RefreshAsync();
-        WorkshopId = BridgeMod.ReadWorkshopId(BridgeMod.DefaultWorkshopFolder);
+        WorkshopId = BridgeMod.ReadWorkshopId(BridgeMod.DefaultWorkshopFolder) ?? BridgeMod.PublishedWorkshopId;
     }
 
     /// <summary>Asks for a local Zomboid/Lua folder; set by the view.</summary>
@@ -80,7 +80,7 @@ public sealed partial class BridgeViewModel : ObservableObject
         try
         {
             var target = BridgeMod.ExportForUpload(source, BridgeMod.DefaultWorkshopFolder);
-            WorkshopId = BridgeMod.ReadWorkshopId(BridgeMod.DefaultWorkshopFolder);
+            WorkshopId = BridgeMod.ReadWorkshopId(BridgeMod.DefaultWorkshopFolder) ?? BridgeMod.PublishedWorkshopId;
             StatusText = $"Copied to {target}. Start Project Zomboid, open Workshop from the main menu, choose SpiffoCON Bridge and upload it.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

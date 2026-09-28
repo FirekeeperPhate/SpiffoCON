@@ -9,6 +9,9 @@ public static class BridgeMod
     public const string FolderName = "SpiffoCONBridge";
     public const string ModId = "SpiffoCONBridge";
 
+    /// <summary>The published (unlisted) Workshop item: https://steamcommunity.com/sharedfiles/filedetails/?id=3809683986</summary>
+    public const string PublishedWorkshopId = "3809683986";
+
     public static string DefaultWorkshopFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Zomboid", "Workshop");
 
