@@ -162,6 +162,12 @@
                 <CheckBox Content="Use SFTP" IsChecked="{Binding SftpEnabled}" Margin="0,8,0,0" />
                 <StackPanel IsEnabled="{Binding SftpEnabled}"
                             Visibility="{Binding SftpEnabled, Converter={StaticResource BoolToVisibility}}">
+                    <CheckBox Content="Different SFTP host" IsChecked="{Binding SftpCustomHost}" Margin="0,8,0,0"
+                              ToolTip="Some hosts serve SFTP from another address than the game server" />
+                    <StackPanel Visibility="{Binding SftpCustomHost, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="SFTP host" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding SftpHost, UpdateSourceTrigger=PropertyChanged}" ToolTip="Leave the box unticked to use the server's host" />
+                    </StackPanel>
                     <TextBlock Text="SFTP port" Style="{StaticResource FieldLabel}" />
                     <TextBox Text="{Binding SftpPort, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBlock Text="SFTP user" Style="{StaticResource FieldLabel}" />

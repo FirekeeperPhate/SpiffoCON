@@ -245,7 +245,7 @@ public sealed partial class CatalogViewModel : ObservableObject
                 {
                     var probe = await SftpProbe.RunAsync(sftp);
                     remoteWorkshop = probe.WorkshopFolders.OrderByDescending(w => w.ItemCount).FirstOrDefault()?.Path;
-                    _main.Profile.SftpHostKey = probe.HostKeyFingerprint;
+                    _main.RememberSftpHostKey(probe.HostKeyFingerprint);
                     _main.Profile.SftpWorkshopFolder = remoteWorkshop;
                     _main.SaveProfile();
                 }

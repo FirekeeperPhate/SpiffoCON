@@ -146,6 +146,8 @@ public partial class MainWindow : Window
         e.Cancel = true;
         _closing = true;
         await _vm.ShutdownAsync();
-        Close();
+        // ShutdownAsync may finish synchronously, i.e. still inside this Closing event, where
+        // WPF refuses Close(); run it after the event instead
+        await Dispatcher.BeginInvoke(Close, DispatcherPriority.Background);
     }
 }

@@ -42,10 +42,14 @@ public sealed partial class MainViewModel : ObservableObject
     public MainViewModel()
     {
         _profile = ProfileStore.Load();
+        _loadingProfile = true;
         Host = _profile.Host;
         RconPort = _profile.RconPort;
         RememberPasswords = _profile.RememberPasswords;
         SftpEnabled = _profile.SftpEnabled;
+        SftpCustomHost = _profile.SftpCustomHost;
+        SftpHost = _profile.SftpHost;
+        _loadingProfile = false;
         SftpPort = _profile.SftpPort;
         SftpUser = _profile.SftpUser;
         SftpSamePassword = _profile.SftpSamePassword;
@@ -86,13 +90,49 @@ public sealed partial class MainViewModel : ObservableObject
 
     internal ServerProfile Profile => _profile;
 
+    /// <summary>The SFTP address: the server's host, unless another one is set.</summary>
+    internal string SftpHostName => (SftpCustomHost && !string.IsNullOrWhiteSpace(SftpHost) ? SftpHost : Host).Trim();
+
     /// <summary>SFTP settings when SFTP is enabled and filled in, else null.</summary>
-    internal SftpSettings? CurrentSftpSettings()
+    internal SftpSettings? CurrentSftpSettings(bool trustSavedKey = true)
     {
         var password = SftpSamePassword ? RconPassword : SftpPassword;
-        if (!SftpEnabled || string.IsNullOrWhiteSpace(Host) || string.IsNullOrWhiteSpace(SftpUser) || password.Length == 0)
+        if (!SftpEnabled || SftpHostName.Length == 0 || string.IsNullOrWhiteSpace(SftpUser) || password.Length == 0)
             return null;
-        return new SftpSettings(Host.Trim(), SftpPort, SftpUser.Trim(), password, _profile.SftpHostKey);
+        // a saved host key only counts for the host it came from
+        var keyHost = _profile.SftpHostKeyFor ?? _profile.Host;
+        var key = trustSavedKey && keyHost.Equals(SftpHostName, StringComparison.OrdinalIgnoreCase) ? _profile.SftpHostKey : null;
+        return new SftpSettings(SftpHostName, SftpPort, SftpUser.Trim(), password, key);
+    }
+
+    /// <summary>Saves the SSH host key just seen, for the current SFTP host.</summary>
+    internal void RememberSftpHostKey(string fingerprint)
+    {
+        _profile.SftpHostKey = fingerprint;
+        _profile.SftpHostKeyFor = SftpHostName;
+    }
+
+    bool _loadingProfile;
+
+    partial void OnHostChanged(string value) => SftpTargetChanged();
+    partial void OnSftpHostChanged(string value) => SftpTargetChanged();
+    partial void OnSftpCustomHostChanged(bool value) => SftpTargetChanged();
+
+    /// <summary>Folders found on one SFTP host mean nothing on another: forget them.</summary>
+    void SftpTargetChanged()
+    {
+        if (_loadingProfile || _profile is null)
+            return;
+        var target = SftpHostName;
+        var known = _profile.SftpFoldersHost ?? _profile.Host;
+        if (known.Equals(target, StringComparison.OrdinalIgnoreCase))
+            return;
+        _profile.SftpWorkshopFolder = null;
+        _profile.SftpLogsFolder = null;
+        _profile.SftpLuaFolder = null;
+        _profile.SftpZomboidFolder = null;
+        _profile.SftpSandboxPath = null;
+        _profile.SftpFoldersHost = target;
     }
 
     // ---- connection ----
@@ -309,6 +349,8 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private int sftpPort;
     [ObservableProperty] private string sftpUser = "";
     [ObservableProperty] private bool sftpSamePassword;
+    [ObservableProperty] private bool sftpCustomHost;
+    [ObservableProperty] private string sftpHost = "";
     [ObservableProperty] private string sftpReport = "Not tested yet. Enable SFTP on the left and press Test.";
 
     public string SftpPassword { get; set; }
@@ -319,21 +361,21 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task TestSftpAsync()
     {
-        var password = SftpSamePassword ? RconPassword : SftpPassword;
-        if (string.IsNullOrWhiteSpace(Host) || string.IsNullOrWhiteSpace(SftpUser) || password.Length == 0)
+        var settings = CurrentSftpSettings();
+        if (settings is null)
         {
-            SftpReport = "Enter host, SFTP user and password.";
+            SftpReport = "Enter the host (or the SFTP host), SFTP user and password.";
             return;
         }
 
         IsBusy = true;
-        SftpReport = $"Connecting to {Host.Trim()}:{SftpPort} as {SftpUser.Trim()}...";
+        SftpReport = $"Connecting to {settings.Host}:{settings.Port} as {settings.User}...";
         try
         {
             SftpProbeResult result;
             try
             {
-                result = await SftpProbe.RunAsync(new SftpSettings(Host.Trim(), SftpPort, SftpUser.Trim(), password, _profile.SftpHostKey));
+                result = await SftpProbe.RunAsync(settings);
             }
             catch (SftpHostKeyMismatchException ex)
             {
@@ -342,17 +384,18 @@ public sealed partial class MainViewModel : ObservableObject
                     SftpReport = ex.Message;
                     return;
                 }
-                result = await SftpProbe.RunAsync(new SftpSettings(Host.Trim(), SftpPort, SftpUser.Trim(), password, null));
+                result = await SftpProbe.RunAsync(CurrentSftpSettings(trustSavedKey: false)!);
             }
 
-            _profile.SftpHostKey = result.HostKeyFingerprint;
+            RememberSftpHostKey(result.HostKeyFingerprint);
+            _profile.SftpFoldersHost = settings.Host;
             _profile.SftpWorkshopFolder = result.WorkshopFolders.OrderByDescending(w => w.ItemCount).FirstOrDefault()?.Path;
             SaveProfile();
             SftpReport = FormatReport(result);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            SftpReport = "SFTP failed: " + ex.Message;
+            SftpReport = $"SFTP failed on {settings.Host}:{settings.Port}: {ex.Message}";
         }
         finally
         {
@@ -401,6 +444,8 @@ public sealed partial class MainViewModel : ObservableObject
         _profile.RememberPasswords = RememberPasswords;
         _profile.RconPassword = RememberPasswords ? ProfileStore.Protect(RconPassword) : null;
         _profile.SftpEnabled = SftpEnabled;
+        _profile.SftpCustomHost = SftpCustomHost;
+        _profile.SftpHost = SftpHost.Trim();
         _profile.SftpPort = SftpPort;
         _profile.SftpUser = SftpUser.Trim();
         _profile.SftpSamePassword = SftpSamePassword;

@@ -15,6 +15,17 @@ public sealed class ServerProfile
     public string? RconPassword { get; set; }
 
     public bool SftpEnabled { get; set; }
+
+    /// <summary>Some hosts serve SFTP from another address than the game server.</summary>
+    public bool SftpCustomHost { get; set; }
+
+    public string SftpHost { get; set; } = "";
+
+    /// <summary>The SFTP host <see cref="SftpHostKey"/> was seen on (null: older profiles, the server host).</summary>
+    public string? SftpHostKeyFor { get; set; }
+
+    /// <summary>The SFTP host the remembered folders below were found on.</summary>
+    public string? SftpFoldersHost { get; set; }
     public int SftpPort { get; set; } = 22;
     public string SftpUser { get; set; } = "";
 
