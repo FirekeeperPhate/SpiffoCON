@@ -651,6 +651,106 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Logs" DataContext="{Binding Logs}">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- source -->
+                    <DockPanel Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Left" Content="Find on server" Command="{Binding FindOnServerCommand}"
+                                ToolTip="Read Zomboid/Logs over SFTP" />
+                        <Button DockPanel.Dock="Left" Content="Open folder…" Command="{Binding OpenFolderCommand}" Margin="8,0,0,0"
+                                ToolTip="A local Logs folder (a server on this PC)" />
+                        <TextBlock Text="{Binding Source}" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.6"
+                                   TextTrimming="CharacterEllipsis" />
+                    </DockPanel>
+
+                    <!-- log type and filters -->
+                    <Grid Grid.Row="1" Margin="0,0,0,8" IsEnabled="{Binding IsOpen}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox ItemsSource="{Binding Types}" SelectedItem="{Binding SelectedType}" MinWidth="150" ToolTip="Which log" />
+                        <TextBox Grid.Column="1" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Margin="8,0,0,0"
+                                 ToolTip="Filter by text or player" />
+                        <CheckBox Grid.Column="2" Content="Server lines" IsChecked="{Binding ShowServerLines}" Margin="12,0,0,0"
+                                  Visibility="{Binding IsChat, Converter={StaticResource BoolToVisibility}}"
+                                  ToolTip="Also show the chat server's own lines (start-up, players joining chats)" />
+                        <CheckBox Grid.Column="3" Content="Follow" IsChecked="{Binding Follow}" Margin="12,0,0,0"
+                                  ToolTip="Read new lines every 5 seconds" />
+                        <Button Grid.Column="4" Content="&#xE72C;" FontFamily="{StaticResource IconFont}" Command="{Binding RefreshCommand}"
+                                Margin="8,0,0,0" ToolTip="Read new lines now" />
+                        <Button Grid.Column="5" Content="&#xE74D;" FontFamily="{StaticResource IconFont}" Command="{Binding ClearCommand}"
+                                Margin="6,0,0,0" ToolTip="Clear the list (the log file is not touched)" />
+                    </Grid>
+
+                    <ListBox Grid.Row="2" x:Name="LogList" ItemsSource="{Binding View}" FontSize="13"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                <Setter Property="Padding" Value="6,2" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="MinHeight" Value="0" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:LogLineItem}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding TimeText}" Opacity="0.45" Margin="0,0,10,0" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                               VerticalAlignment="Top" Padding="0,1,0,0" />
+                                    <TextBlock x:Name="Body" Grid.Column="1" TextWrapping="Wrap">
+                                        <Run x:Name="Channel" Text="{Binding ChannelText, Mode=OneWay}" Foreground="#8A9BB0" />
+                                        <Run x:Name="Author" Text="{Binding AuthorText, Mode=OneWay}" FontWeight="SemiBold" Foreground="#7FB8FF" />
+                                        <Run Text="{Binding Text, Mode=OneWay}" />
+                                    </TextBlock>
+                                </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Kind}" Value="Server">
+                                        <Setter TargetName="Body" Property="Opacity" Value="0.55" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Kind}" Value="Alert">
+                                        <Setter TargetName="Body" Property="Foreground" Value="#F2C14E" />
+                                        <Setter TargetName="Author" Property="Foreground" Value="#F2C14E" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Kind}" Value="Marker">
+                                        <Setter TargetName="Body" Property="Foreground" Value="#8FD694" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Grid.Row="3" Text="{Binding StatusText}" Opacity="0.7" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
+
+                    <!-- quick broadcast -->
+                    <Grid Grid.Row="4" Margin="0,8,0,0" IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="LogMessageBox" Text="{Binding Message, UpdateSourceTrigger=PropertyChanged}" KeyDown="LogMessage_KeyDown"
+                                 ToolTip="Broadcast to all players (servermsg). Enter sends." />
+                        <Button Grid.Column="1" Content="Broadcast" Command="{Binding SendMessageCommand}" Margin="8,0,0,0" MinWidth="100" />
+                    </Grid>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Broadcast">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>

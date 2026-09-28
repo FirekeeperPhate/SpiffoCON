@@ -40,6 +40,10 @@ Windows, .NET 10, WPF.
   over SFTP or in a local copy. Only the changed values are rewritten (comments, order,
   line endings and unknown mod settings stay), a backup is kept, and the server applies
   the file at its next start (checked on a real B42 server, also on an existing world).
+- Logs tab: follows the server's Zomboid/Logs over SFTP (or a local folder) every 5 s:
+  player chat (which RCON can't see), broadcasts, joins, admin actions and any other log
+  the server writes. Switches to the new files by itself when the server restarts, and has
+  a quick broadcast box.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.
@@ -48,8 +52,7 @@ Windows, .NET 10, WPF.
 
 ## Planned
 
-- Chat log tail over SFTP,
-  optional server-side Lua bridge.
+- Optional server-side Lua bridge (player positions, inventories, offline players).
 - Base-game item icons (the dedicated server has no textures).
 
 ## Build

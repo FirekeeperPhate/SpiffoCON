@@ -31,6 +31,9 @@ public sealed class ServerProfile
 
     /// <summary>The server's &lt;name&gt;_SandboxVars.lua chosen in the Sandbox tab.</summary>
     public string? SftpSandboxPath { get; set; }
+
+    /// <summary>The server's Zomboid/Logs folder found over SFTP.</summary>
+    public string? SftpLogsFolder { get; set; }
 }
 
 /// <summary>Stores the profile in %APPDATA%\SpiffoCON; passwords are encrypted with DPAPI.</summary>

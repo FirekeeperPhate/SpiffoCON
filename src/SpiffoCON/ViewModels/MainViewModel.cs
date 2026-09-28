@@ -65,7 +65,10 @@ public sealed partial class MainViewModel : ObservableObject
         Players = new PlayersViewModel(this);
         Options = new OptionsViewModel(this);
         Sandbox = new SandboxViewModel(this);
+        Logs = new LogsViewModel(this);
     }
+
+    public LogsViewModel Logs { get; }
 
     public SandboxViewModel Sandbox { get; }
 
@@ -409,6 +412,7 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task ShutdownAsync()
     {
         SaveProfile();
+        Logs.Close();
         await _rcon.DisposeAsync();
     }
 }

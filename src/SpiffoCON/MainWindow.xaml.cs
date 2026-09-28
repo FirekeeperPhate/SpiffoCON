@@ -29,6 +29,17 @@ public partial class MainWindow : Window
             return dialog.ShowDialog(this) == true ? dialog.FileName : null;
         };
 
+        _vm.Logs.PickFolder = () =>
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose the server's Logs folder" };
+            return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+        };
+        _vm.Logs.LinesAdded += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            if (LogList.Items.Count > 0)
+                LogList.ScrollIntoView(LogList.Items[^1]);
+        }, DispatcherPriority.Background);
+
         RconPasswordBox.Password = _vm.RconPassword;
         SftpPasswordBox.Password = _vm.SftpPassword;
 
@@ -68,6 +79,15 @@ public partial class MainWindow : Window
                 ConsoleInputBox.CaretIndex = ConsoleInputBox.Text.Length;
                 e.Handled = true;
                 break;
+        }
+    }
+
+    void LogMessage_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            _vm.Logs.SendMessageCommand.Execute(null);
+            e.Handled = true;
         }
     }
 
