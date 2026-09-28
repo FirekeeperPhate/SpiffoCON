@@ -10,6 +10,35 @@
             <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
             <controls:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+            <controls:IconConverter x:Key="Icon" />
+            <controls:NullToCollapsedConverter x:Key="NullToCollapsed" />
+            <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+            <!-- The Fluent ListViewItem template has no GridViewRowPresenter, so GridView columns
+                 would render as ToString(); this row template restores them. -->
+            <Style x:Key="GridRow" TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                <Setter Property="MinHeight" Value="30" />
+                <Setter Property="Padding" Value="0,2" />
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListViewItem">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                                <GridViewRowPresenter VerticalAlignment="Center" Columns="{TemplateBinding GridView.ColumnCollection}"
+                                                      Content="{TemplateBinding Content}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#14FFFFFF" />
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#3360A5FA" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
 
             <Style x:Key="FieldLabel" TargetType="TextBlock">
                 <Setter Property="Margin" Value="0,10,0,4" />

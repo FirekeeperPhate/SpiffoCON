@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:SpiffoCON.ViewModels"
         xmlns:controls="clr-namespace:SpiffoCON.Controls"
-        Title="SpiffoCON" Width="1150" Height="740" MinWidth="820" MinHeight="520"
+        Title="SpiffoCON" Width="1320" Height="800" MinWidth="900" MinHeight="560"
         WindowStartupLocation="CenterScreen">
     <Grid>
         <Grid.RowDefinitions>
@@ -122,6 +122,163 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Catalog" DataContext="{Binding Catalog}">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- load + status -->
+                    <DockPanel Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Left" Content="Load from server" Command="{Binding LoadFromServerCommand}"
+                                IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}"
+                                ToolTip="Reads the mod list with showoptions, then the mods' scripts (SFTP, your Steam folder, or SteamCMD)" />
+                        <ProgressBar DockPanel.Dock="Left" Width="80" Height="4" Margin="12,0,0,0" IsIndeterminate="True"
+                                     Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" Opacity="0.85" />
+                    </DockPanel>
+
+                    <!-- filters -->
+                    <Grid Grid.Row="1" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="CatalogSearch" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Search name, ID or category (several words: all must match)" />
+                        <ComboBox Grid.Column="1" SelectedIndex="{Binding KindFilter}" Margin="8,0,0,0" MinWidth="110">
+                            <ComboBoxItem Content="Everything" />
+                            <ComboBoxItem Content="Items" />
+                            <ComboBoxItem Content="Vehicles" />
+                        </ComboBox>
+                        <ComboBox Grid.Column="2" ItemsSource="{Binding SourceOptions}" SelectedItem="{Binding SourceFilter}"
+                                  Margin="8,0,0,0" MinWidth="170" MaxWidth="260" />
+                        <CheckBox Grid.Column="3" Content="Hidden" IsChecked="{Binding ShowHidden}" Margin="12,0,0,0"
+                                  ToolTip="Show items the game hides (internal visuals, obsolete items)" />
+                        <TextBlock Grid.Column="4" Text="{Binding CountText}" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.6" />
+                    </Grid>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="270" />
+                        </Grid.ColumnDefinitions>
+
+                        <ListView ItemsSource="{Binding View}" SelectedItem="{Binding Selected}" SelectionMode="Single"
+                                  IsSynchronizedWithCurrentItem="False" ItemContainerStyle="{StaticResource GridRow}"
+                                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                  VirtualizingPanel.ScrollUnit="Pixel">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Width="40">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Grid Width="24" Height="24">
+                                                    <Image Source="{Binding IconPath, Converter={StaticResource Icon}}" RenderOptions.BitmapScalingMode="HighQuality" />
+                                                    <TextBlock x:Name="Glyph" FontFamily="{StaticResource IconFont}" FontSize="16" Opacity="0.45"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center" Text="&#xE7B8;" Visibility="Collapsed" />
+                                                </Grid>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IconPath}" Value="{x:Null}">
+                                                        <Setter TargetName="Glyph" Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Kind}" Value="Vehicle">
+                                                        <Setter TargetName="Glyph" Property="Text" Value="&#xE804;" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Name" Width="240" DisplayMemberBinding="{Binding DisplayName}" />
+                                    <GridViewColumn Header="ID" Width="220">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding FullType}" FontFamily="{StaticResource MonoFont}" FontSize="12" Opacity="0.8" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Category" Width="130" DisplayMemberBinding="{Binding Category}" />
+                                    <GridViewColumn Header="Source" Width="170" DisplayMemberBinding="{Binding Source.Label}" />
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+
+                        <!-- selection + actions -->
+                        <Border Grid.Column="1" Margin="10,0,0,0" CornerRadius="6" Background="#18808080">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14">
+                            <StackPanel>
+                                <TextBlock Text="Select an item or vehicle." Opacity="0.6" TextWrapping="Wrap"
+                                           Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <StackPanel Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
+                                    <Image Source="{Binding Selected.IconPath, Converter={StaticResource Icon}}" Width="48" Height="48"
+                                           Visibility="{Binding Selected.IconPath, Converter={StaticResource NullToCollapsed}}"
+                                           HorizontalAlignment="Left" Margin="0,0,0,8" RenderOptions.BitmapScalingMode="HighQuality" />
+                                    <TextBlock Text="{Binding Selected.DisplayName}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBox Text="{Binding Selected.FullType, Mode=OneWay}" IsReadOnly="True" Margin="0,6,0,0"
+                                             FontFamily="{StaticResource MonoFont}" FontSize="12" />
+                                    <TextBlock Margin="0,8,0,0" Opacity="0.75" TextWrapping="Wrap">
+                                        <Run Text="{Binding Selected.Category, Mode=OneWay}" />
+                                        <Run Text="·" />
+                                        <Run Text="{Binding Selected.Source.Label, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <TextBlock Opacity="0.6" TextWrapping="Wrap" FontSize="12"
+                                               Visibility="{Binding Selected.ChangedBy, Converter={StaticResource NullToCollapsed}}">
+                                        <Run Text="Changed by" />
+                                        <Run Text="{Binding Selected.ChangedBy.Label, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <Button Content="Copy ID" Command="{Binding CopyIdCommand}" Margin="0,8,0,0" HorizontalAlignment="Left" />
+
+                                    <Separator Margin="0,14,0,6" />
+                                    <TextBlock Text="Player" Style="{StaticResource FieldLabel}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox IsEditable="True" ItemsSource="{Binding Players}" Text="{Binding Player, UpdateSourceTrigger=PropertyChanged}" />
+                                        <Button Grid.Column="1" Content="&#xE72C;" FontFamily="{StaticResource IconFont}" Margin="6,0,0,0"
+                                                Command="{Binding RefreshPlayersCommand}" ToolTip="Refresh online players" />
+                                    </Grid>
+                                    <StackPanel Visibility="{Binding IsItemSelected, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="Quantity" Style="{StaticResource FieldLabel}" />
+                                        <TextBox Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" />
+                                        <Button Content="Give item" Command="{Binding GiveItemCommand}" Margin="0,12,0,0" HorizontalAlignment="Stretch"
+                                                IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                    </StackPanel>
+                                    <Button Content="Spawn vehicle next to player" Command="{Binding SpawnVehicleCommand}" Margin="0,12,0,0"
+                                            HorizontalAlignment="Stretch"
+                                            Visibility="{Binding IsVehicleSelected, Converter={StaticResource BoolToVisibility}}"
+                                            IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                    <TextBlock Text="{Binding ActionResult}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                                </StackPanel>
+                            </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+                    </Grid>
+
+                    <Expander Grid.Row="3" Header="Mod sources" Margin="0,8,0,0">
+                        <StackPanel Margin="0,6,0,0">
+                            <TextBlock Text="{Binding ModSummary}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                            <ListView ItemsSource="{Binding ModSources}" MaxHeight="160" ItemContainerStyle="{StaticResource GridRow}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Workshop item" Width="320" DisplayMemberBinding="{Binding Title}" />
+                                        <GridViewColumn Header="ID" Width="110" DisplayMemberBinding="{Binding WorkshopId}" />
+                                        <GridViewColumn Header="Files from" Width="110" DisplayMemberBinding="{Binding Source}" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </StackPanel>
+                    </Expander>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Broadcast">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
@@ -182,7 +339,7 @@
                 </Grid>
             </TabItem>
 
-            <TabItem Header="Files">
+            <TabItem Header="Files" x:Name="FilesTab">
                 <TextBox Margin="0,8,0,0" Text="{Binding SftpReport, Mode=OneWay}" IsReadOnly="True"
                          FontFamily="{StaticResource MonoFont}" TextWrapping="NoWrap"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top" />

@@ -42,14 +42,15 @@ public static class SftpProbe
         "linux32", "linux64", "win32", "win64", "proc", "sys", "dev", ".cache", "Lua",
     };
 
-    public static async Task<SftpProbeResult> RunAsync(SftpSettings settings, CancellationToken ct = default)
+    /// <summary>Connects, checking the host key against <see cref="SftpSettings.TrustedHostKey"/>.</summary>
+    public static async Task<(SftpClient Client, string Fingerprint)> ConnectAsync(SftpSettings settings, CancellationToken ct)
     {
         var fingerprint = "";
         var info = new PasswordConnectionInfo(settings.Host, settings.Port, settings.User, settings.Password)
         {
             Timeout = TimeSpan.FromSeconds(10),
         };
-        using var client = new SftpClient(info);
+        var client = new SftpClient(info);
         client.HostKeyReceived += (_, e) =>
         {
             fingerprint = e.HostKeyName + " SHA256:" + e.FingerPrintSHA256;
@@ -59,11 +60,24 @@ public static class SftpProbe
         try
         {
             await client.ConnectAsync(ct).ConfigureAwait(false);
+            return (client, fingerprint);
         }
         catch (SshConnectionException) when (settings.TrustedHostKey is not null && fingerprint.Length > 0 && fingerprint != settings.TrustedHostKey)
         {
+            client.Dispose();
             throw new SftpHostKeyMismatchException(settings.TrustedHostKey, fingerprint);
         }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
+
+    public static async Task<SftpProbeResult> RunAsync(SftpSettings settings, CancellationToken ct = default)
+    {
+        var (client, fingerprint) = await ConnectAsync(settings, ct).ConfigureAwait(false);
+        using var _ = client;
 
         var start = client.WorkingDirectory;
         var topLevel = new List<string>();

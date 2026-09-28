@@ -3,7 +3,7 @@
 Remote admin console for Project Zomboid (Build 42) dedicated servers, over RCON.
 Windows, .NET 10, WPF.
 
-## Status (0.1.0)
+## Features
 
 - RCON client written for PZ: replies matched by request id (a late reply is never shown
   for the next command), long replies in one or several packets, automatic reconnect
@@ -12,6 +12,18 @@ Windows, .NET 10, WPF.
 - Broadcast editor for `servermsg`: colors (`<RGB:r,g,b>`), multi-line (`<LINE>`),
   live preview, safe quoting (inner `"` become `'`), and a reply check that does not
   report a delivered message as failed.
+- Catalog of items and vehicles, **mods included**: search, filter by kind and by mod,
+  mod item icons, give items (`additem`) and spawn vehicles (`addvehicle`) for an online
+  player.
+  - The base game comes from a bundled snapshot (`src/SpiffoCON.Core/Data`), so no game
+    install is needed.
+  - The server's mods come from `showoptions` (`Mods=`, `WorkshopItems=`), in its load
+    order. Mod files are read from, in this order: the server over SFTP (only scripts,
+    translations and icons are copied), the local Steam workshop folder, SteamCMD
+    (anonymous download of whole mods, asked first, cached in
+    `%LOCALAPPDATA%\SpiffoCON`).
+  - B42 layout (`common` + the newest `42.x` folder), JSON and legacy translation files,
+    vehicle names through `carModelName` / `template!`, mods that change base-game items.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.
@@ -20,12 +32,9 @@ Windows, .NET 10, WPF.
 
 ## Planned
 
-- Item and vehicle catalog that includes mods, parsed from `media/scripts`. Mod files
-  come from SFTP, then the local Steam workshop folder, then SteamCMD (anonymous
-  `workshop_download_item 108600 <id>`). The mod list comes from `showoptions` over
-  RCON, so it works without file access too.
-- Players (kick, ban, teleport, access level, additem/addvehicle), server options,
-  chat log tail over SFTP, optional server-side Lua bridge.
+- Players (kick, ban, teleport, access level), server options, chat log tail over SFTP,
+  optional server-side Lua bridge.
+- Base-game item icons (the dedicated server has no textures).
 
 ## Build
 
@@ -34,5 +43,12 @@ dotnet build SpiffoCON.slnx
 dotnet test tests/SpiffoCON.Core.Tests
 ```
 
-`src/SpiffoCON.Core` holds everything that is not UI (RCON, commands, SFTP) and targets
-plain `net10.0`.
+`src/SpiffoCON.Core` holds everything that is not UI (RCON, commands, SFTP, catalog,
+Steam) and targets plain `net10.0`.
+
+To refresh the base-game catalog after a game update, download the free dedicated
+server (`steamcmd +login anonymous +app_update 380870 +quit`) and run:
+
+```
+dotnet run tools/MakeVanillaSnapshot.cs -- "<dedicated server folder>"
+```

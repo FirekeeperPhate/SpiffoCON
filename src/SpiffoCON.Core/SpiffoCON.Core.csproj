@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,6 +8,15 @@
 
   <ItemGroup>
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- base-game items and vehicles; regenerate with tools/MakeVanillaSnapshot.cs -->
+    <EmbeddedResource Include="Data\vanilla-catalog.json.gz" LogicalName="SpiffoCON.Core.Data.vanilla-catalog.json.gz" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SpiffoCON.Core.Tests" />
   </ItemGroup>
 
 </Project>

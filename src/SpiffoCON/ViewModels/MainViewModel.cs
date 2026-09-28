@@ -61,6 +61,20 @@ public sealed partial class MainViewModel : ObservableObject
         });
 
         UpdateMessagePreview();
+        Catalog = new CatalogViewModel(this);
+    }
+
+    public CatalogViewModel Catalog { get; }
+
+    internal ServerProfile Profile => _profile;
+
+    /// <summary>SFTP settings when SFTP is enabled and filled in, else null.</summary>
+    internal SftpSettings? CurrentSftpSettings()
+    {
+        var password = SftpSamePassword ? RconPassword : SftpPassword;
+        if (!SftpEnabled || string.IsNullOrWhiteSpace(Host) || string.IsNullOrWhiteSpace(SftpUser) || password.Length == 0)
+            return null;
+        return new SftpSettings(Host.Trim(), SftpPort, SftpUser.Trim(), password, _profile.SftpHostKey);
     }
 
     // ---- connection ----
@@ -103,6 +117,7 @@ public sealed partial class MainViewModel : ObservableObject
             IsSessionActive = true;
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
             Log(ConsoleKind.Info, StatusText);
+            _ = Catalog.RefreshPlayersCommand.ExecuteAsync(null);
             SaveProfile();
         }
         catch (RconException ex)
@@ -158,14 +173,18 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ClearConsole() => ConsoleLines.Clear();
 
-    async Task<string?> RunAsync(string command)
+    /// <summary>Runs a command, logging it and its reply; null when it failed (the error is logged).</summary>
+    internal async Task<string?> RunAsync(string command, bool logReply = true)
     {
         Log(ConsoleKind.Command, "> " + command);
         try
         {
             var reply = await _rcon.ExecuteAsync(command);
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
-            Log(ConsoleKind.Reply, reply.Length == 0 ? "(empty reply)" : reply.TrimEnd());
+            if (logReply)
+                Log(ConsoleKind.Reply, reply.Length == 0 ? "(empty reply)" : reply.TrimEnd());
+            else
+                Log(ConsoleKind.Info, $"({reply.ReplaceLineEndings("\n").Split('\n').Length} lines received)");
             return reply;
         }
         catch (RconException ex)
@@ -277,6 +296,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
 
             _profile.SftpHostKey = result.HostKeyFingerprint;
+            _profile.SftpWorkshopFolder = result.WorkshopFolders.OrderByDescending(w => w.ItemCount).FirstOrDefault()?.Path;
             SaveProfile();
             SftpReport = FormatReport(result);
         }

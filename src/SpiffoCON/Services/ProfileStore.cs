@@ -25,6 +25,9 @@ public sealed class ServerProfile
 
     /// <summary>SSH host key seen at the first SFTP connection (trust on first use).</summary>
     public string? SftpHostKey { get; set; }
+
+    /// <summary>The server's workshop/content/108600 folder found by the SFTP probe.</summary>
+    public string? SftpWorkshopFolder { get; set; }
 }
 
 /// <summary>Stores the profile in %APPDATA%\SpiffoCON; passwords are encrypted with DPAPI.</summary>

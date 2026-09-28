@@ -42,7 +42,7 @@ public partial class MainWindow : Window
 
     void SftpPasswordBox_PasswordChanged(object sender, RoutedEventArgs e) => _vm.SftpPassword = SftpPasswordBox.Password;
 
-    void TestSftp_Click(object sender, RoutedEventArgs e) => Tabs.SelectedIndex = 2;
+    void TestSftp_Click(object sender, RoutedEventArgs e) => Tabs.SelectedItem = FilesTab;
 
     void ConsoleInput_PreviewKeyDown(object sender, KeyEventArgs e)
     {

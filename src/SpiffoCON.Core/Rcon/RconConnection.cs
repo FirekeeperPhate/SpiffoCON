@@ -29,7 +29,9 @@ internal sealed class RconConnection : IAsyncDisposable
         _readLoop = Task.Run(ReadLoopAsync);
     }
 
-    public bool IsAlive => !_readLoop.IsCompleted;
+    volatile bool _ended;
+
+    public bool IsAlive => !_ended && !_readLoop.IsCompleted;
 
     public static async Task<RconConnection> OpenAsync(string host, int port, RconOptions options, CancellationToken ct)
     {
@@ -114,6 +116,8 @@ internal sealed class RconConnection : IAsyncDisposable
         {
             error = _disposing ? null : ex;
         }
+        // set before Lost runs: the loop task only completes after this method returns
+        _ended = true;
         _incoming.Writer.TryComplete(error);
         if (!_disposing)
             Lost?.Invoke(this, error);
