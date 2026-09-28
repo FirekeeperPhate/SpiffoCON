@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using SpiffoCON.Core.Catalog;
 using SpiffoCON.Core.Commands;
 using SpiffoCON.Core.Files;
+using SpiffoCON.Services;
 
 namespace SpiffoCON.ViewModels;
 
@@ -82,7 +83,7 @@ public sealed partial class CatalogViewModel : ObservableObject
     {
         try
         {
-            var entries = await Task.Run(() => CatalogService.LoadVanilla());
+            var entries = await Task.Run(() => _service.LoadVanilla());
             SetEntries(entries);
         }
         catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException)
@@ -152,6 +153,60 @@ public sealed partial class CatalogViewModel : ObservableObject
 
     // ---- loading the server's mods ----
 
+    // ---- base-game icons ----
+
+    bool _loadedFromServer;
+
+    /// <summary>Asks for the Project Zomboid folder; set by the view.</summary>
+    public Func<string?>? PickGameFolder { get; set; }
+
+    public bool HasVanillaIcons => Directory.Exists(_service.VanillaIconFolder) && Directory.EnumerateFiles(_service.VanillaIconFolder, "Item_*.png").Any();
+
+    /// <summary>
+    /// Takes the item icons from the user's own game install: the dedicated server has none, and
+    /// the game's art isn't SpiffoCON's to ship.
+    /// </summary>
+    [RelayCommand]
+    private async Task ExtractIconsAsync()
+    {
+        var packs = IconExtractor.FindTexturePacks();
+        if (packs is null)
+        {
+            var folder = PickGameFolder?.Invoke();
+            if (folder is null)
+                return;
+            packs = IconExtractor.ResolveTexturePacks(folder);
+            if (packs is null)
+            {
+                StatusText = "No media\\texturepacks\\*.pack there: choose the ProjectZomboid folder of your game install.";
+                return;
+            }
+        }
+
+        IsLoading = true;
+        try
+        {
+            var progress = new Progress<string>(s => StatusText = s);
+            int count = await Task.Run(() => IconExtractor.Extract(packs, _service.VanillaIconFolder, progress));
+            OnPropertyChanged(nameof(HasVanillaIcons));
+            if (_loadedFromServer && _main.IsSessionActive)
+                await LoadFromServerAsync();
+            else
+                await LoadVanillaAsync();
+            StatusText = count > 0
+                ? $"{count} base-game icons taken from {packs}."
+                : "No item icons found in those texture packs.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            StatusText = "Could not read the texture packs: " + ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
     public ObservableCollection<ModSourceReport> ModSources { get; } = [];
     [ObservableProperty] private string modSummary = "";
 
@@ -214,6 +269,7 @@ public sealed partial class CatalogViewModel : ObservableObject
             var result = await Task.Run(() => _service.LoadAsync(options, loadOptions, progress));
 
             SetEntries(result.Entries);
+            _loadedFromServer = true;
             ModSources.Clear();
             foreach (var s in result.Sources)
                 ModSources.Add(s);

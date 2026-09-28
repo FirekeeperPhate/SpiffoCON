@@ -22,6 +22,9 @@ Windows, .NET 10, WPF.
     translations and icons are copied), the local Steam workshop folder, SteamCMD
     (anonymous download of whole mods, asked first, cached in
     `%LOCALAPPDATA%\SpiffoCON`).
+  - Base-game icons: **Game icons…** reads the `Item_*` sprites from the texture packs
+    (`media/texturepacks/*.pack`) of your own Project Zomboid install into SpiffoCON's cache.
+    The dedicated server has no textures, and the game's art is not shipped with SpiffoCON.
   - B42 layout (`common` + the newest `42.x` folder), JSON and legacy translation files,
     vehicle names through `carModelName` / `template!`, mods that change base-game items.
 - Players tab: online list (auto refresh), kick and ban (with reason, optional IP ban),
@@ -63,10 +66,6 @@ Windows, .NET 10, WPF.
   connection and checked afterwards.
 - The profile lives in `%APPDATA%\SpiffoCON\profile.json`; passwords are encrypted with
   DPAPI (current Windows user).
-
-## Planned
-
-- Base-game item icons (the dedicated server has no textures).
 
 ## Build
 

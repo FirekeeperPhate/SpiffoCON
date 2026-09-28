@@ -54,11 +54,15 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
     string SteamCmdFolder => Path.Combine(DataFolder, "steamcmd");
     string SteamCmdStateFile => Path.Combine(DataFolder, "cache", "steamcmd-items.json");
 
+    /// <summary>Base-game icons extracted from the user's game install (Item_*.png).</summary>
+    public string VanillaIconFolder => Path.Combine(DataFolder, "icons", "vanilla");
+
     /// <summary>The base game only (used before connecting, or when mods can't be read).</summary>
-    public static IReadOnlyList<CatalogEntry> LoadVanilla(string language = "EN")
+    public IReadOnlyList<CatalogEntry> LoadVanilla(string language = "EN")
     {
         var builder = new CatalogBuilder(language);
         builder.ImportSnapshot(ReadSnapshot());
+        builder.AddIconFolder(VanillaIconFolder);
         return builder.Build();
     }
 
@@ -133,6 +137,7 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
 
         var builder = new CatalogBuilder(options.Language);
         builder.ImportSnapshot(ReadSnapshot());
+        builder.AddIconFolder(VanillaIconFolder);
         var missing = new List<string>();
         foreach (var modId in server.Mods)
         {

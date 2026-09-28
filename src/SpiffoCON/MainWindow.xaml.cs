@@ -34,6 +34,11 @@ public partial class MainWindow : Window
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose the server's Logs folder" };
             return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
         };
+        _vm.Catalog.PickGameFolder = () =>
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose your Project Zomboid folder (with media\\texturepacks)" };
+            return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+        };
         _vm.Accounts.PickFolder = () =>
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose the server's Zomboid folder (the one with db and Saves)" };

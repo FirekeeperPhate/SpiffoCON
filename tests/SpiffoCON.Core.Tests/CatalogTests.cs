@@ -119,9 +119,26 @@ public sealed class CatalogTests : IDisposable
     [Fact]
     public void Bundled_vanilla_catalog_loads()
     {
-        var entries = CatalogService.LoadVanilla();
+        var entries = new CatalogService(Path.Combine(_temp, "data"), new HttpClient()).LoadVanilla();
         Assert.True(entries.Count(e => e.Kind == CatalogKind.Item) > 4000);
         Assert.Contains(entries, e => e.FullType == "Base.CarNormal" && e.DisplayName == "Chevalier Nyala");
+    }
+
+    [Fact]
+    public void Extracted_base_game_icons_are_used_but_mods_win()
+    {
+        var service = new CatalogService(Path.Combine(_temp, "data"), new HttpClient());
+        Directory.CreateDirectory(service.VanillaIconFolder);
+        File.WriteAllBytes(Path.Combine(service.VanillaIconFolder, "Item_Axe.png"), [1]);
+        var axe = service.LoadVanilla().First(e => e.FullType == "Base.Axe");
+        Assert.Equal(Path.Combine(service.VanillaIconFolder, "Item_Axe.png"), axe.IconPath);
+
+        var builder = new CatalogBuilder();
+        builder.AddScript("module Base { item Axe { Icon = Axe, } }", CatalogSource.Vanilla);
+        builder.AddIconFolder(service.VanillaIconFolder);
+        var mod = MakeRoot("iconmod", "module Base { item Axe { Weight = 1, } }", icons: ["Item_Axe.png"]);
+        builder.AddContentRoot(mod, new CatalogSource("Retexture", "retex"));
+        Assert.StartsWith(mod, builder.Build().Single().IconPath);
     }
 
     [Fact]

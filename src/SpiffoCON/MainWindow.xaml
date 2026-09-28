@@ -541,6 +541,8 @@
                         <Button DockPanel.Dock="Left" Content="Load from server" Command="{Binding LoadFromServerCommand}"
                                 IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}"
                                 ToolTip="Reads the mod list with showoptions, then the mods' scripts (SFTP, your Steam folder, or SteamCMD)" />
+                        <Button DockPanel.Dock="Left" Content="Game icons…" Command="{Binding ExtractIconsCommand}" Margin="8,0,0,0"
+                                ToolTip="Take the base-game item icons from your Project Zomboid install (the server has none)" />
                         <ProgressBar DockPanel.Dock="Left" Width="80" Height="4" Margin="12,0,0,0" IsIndeterminate="True"
                                      Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}" />
                         <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" Opacity="0.85" />

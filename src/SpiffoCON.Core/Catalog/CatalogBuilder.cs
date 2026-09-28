@@ -80,6 +80,18 @@ public sealed partial class CatalogBuilder
         }
     }
 
+    /// <summary>
+    /// Icons from a folder of Item_*.png (the base-game icons extracted from the user's install).
+    /// They never replace an icon already known, so mods added later still win.
+    /// </summary>
+    public void AddIconFolder(string folder)
+    {
+        if (!Directory.Exists(folder))
+            return;
+        foreach (var png in Directory.EnumerateFiles(folder, "Item_*.png"))
+            _icons.TryAdd(Path.GetFileNameWithoutExtension(png)["Item_".Length..], png);
+    }
+
     public void AddMod(ModInfo mod)
     {
         var source = new CatalogSource(mod.Name, mod.Id, mod.WorkshopId);
