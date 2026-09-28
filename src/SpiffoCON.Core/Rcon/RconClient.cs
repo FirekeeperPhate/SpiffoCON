@@ -27,6 +27,7 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
     public async Task ConnectAsync(string host, int port, string password, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ThrowIfDisposed();
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -65,9 +66,11 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
         if (bytes > _options.MaxCommandBytes)
             throw new RconException($"Command is {bytes} bytes; RCON allows at most {_options.MaxCommandBytes}.");
 
+        ThrowIfDisposed();
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            ThrowIfDisposed(); // closed while this command waited for the gate
             var connection = await EnsureConnectedAsync(ct).ConfigureAwait(false);
             int id = NextId();
             await connection.SendAsync(id, RconPacket.TypeExecCommand, command, ct).ConfigureAwait(false);
@@ -133,7 +136,9 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
                 }
                 catch (RconConnectionLostException ex)
                 {
-                    throw new RconAuthenticationException($"The server closed the connection during login (wrong password?). {ex.Message}");
+                    // PZ answers a wrong password with id -1 (checked on a B42 server); a drop here
+                    // is a server stopping or starting, not a rejected password
+                    throw new RconConnectionLostException($"The server closed the connection during login. {ex.Message}", ex);
                 }
                 if (packet is null)
                     throw new RconException($"No login reply from {host}:{port}. Is this the RCON port?");
@@ -184,9 +189,23 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
         return id;
     }
 
+    bool _disposed;
+
+    void ThrowIfDisposed()
+    {
+        if (_disposed)
+            throw new RconException("The connection is closed.");
+    }
+
+    /// <summary>
+    /// Closes the connection; later commands fail with an RconException. The gate is not disposed:
+    /// a command already waiting for it (a timer, a click during shutdown) must still get it.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+            return;
+        _disposed = true;
         await DisconnectAsync().ConfigureAwait(false);
-        _gate.Dispose();
     }
 }

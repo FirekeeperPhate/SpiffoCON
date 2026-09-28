@@ -17,11 +17,14 @@ public sealed partial record LogFileInfo(string Name, string Type, DateTime Star
         var m = NamePattern().Match(name);
         if (!m.Success)
             return null;
-        var started = DateTime.ParseExact(m.Groups[1].Value, "yyyy-MM-dd_HH-mm", CultureInfo.InvariantCulture);
+        // TryParse: one oddly named file ("2026-13-45_...") must not break the whole log viewer
+        if (!DateTime.TryParseExact(m.Groups[1].Value, "yyyy-MM-dd_HH-mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var started))
+            return null;
         return new LogFileInfo(name, m.Groups[2].Value, started, size);
     }
 
-    [GeneratedRegex(@"^(\d{4}-\d{2}-\d{2}_\d{2}-\d{2})_(.+)\.txt$", RegexOptions.IgnoreCase)]
+    // [0-9], not \d: \d also matches other scripts' digits
+    [GeneratedRegex(@"^([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2})_(.+)\.txt$", RegexOptions.IgnoreCase)]
     private static partial Regex NamePattern();
 }
 
@@ -42,11 +45,26 @@ public sealed class LocalLogFolder(string path) : ILogFolder
 
     public Task<IReadOnlyList<LogFileInfo>> ListAsync(CancellationToken ct = default)
     {
+        // a directory listing can show a stale size for a file the server keeps appending to; the
+        // tail would then think it shrank and read it all again: ask the open file instead
         IReadOnlyList<LogFileInfo> files = new DirectoryInfo(path).EnumerateFiles("*.txt")
-            .Select(f => LogFileInfo.FromName(f.Name, f.Length))
+            .Select(f => LogFileInfo.FromName(f.Name, CurrentSize(f)))
             .OfType<LogFileInfo>()
             .ToList();
         return Task.FromResult(files);
+    }
+
+    static long CurrentSize(FileInfo file)
+    {
+        try
+        {
+            using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return stream.Length;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return file.Length;
+        }
     }
 
     public async Task<byte[]> ReadAsync(string name, long offset, int maxBytes, CancellationToken ct = default)
@@ -80,9 +98,13 @@ public sealed class SftpLogFolder(SftpSettings settings, string remotePath) : IL
     {
         if (_client is { IsConnected: true })
             return _client;
+        // forget the old client before reconnecting: if this attempt fails, the next one must
+        // not find a disposed client (IsConnected throws then) and never try again
         _client?.Dispose();
-        (_client, _) = await SftpProbe.ConnectAsync(settings, ct).ConfigureAwait(false);
-        return _client;
+        _client = null;
+        var (client, _) = await SftpProbe.ConnectAsync(settings, ct).ConfigureAwait(false);
+        _client = client;
+        return client;
     }
 
     public async Task<IReadOnlyList<LogFileInfo>> ListAsync(CancellationToken ct = default)

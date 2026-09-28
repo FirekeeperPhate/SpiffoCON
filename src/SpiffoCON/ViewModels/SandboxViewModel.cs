@@ -105,7 +105,7 @@ public sealed partial class SandboxViewModel : ObservableObject
         StatusText = "Looking for server configs over SFTP...";
         try
         {
-            var probe = await SftpProbe.RunAsync(sftp);
+            var probe = await _main.ProbeAsync(sftp);
             _main.RememberSftpHostKey(probe.HostKeyFingerprint);
             ServerFiles.Clear();
             foreach (var ini in probe.ServerConfigs)

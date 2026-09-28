@@ -19,7 +19,11 @@ public sealed record SftpFetchStats(
     long Bytes,
     int Connections,
     bool ManifestFound,
-    TimeSpan Elapsed);
+    TimeSpan Elapsed)
+{
+    /// <summary>Another SpiffoCON window was copying the same mods: nothing was read.</summary>
+    public bool Busy { get; init; }
+}
 
 /// <param name="Folders">Workshop id → local copy, for the items found on the server.</param>
 /// <param name="Error">Why reading stopped early (the up-to-date items are still returned).</param>
@@ -31,8 +35,8 @@ public sealed record SftpFetchResult(IReadOnlyDictionary<string, string> Folders
 /// newest 42.x folder, or the root of a B41 mod). Speed comes from three things:
 /// <list type="bullet">
 /// <item>items that did not change since the last copy are not visited at all: the server's own
-/// workshop manifest (appworkshop_108600.acf) says when each item was updated, with Steam's
-/// update time as the fallback;</item>
+/// workshop manifest (appworkshop_108600.acf) says when each item was updated (without it,
+/// every item is read again: Steam's date tells what is published, not what the server has);</item>
 /// <item>only the useful folders are listed, instead of the whole item;</item>
 /// <item>folders and files are shared among several SFTP connections, so the round trips to a
 /// distant server overlap instead of adding up.</item>
@@ -70,82 +74,123 @@ public sealed class SftpModFetcher
 
     public Version? GameVersion { get; init; }
 
-    /// <summary>Steam's update time per item, used for items the server's manifest doesn't list.</summary>
-    public IReadOnlyDictionary<string, DateTimeOffset>? SteamUpdated { get; init; }
-
     string StateFile => Path.Combine(CacheFolder, "items.json");
+
+    string LockFile => Path.Combine(CacheFolder, ".lock");
+
+    /// <summary>How long to wait for another window copying the same mods.</summary>
+    public TimeSpan LockWait { get; init; } = TimeSpan.FromMinutes(2);
 
     public async Task<SftpFetchResult> FetchAsync(
         IReadOnlyCollection<string> workshopIds, IProgress<string>? progress = null, CancellationToken ct = default)
     {
         var clock = Stopwatch.StartNew();
         var result = new Dictionary<string, string>();
-        progress?.Report("SFTP: connecting...");
-        var first = await _connect(ct).ConfigureAwait(false);
-        var connections = new List<IRemoteFileSystem> { first };
-        try
+        var ids = workshopIds.Distinct().ToList();
+        SftpFetchStats Stats(int upToDate, int read, Run? run, int connections, bool manifest) => new(
+            workshopIds.Count, upToDate, read, result.Count, run?.Folders ?? 0, run?.Files ?? 0, run?.Downloaded ?? 0, run?.Bytes ?? 0,
+            connections, manifest, clock.Elapsed);
+
+        // one copy at a time per cache (two SpiffoCON windows on the same server)
+        Directory.CreateDirectory(CacheFolder);
+        FileStream? lockStream = null;
+        var waitUntil = DateTime.UtcNow + LockWait;
+        while (lockStream is null)
         {
-            progress?.Report("SFTP: reading the server's workshop manifest...");
-            var manifest = await ReadManifestAsync(first, ct).ConfigureAwait(false);
-            var state = LoadState();
-
-            var toRead = new List<string>();
-            var prints = new Dictionary<string, string?>();
-            foreach (var id in workshopIds.Distinct())
+            try
             {
-                var print = prints[id] = Fingerprint(id, manifest);
-                var local = LocalItem(id);
-                if (print is not null && state.GetValueOrDefault(id) == print && Directory.Exists(local))
-                    result[id] = local;
-                else
-                    toRead.Add(id);
+                lockStream = new FileStream(LockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             }
-            int upToDate = result.Count;
-
-            var run = new Run(this, progress, toRead.Count);
-            Exception? error = null;
-            if (toRead.Count > 0)
+            catch (IOException) when (DateTime.UtcNow < waitUntil)
             {
-                // the other connections, in parallel; a host that refuses them just gets fewer
-                var extra = await Task.WhenAll(Enumerable.Range(0, Math.Max(0, Connections - 1)).Select(_ => TryConnectAsync(ct))).ConfigureAwait(false);
-                connections.AddRange(extra.OfType<IRemoteFileSystem>());
-                run.Connections = connections.Count;
+                progress?.Report("SFTP: another SpiffoCON window is copying these mods; waiting for it...");
+                await Task.Delay(1000, ct).ConfigureAwait(false);
+            }
+            catch (IOException)
+            {
+                return new SftpFetchResult(result, Stats(0, 0, null, 0, false) with { Busy = true },
+                    new IOException("another SpiffoCON window is copying this server's mods right now; try again when it is done."));
+            }
+        }
 
+        using (lockStream)
+        {
+            progress?.Report("SFTP: connecting...");
+            var first = await _connect(ct).ConfigureAwait(false);
+            var connections = new List<IRemoteFileSystem> { first };
+            try
+            {
+                progress?.Report("SFTP: reading the server's workshop manifest...");
+                var manifest = await WorkshopManifest.ReadAsync(first, _remoteRoot, ct).ConfigureAwait(false);
+                var state = LoadState();
+
+                var toRead = new List<string>();
+                var prints = new Dictionary<string, string?>();
+                foreach (var id in ids)
+                {
+                    var print = prints[id] = Fingerprint(id, manifest);
+                    var local = LocalItem(id);
+                    if (print is not null && state.GetValueOrDefault(id) == print && Directory.Exists(local))
+                        result[id] = local;
+                    else
+                        toRead.Add(id);
+                }
+                int upToDate = result.Count;
+                if (toRead.Count == 0)
+                    return new SftpFetchResult(result, Stats(upToDate, 0, null, connections.Count, manifest is not null), null);
+
+                // the other connections, in parallel; a host that refuses them just gets fewer
+                var opening = Enumerable.Range(0, Math.Max(0, Connections - 1)).Select(_ => TryConnectAsync(ct)).ToList();
+                try
+                {
+                    await Task.WhenAll(opening).ConfigureAwait(false);
+                }
+                finally
+                {
+                    // also on cancellation: the ones that did connect get disposed below
+                    connections.AddRange(opening.Where(t => t.IsCompletedSuccessfully).Select(t => t.Result).OfType<IRemoteFileSystem>());
+                }
+
+                var run = new Run(this, progress, toRead.Count) { Connections = connections.Count };
                 foreach (var id in toRead)
                     run.Enqueue((fs, c) => run.ItemAsync(fs, id, c));
-                error = await run.RunAsync(connections, ct).ConfigureAwait(false);
+                var error = await run.RunAsync(connections, ct).ConfigureAwait(false);
 
                 if (error is null)
                 {
-                    foreach (var id in toRead)
+                    try
                     {
-                        if (run.Found.TryGetValue(id, out var wanted))
+                        foreach (var id in toRead)
                         {
-                            RemoveStale(id, wanted);
-                            result[id] = LocalItem(id);
-                            if (prints[id] is { } print)
-                                state[id] = print;
+                            if (run.Found.TryGetValue(id, out var wanted))
+                            {
+                                RemoveStale(id, wanted, run.KeepDirs.GetValueOrDefault(id));
+                                result[id] = LocalItem(id);
+                                if (prints[id] is { } print)
+                                    state[id] = print;
+                                else
+                                    state.Remove(id);
+                            }
                             else
+                            {
                                 state.Remove(id);
+                            }
                         }
-                        else
-                        {
-                            state.Remove(id);
-                        }
+                        SaveState(state);
                     }
-                    SaveState(state);
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        // the copies are there; only the bookkeeping failed, so next time they are read again
+                        error = ex;
+                    }
                 }
+                return new SftpFetchResult(result, Stats(upToDate, toRead.Count, run, connections.Count, manifest is not null), error);
             }
-
-            var stats = new SftpFetchStats(
-                workshopIds.Count, upToDate, toRead.Count, result.Count, run.Folders, run.Files, run.Downloaded, run.Bytes,
-                connections.Count, manifest is not null, clock.Elapsed);
-            return new SftpFetchResult(result, stats, error);
-        }
-        finally
-        {
-            foreach (var c in connections)
-                c.Dispose();
+            finally
+            {
+                foreach (var c in connections)
+                    c.Dispose();
+            }
         }
     }
 
@@ -161,57 +206,53 @@ public sealed class SftpModFetcher
         }
     }
 
-    async Task<IReadOnlyDictionary<string, InstalledWorkshopItem>?> ReadManifestAsync(IRemoteFileSystem fs, CancellationToken ct)
-    {
-        if (WorkshopManifest.PathFor(_remoteRoot) is not { } path)
-            return null;
-        try
-        {
-            using var buffer = new MemoryStream();
-            await fs.DownloadAsync(path, buffer, ct).ConfigureAwait(false);
-            var items = WorkshopManifest.Parse(Encoding.UTF8.GetString(buffer.ToArray()));
-            return items.Count > 0 ? items : null;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // no manifest (or not readable): fall back to Steam's update times
-            return null;
-        }
-    }
-
-    /// <summary>What the copy of an item depends on; null when nothing tells whether it changed.</summary>
-    string? Fingerprint(string id, IReadOnlyDictionary<string, InstalledWorkshopItem>? manifest)
-    {
-        string? source = manifest is not null && manifest.TryGetValue(id, out var installed)
-            ? $"acf:{installed.TimeUpdated}:{installed.Manifest}"
-            : SteamUpdated is not null && SteamUpdated.TryGetValue(id, out var updated) && updated != default
-                ? $"steam:{updated.ToUnixTimeSeconds()}"
-                : null;
-        return source is null ? null : $"v{RulesVersion}|{source}|{Language.ToUpperInvariant()}|{GameVersion}";
-    }
+    /// <summary>
+    /// What the copy of an item depends on: the server's own manifest entry. Null without one
+    /// (the item is read again): Steam's date says what is published, not what the server has.
+    /// </summary>
+    string? Fingerprint(string id, IReadOnlyDictionary<string, InstalledWorkshopItem>? manifest) =>
+        manifest is not null && manifest.TryGetValue(id, out var installed)
+            ? $"v{RulesVersion}|acf:{installed.TimeUpdated}:{installed.Manifest}|{Language.ToUpperInvariant()}|{GameVersion}"
+            : null;
 
     string RemoteItem(string id) => _remoteRoot + "/" + id;
 
     string LocalItem(string id) => Path.Combine(CacheFolder, id);
 
-    /// <summary>Deletes cached files the server no longer has (or the rules no longer copy).</summary>
-    void RemoveStale(string id, ConcurrentDictionary<string, byte> wanted)
+    /// <summary>
+    /// Deletes cached files the server no longer has (or the rules no longer copy), and makes the
+    /// version folders the copy was made from, even empty: the catalog picks roots by folder.
+    /// </summary>
+    void RemoveStale(string id, ConcurrentDictionary<string, byte> wanted, ConcurrentDictionary<string, byte>? keepDirs)
     {
         var root = LocalItem(id);
-        if (!Directory.Exists(root))
-        {
-            Directory.CreateDirectory(root);
-            return;
-        }
+        Directory.CreateDirectory(root);
+        foreach (var dir in keepDirs?.Keys ?? [])
+            Directory.CreateDirectory(Path.Combine(root, dir.Replace('/', Path.DirectorySeparatorChar)));
         foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToList())
         {
             var rel = Path.GetRelativePath(root, file).Replace('\\', '/');
             if (!wanted.ContainsKey(rel))
-                File.Delete(file);
+                TryDelete(() => File.Delete(file));
         }
         foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).ToList())
-            if (!Directory.EnumerateFileSystemEntries(dir).Any())
-                Directory.Delete(dir);
+        {
+            var rel = Path.GetRelativePath(root, dir).Replace('\\', '/');
+            if (keepDirs?.ContainsKey(rel) != true && !Directory.EnumerateFileSystemEntries(dir).Any())
+                TryDelete(() => Directory.Delete(dir));
+        }
+
+        // a file held open by an antivirus or indexer stays until next time
+        static void TryDelete(Action delete)
+        {
+            try
+            {
+                delete();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     Dictionary<string, string> LoadState()
@@ -250,6 +291,9 @@ public sealed class SftpModFetcher
 
         /// <summary>Items found on the server → the relative paths copied for them.</summary>
         public ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> Found { get; } = new();
+
+        /// <summary>Items → the version folders (and common) the copy was made from, kept even when empty.</summary>
+        public ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> KeepDirs { get; } = new();
 
         public int Connections { get; set; } = 1;
         public int Folders => _folders;
@@ -363,8 +407,12 @@ public sealed class SftpModFetcher
                 return;
             }
             if (Child(entries, "common", directory: true) is { } common)
+            {
+                Keep(id, common);
                 Enqueue((f, c) => RootAsync(f, id, common.FullName, c));
+            }
             var versioned = Child(entries, version, directory: true)!;
+            Keep(id, versioned);
             Enqueue((f, c) => RootAsync(f, id, versioned.FullName, c));
         }
 
@@ -428,15 +476,40 @@ public sealed class SftpModFetcher
             }
         }
 
+        void Keep(string id, RemoteEntry dir)
+        {
+            var itemRoot = owner.RemoteItem(id) + "/";
+            if (dir.FullName.StartsWith(itemRoot, StringComparison.Ordinal) && SafeRelative(dir.FullName[itemRoot.Length..]) is { } rel)
+                KeepDirs.GetOrAdd(id, _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase)).TryAdd(rel, 0);
+        }
+
+        /// <summary>
+        /// A server path that is safe to store on Windows: no traversal, no backslash or colon (legal on
+        /// Linux), no trailing dot or space and no device name (Windows would change or refuse them).
+        /// </summary>
+        static string? SafeRelative(string rel)
+        {
+            if (rel.Contains('\\') || rel.Contains(':'))
+                return null;
+            foreach (var part in rel.Split('/'))
+            {
+                if (part is "" or "." or ".." || part.EndsWith('.') || part.EndsWith(' '))
+                    return null;
+                var stem = part.Split('.')[0].ToUpperInvariant();
+                if (stem is "CON" or "PRN" or "AUX" or "NUL" || (stem.Length == 4 && (stem.StartsWith("COM") || stem.StartsWith("LPT")) && char.IsDigit(stem[3])))
+                    return null;
+            }
+            return rel;
+        }
+
         /// <summary>Records a file to keep and queues its download unless the cached copy matches.</summary>
         void File(string id, RemoteEntry entry)
         {
             var itemRoot = owner.RemoteItem(id) + "/";
             if (!entry.FullName.StartsWith(itemRoot, StringComparison.Ordinal))
                 return;
-            var rel = entry.FullName[itemRoot.Length..];
-            // a server-side name must not reach outside the cache (backslashes are legal on Linux)
-            if (rel.Contains('\\') || rel.Contains(':') || rel.Split('/').Any(p => p is "" or "." or ".."))
+            // a server-side name must not reach outside the cache, nor be one Windows can't store
+            if (SafeRelative(entry.FullName[itemRoot.Length..]) is not { } rel)
                 return;
             var itemCache = Path.GetFullPath(owner.LocalItem(id));
             var target = Path.GetFullPath(Path.Combine(itemCache, rel.Replace('/', Path.DirectorySeparatorChar)));

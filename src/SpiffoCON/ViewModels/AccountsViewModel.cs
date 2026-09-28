@@ -127,7 +127,7 @@ public sealed partial class AccountsViewModel : ObservableObject
             StatusText = "Looking for the Zomboid folder over SFTP...";
             try
             {
-                var probe = await SftpProbe.RunAsync(sftp);
+                var probe = await _main.ProbeAsync(sftp);
                 var logs = probe.LogFolders.OrderBy(p => p.Contains("/Zomboid/", StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(p => p.Length).FirstOrDefault();
                 if (logs is null)
                 {
@@ -184,17 +184,25 @@ public sealed partial class AccountsViewModel : ObservableObject
         }
     }
 
+    int _readCount;
+
     [RelayCommand]
     private async Task ReadAsync()
     {
         if (_source is null || SelectedServer is null)
             return;
+        // a newer read (another server picked, another folder) wins over one still running
+        int read = ++_readCount;
+        var source = _source;
         var temp = Path.Combine(Path.GetTempPath(), "SpiffoCON", "db-" + Guid.NewGuid().ToString("N"));
         StatusText = $"Reading {SelectedServer}...";
         try
         {
-            var (serverDb, playersDb) = await _source.CopyAsync(SelectedServer, temp);
-            _snapshot = await Task.Run(() => ServerDatabase.Read(serverDb, playersDb));
+            var (serverDb, playersDb) = await source.CopyAsync(SelectedServer, temp);
+            var snapshot = await Task.Run(() => ServerDatabase.Read(serverDb, playersDb));
+            if (read != _readCount)
+                return;
+            _snapshot = snapshot;
             IsLoaded = true;
             Rebuild();
             StatusText = $"{_snapshot.Accounts.Count} accounts, {_snapshot.Characters.Count} characters, " +
@@ -203,7 +211,8 @@ public sealed partial class AccountsViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            StatusText = "Could not read the databases: " + ex.Message;
+            if (read == _readCount)
+                StatusText = "Could not read the databases: " + ex.Message;
         }
         finally
         {

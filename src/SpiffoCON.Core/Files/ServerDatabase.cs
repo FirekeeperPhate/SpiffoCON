@@ -69,8 +69,10 @@ public static class ServerDatabase
 
     static SqliteConnection Open(string path)
     {
-        // read-only, and no pooling so the temporary copy can be deleted afterwards
-        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+        // always a temporary copy, opened read-write: a journal copied along with it (a write was in
+        // progress) must be rolled back, which SQLite refuses on a read-only connection. No pooling,
+        // so the copy can be deleted afterwards. Only SELECTs run on it.
+        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadWrite, Pooling = false }.ToString());
         db.Open();
         return db;
     }
@@ -149,9 +151,31 @@ public sealed class LocalServerDbSource(string zomboidFolder) : IServerDbSource
                 from.CopyTo(to);
             return target;
         }
-        var serverDb = Copy(Path.Combine(zomboidFolder, "db", server + ".db"), "server.db");
+        // a journal left by a write in progress belongs with its database
+        void CopyJournal(string db, string name)
+        {
+            try
+            {
+                if (File.Exists(db + "-journal"))
+                    Copy(db + "-journal", name + "-journal");
+            }
+            catch (FileNotFoundException)
+            {
+                // gone in between: the write ended, the database alone is consistent
+                File.Delete(Path.Combine(folder, name + "-journal"));
+            }
+        }
+        var serverSource = Path.Combine(zomboidFolder, "db", server + ".db");
+        var serverDb = Copy(serverSource, "server.db");
+        CopyJournal(serverSource, "server.db");
         var players = Path.Combine(zomboidFolder, "Saves", "Multiplayer", server, "players.db");
-        return Task.FromResult((serverDb, File.Exists(players) ? Copy(players, "players.db") : null));
+        string? playersDb = null;
+        if (File.Exists(players))
+        {
+            playersDb = Copy(players, "players.db");
+            CopyJournal(players, "players.db");
+        }
+        return Task.FromResult((serverDb, playersDb));
     }
 }
 
@@ -189,8 +213,17 @@ public sealed class SftpServerDbSource(SftpSettings settings, string zomboidFold
                 if (!await client.ExistsAsync(remote, ct).ConfigureAwait(false))
                     return null;
                 var target = Path.Combine(folder, name);
-                await using (var file = File.Create(target))
-                    await client.DownloadFileAsync(remote, file, ct).ConfigureAwait(false);
+                try
+                {
+                    await using (var file = File.Create(target))
+                        await client.DownloadFileAsync(remote, file, ct).ConfigureAwait(false);
+                }
+                catch (Renci.SshNet.Common.SftpPathNotFoundException)
+                {
+                    // gone in between (a journal is deleted when its write ends)
+                    File.Delete(target);
+                    return null;
+                }
                 return target;
             }
             var serverDb = await Download(Remote("db", server + ".db"), "server.db").ConfigureAwait(false)

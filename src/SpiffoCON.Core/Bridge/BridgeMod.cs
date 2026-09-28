@@ -28,6 +28,12 @@ public static class BridgeMod
             ? File.ReadAllLines(workshopTxt).FirstOrDefault(l => l.StartsWith("id=", StringComparison.OrdinalIgnoreCase))
             : null;
 
+        // files an older version had and this one hasn't would be uploaded again
+        if (Directory.Exists(target))
+            foreach (var old in Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories).ToList())
+                if (!File.Exists(Path.Combine(source, Path.GetRelativePath(target, old))))
+                    File.Delete(old);
+
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             var dest = Path.Combine(target, Path.GetRelativePath(source, file));
@@ -48,9 +54,17 @@ public static class BridgeMod
     public static string? ReadWorkshopId(string workshopFolder)
     {
         var workshopTxt = Path.Combine(workshopFolder, FolderName, "workshop.txt");
-        if (!File.Exists(workshopTxt))
+        try
+        {
+            if (!File.Exists(workshopTxt))
+                return null;
+            var line = File.ReadAllLines(workshopTxt).FirstOrDefault(l => l.StartsWith("id=", StringComparison.OrdinalIgnoreCase));
+            return line?[3..].Trim() is { Length: > 0 } id ? id : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // read at start-up: a locked file must not stop SpiffoCON from opening
             return null;
-        var line = File.ReadAllLines(workshopTxt).FirstOrDefault(l => l.StartsWith("id=", StringComparison.OrdinalIgnoreCase));
-        return line?[3..].Trim() is { Length: > 0 } id ? id : null;
+        }
     }
 }

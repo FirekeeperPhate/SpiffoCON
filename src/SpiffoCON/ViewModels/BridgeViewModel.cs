@@ -1,3 +1,4 @@
+using SpiffoCON.Services;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
@@ -93,7 +94,7 @@ public sealed partial class BridgeViewModel : ObservableObject
     private void CopyServerSettings()
     {
         var text = $"Mods: {BridgeMod.ModId}" + (WorkshopId is null ? "" : $"\nWorkshopItems: {WorkshopId}");
-        Clipboard.SetText(text);
+        SafeClipboard.SetText(text);
         StatusText = "Copied: add them to the server's mod list (Mods= and WorkshopItems=) and restart it.";
     }
 
@@ -112,7 +113,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             StatusText = "Looking for the Zomboid folder over SFTP...";
             try
             {
-                var probe = await SftpProbe.RunAsync(sftp);
+                var probe = await _main.ProbeAsync(sftp);
                 // Zomboid/Logs is found by the probe; the bridge's folder is its sibling Zomboid/Lua
                 var logs = probe.LogFolders.OrderBy(p => p.Contains("/Zomboid/", StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(p => p.Length).FirstOrDefault();
                 if (logs is null)
@@ -203,22 +204,35 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    int _inventoryLoad;
+
+    /// <summary>Whose items <see cref="Inventory"/> shows (null while loading): removals act on them.</summary>
+    string? _inventoryOwner;
+
     async Task LoadInventoryAsync(string username)
     {
         if (_client is null)
             return;
+        int load = ++_inventoryLoad;
         InventoryTitle = $"Inventory of {username}: loading...";
         Inventory.Clear();
+        _inventoryOwner = null;
         try
         {
             var items = await _client.InventoryAsync(username);
+            // another player was picked meanwhile: this answer is not for the list any more
+            if (load != _inventoryLoad)
+                return;
+            Inventory.Clear();
             foreach (var item in items)
                 Inventory.Add(item);
+            _inventoryOwner = username;
             InventoryTitle = $"Inventory of {username}: {items.Sum(i => i.Count)} items";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            InventoryTitle = $"Inventory of {username}: {ex.Message}";
+            if (load == _inventoryLoad)
+                InventoryTitle = $"Inventory of {username}: {ex.Message}";
         }
     }
 
@@ -227,7 +241,7 @@ public sealed partial class BridgeViewModel : ObservableObject
     {
         if (player?.X is null)
             return;
-        Clipboard.SetText($"{player.X},{player.Y},{player.Z}");
+        SafeClipboard.SetText($"{player.X},{player.Y},{player.Z}");
     }
 
     /// <summary>Fills the Players tab with this player and their position (for teleporting others there).</summary>
@@ -292,14 +306,19 @@ public sealed partial class BridgeViewModel : ObservableObject
 
     Task RemoveAsync(BridgeItem? item, int count)
     {
-        if (item is null || SelectedPlayer is not { } player)
+        if (item is null || _inventoryOwner is not { } owner)
             return Task.CompletedTask;
+        // bridge v3 removes from the row's container; v2 from anywhere, main inventory first
+        bool byContainer = BridgeVersion >= 3 && !string.IsNullOrEmpty(item.Container);
+        var where = byContainer
+            ? $"from {owner}'s {item.Container}"
+            : $"from anywhere in {owner}'s inventory (bridge v{BridgeVersion} doesn't tell bags apart: v3 does)";
         return ActAsync(
-            $"Remove {count} × {item.Name} ({item.FullType}) from {player.Username}'s inventory?\n\nWorn clothes and attached items are not touched.",
+            $"Remove {count} × {item.Name} ({item.FullType}) {where}?\n\nWorn clothes and attached items are not touched.",
             async c =>
             {
-                var (removed, skipped) = await c.RemoveItemAsync(player.Username, item.FullType, count);
-                return $"Removed {removed} × {item.Name} from {player.Username}." + (skipped > 0 ? $" {skipped} worn or attached left in place." : "");
+                var (removed, skipped) = await c.RemoveItemAsync(owner, item.FullType, count, byContainer ? item.Container : null);
+                return $"Removed {removed} × {item.Name} from {owner}." + (skipped > 0 ? $" {skipped} worn or attached left in place." : "");
             },
             reloadInventory: true);
     }
@@ -307,17 +326,17 @@ public sealed partial class BridgeViewModel : ObservableObject
     [RelayCommand]
     private Task RepairVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
         $"Repair {v.Script} #{id} completely?",
-        async c => { await c.RepairVehicleAsync(id); return $"{v.Script} #{id} repaired."; });
+        async c => { await c.RepairVehicleAsync(id, v.Script); return $"{v.Script} #{id} repaired."; });
 
     [RelayCommand]
     private Task RefuelVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
         $"Fill the tank of {v.Script} #{id}?",
-        async c => { await c.RefuelVehicleAsync(id); return $"{v.Script} #{id} refuelled."; });
+        async c => { await c.RefuelVehicleAsync(id, v.Script); return $"{v.Script} #{id} refuelled."; });
 
     [RelayCommand]
     private Task RemoveVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
         $"Remove {v.Script} #{id} from the world for good?" + (v.Driver is { } d ? $"\n\n{d} is driving it." : ""),
-        async c => { await c.RemoveVehicleAsync(id); return $"{v.Script} #{id} removed."; });
+        async c => { await c.RemoveVehicleAsync(id, v.Script); return $"{v.Script} #{id} removed."; });
 
     public void Close()
     {

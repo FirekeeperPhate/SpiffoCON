@@ -1,4 +1,4 @@
-version=2
+version=1
 id=3809683986
 title=SpiffoCON Bridge
 description=Server-side helper for SpiffoCON, a remote admin tool for Project Zomboid servers.

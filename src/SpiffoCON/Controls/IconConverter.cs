@@ -11,6 +11,9 @@ public sealed class IconConverter : IValueConverter
 {
     static readonly ConcurrentDictionary<string, BitmapImage?> Cache = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Forget loaded icons (after a reload: a file at the same path may have changed).</summary>
+    public static void Clear() => Cache.Clear();
+
     public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         if (value is not string path)
@@ -32,7 +35,8 @@ public sealed class IconConverter : IValueConverter
             image.Freeze();
             return image;
         }
-        catch (Exception ex) when (ex is IOException or NotSupportedException or UriFormatException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or NotSupportedException or UriFormatException or ArgumentException
+            or FormatException or InvalidOperationException)
         {
             return null;
         }

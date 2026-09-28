@@ -14,12 +14,20 @@ public partial class MainWindow : Window
     MainViewModel _vm = null!;
     bool _closing;
     bool _switching;
+    bool _closeAfterSwitch;
+    bool _readyToClose;
+    TrayNotifier? _tray;
 
     public MainWindow()
     {
         InitializeComponent();
         Attach(new MainViewModel(_book));
-        Loaded += (_, _) => (string.IsNullOrEmpty(_vm.Host) ? (UIElement)ConnectButton : ConsoleInputBox).Focus();
+        Loaded += (_, _) =>
+        {
+            (string.IsNullOrEmpty(_vm.Host) ? (UIElement)ConnectButton : ConsoleInputBox).Focus();
+            if (ProfileStore.LoadProblem is { } problem)
+                MessageBox.Show(this, problem, "SpiffoCON", MessageBoxButton.OK, MessageBoxImage.Warning);
+        };
     }
 
     /// <summary>
@@ -43,6 +51,29 @@ public partial class MainWindow : Window
         finally
         {
             _switching = false;
+            if (_closeAfterSwitch)
+                _ = Dispatcher.BeginInvoke(Close, DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>The tray icon appears with the first notification and goes with the window.</summary>
+    void ShowNotification(AppNotification n)
+    {
+        if (_closing || (n.OnlyWhenInactive && IsActive && WindowState != WindowState.Minimized))
+            return;
+        _tray ??= new TrayNotifier(() =>
+        {
+            if (WindowState == WindowState.Minimized)
+                WindowState = WindowState.Normal;
+            Activate();
+        });
+        try
+        {
+            _tray.Show(n.Title, n.Text);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // a notification that can't be shown is not worth an error box
         }
     }
 
@@ -51,6 +82,7 @@ public partial class MainWindow : Window
         _vm = vm;
         DataContext = _vm;
         _vm.SwitchRequested += OnSwitchRequested;
+        _vm.NotificationRaised += (_, n) => ShowNotification(n);
         _vm.Confirm = question =>
             MessageBox.Show(this, question, "SpiffoCON", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
@@ -108,6 +140,16 @@ public partial class MainWindow : Window
             ConsoleList.ScrollIntoView(_vm.ConsoleLines[^1]);
     }
 
+    /// <summary>Enter in the connection fields connects (the button is not the window's default).</summary>
+    void ConnectionFields_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && _vm.CanEditConnection && e.OriginalSource is TextBox or PasswordBox)
+        {
+            _vm.ConnectCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
     void RconPasswordBox_PasswordChanged(object sender, RoutedEventArgs e) => _vm.RconPassword = RconPasswordBox.Password;
 
     void SftpPasswordBox_PasswordChanged(object sender, RoutedEventArgs e) => _vm.SftpPassword = SftpPasswordBox.Password;
@@ -156,7 +198,7 @@ public partial class MainWindow : Window
             : _vm.ConsoleLines.AsEnumerable();
         var text = string.Join(Environment.NewLine, lines.Select(l => $"{l.TimeText} {l.Text}"));
         if (text.Length > 0)
-            Clipboard.SetText(text);
+            SafeClipboard.SetText(text);
     }
 
     /// <summary>Inserts the color tag at the cursor; the color applies from there on.</summary>
@@ -174,14 +216,33 @@ public partial class MainWindow : Window
     protected override async void OnClosing(CancelEventArgs e)
     {
         base.OnClosing(e);
+        if (_readyToClose)
+            return;
+        // from here on the window closes only once the shutdown below is done
+        e.Cancel = true;
         if (_closing)
             return;
+        if (_switching)
+        {
+            // a server switch is building the next view model: close when it is done
+            _closeAfterSwitch = true;
+            return;
+        }
+        if (_vm.Maintenance.IsCountingDown && MessageBox.Show(this,
+                "A restart countdown is running. Close SpiffoCON anyway?\n\nThe restart is called off and the players are told.",
+                "SpiffoCON", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
         // let the RCON connection close cleanly, then close for real
-        e.Cancel = true;
         _closing = true;
+        // checked again: the countdown may have ended while the question was open
+        if (_vm.Maintenance.IsCountingDown)
+            await _vm.Maintenance.CancelRestartCommand.ExecuteAsync(null);
         await _vm.ShutdownAsync();
+        _tray?.Dispose();
+        _tray = null;
         // ShutdownAsync may finish synchronously, i.e. still inside this Closing event, where
         // WPF refuses Close(); run it after the event instead
+        _readyToClose = true;
         await Dispatcher.BeginInvoke(Close, DispatcherPriority.Background);
     }
 }

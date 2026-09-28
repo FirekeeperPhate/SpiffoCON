@@ -78,10 +78,11 @@ public static class EventCommands
     /// <summary>Replies like "Rain started", "Lightning triggered", "User \"x\" not found".</summary>
     public static CommandOutcome Interpret(string reply)
     {
-        if (ErrorPhrases.Any(p => reply.Contains(p, StringComparison.OrdinalIgnoreCase)))
-            return CommandOutcome.Failed;
+        // the fixed success texts first: an error phrase may be part of a player's name
         if (SuccessPhrases.Any(p => reply.Contains(p, StringComparison.OrdinalIgnoreCase)))
             return CommandOutcome.Success;
+        if (ErrorPhrases.Any(p => reply.Contains(p, StringComparison.OrdinalIgnoreCase)))
+            return CommandOutcome.Failed;
         return CommandOutcome.Unconfirmed;
     }
 

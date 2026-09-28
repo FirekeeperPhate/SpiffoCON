@@ -18,6 +18,11 @@ public sealed record ConsoleLine(DateTime Time, ConsoleKind Kind, string Text)
     public string TimeText => Time.ToString("HH:mm:ss");
 }
 
+public enum NotificationKind { Players, Chat, Connection, Test }
+
+/// <summary>A desktop notification; <paramref name="OnlyWhenInactive"/> skips it while SpiffoCON is the active window.</summary>
+public sealed record AppNotification(NotificationKind Kind, string Title, string Text, bool OnlyWhenInactive);
+
 public sealed record ColorPreset(string Name, RgbColor Color)
 {
     public string Hex
@@ -65,21 +70,40 @@ public sealed partial class MainViewModel : ObservableObject
         _rcon.ConnectionLost += (_, error) => Application.Current?.Dispatcher.BeginInvoke(() =>
         {
             if (IsSessionActive)
+            {
                 Log(ConsoleKind.Warning, "Connection lost" + (error is null ? "" : $" ({error.Message})")
                     + ". It will reconnect with the next command.");
-            StatusText = "Connection lost: reconnects with the next command";
+                if (!_connectionLost && !_expectingShutdown)
+                    Notify(NotificationKind.Connection, "Connection lost", $"{_profile.DisplayName}: the server stopped answering.");
+                _connectionLost = true;
+                StatusText = "Connection lost: reconnects with the next command";
+            }
         });
+
+        var notifications = _book.Notifications;
+        NotifyPlayerJoins = notifications.PlayerJoins;
+        NotifyChat = notifications.Chat;
+        NotifyChatWords = notifications.ChatWords;
+        NotifyConnection = notifications.Connection;
+        NotifyOnlyWhenInactive = notifications.OnlyWhenInactive;
 
         UpdateMessagePreview();
         Catalog = new CatalogViewModel(this);
+        Kits = new KitsViewModel(this);
         Players = new PlayersViewModel(this);
         Options = new OptionsViewModel(this);
         Sandbox = new SandboxViewModel(this);
         Logs = new LogsViewModel(this);
+        Logs.ChatReceived += (_, lines) => OnChat(lines);
         Bridge = new BridgeViewModel(this);
         Accounts = new AccountsViewModel(this);
         Events = new EventsViewModel(this);
+        Maintenance = new MaintenanceViewModel(this);
     }
+
+    public KitsViewModel Kits { get; }
+
+    public MaintenanceViewModel Maintenance { get; }
 
     public AccountsViewModel Accounts { get; }
 
@@ -112,6 +136,21 @@ public sealed partial class MainViewModel : ObservableObject
         var keyHost = _profile.SftpHostKeyFor ?? _profile.Host;
         var key = trustSavedKey && keyHost.Equals(SftpHostName, StringComparison.OrdinalIgnoreCase) ? _profile.SftpHostKey : null;
         return new SftpSettings(SftpHostName, SftpPort, SftpUser.Trim(), password, key);
+    }
+
+    /// <summary>
+    /// Runs the SFTP probe and keeps the host key it saw: the first SFTP use (whichever tab it
+    /// comes from) is when the key is trusted; later connections check against it.
+    /// </summary>
+    internal async Task<SftpProbeResult> ProbeAsync(SftpSettings sftp, CancellationToken ct = default)
+    {
+        var probe = await SftpProbe.RunAsync(sftp, ct);
+        if (!_shutDown)
+        {
+            RememberSftpHostKey(probe.HostKeyFingerprint);
+            SaveProfile();
+        }
+        return probe;
     }
 
     /// <summary>Saves the SSH host key just seen, for the current SFTP host.</summary>
@@ -217,6 +256,76 @@ public sealed partial class MainViewModel : ObservableObject
         return candidate;
     }
 
+    // ---- notifications ----
+
+    bool _connectionLost;
+    bool _expectingShutdown;
+    HashSet<string>? _knownPlayers;
+
+    /// <summary>Raised for a desktop notification; the window decides whether to show it.</summary>
+    public event EventHandler<AppNotification>? NotificationRaised;
+
+    [ObservableProperty] private bool notifyPlayerJoins;
+    [ObservableProperty] private bool notifyChat;
+    [ObservableProperty] private string notifyChatWords = "";
+    [ObservableProperty] private bool notifyConnection;
+    [ObservableProperty] private bool notifyOnlyWhenInactive;
+
+    partial void OnNotifyPlayerJoinsChanged(bool value) => _book.Notifications.PlayerJoins = value;
+    partial void OnNotifyChatChanged(bool value) => _book.Notifications.Chat = value;
+    partial void OnNotifyChatWordsChanged(string value) => _book.Notifications.ChatWords = value;
+    partial void OnNotifyConnectionChanged(bool value) => _book.Notifications.Connection = value;
+    partial void OnNotifyOnlyWhenInactiveChanged(bool value) => _book.Notifications.OnlyWhenInactive = value;
+
+    internal void Notify(NotificationKind kind, string title, string text)
+    {
+        // an old server's view model (after a switch) may still finish a poll
+        if (_shutDown)
+            return;
+        bool wanted = kind switch
+        {
+            NotificationKind.Players => NotifyPlayerJoins,
+            NotificationKind.Chat => NotifyChat,
+            NotificationKind.Connection => NotifyConnection,
+            _ => true,
+        };
+        if (wanted)
+            NotificationRaised?.Invoke(this, new AppNotification(kind, title, text, NotifyOnlyWhenInactive && kind != NotificationKind.Test));
+    }
+
+    [RelayCommand]
+    private void TestNotification() =>
+        Notify(NotificationKind.Test, "SpiffoCON", "Notifications work. This is how a player joining or a chat message shows up.");
+
+    /// <summary>The next shutdown is ours (restart): no "connection lost" alarm.</summary>
+    internal void ExpectShutdown()
+    {
+        // not "lost" yet: quit still answers before the server goes away
+        _expectingShutdown = true;
+        _connectionLost = false;
+        // everyone leaves with the restart: the list after it is a new baseline, not "X left"
+        _knownPlayers = null;
+    }
+
+    /// <summary>The shutdown did not happen (or the server never came back): alarms as usual again.</summary>
+    internal void EndExpectedShutdown() => _expectingShutdown = false;
+
+    /// <summary>The server went away after the shutdown SpiffoCON asked for (and is not back yet).</summary>
+    internal bool ConnectionLostSinceShutdown => _connectionLost;
+
+    /// <summary>New chat lines from the Logs tab; a burst becomes one notification.</summary>
+    void OnChat(IReadOnlyList<SpiffoCON.Core.Files.LogLine> lines)
+    {
+        var words = NotifyChatWords.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var wanted = lines.Where(l => words.Length == 0 || words.Any(w => l.Text.Contains(w, StringComparison.CurrentCultureIgnoreCase))).ToList();
+        if (wanted.Count is > 0 and <= 3)
+            foreach (var l in wanted)
+                Notify(NotificationKind.Chat, $"{l.Author ?? "?"} ({_profile.DisplayName})", l.Text);
+        else if (wanted.Count > 3)
+            Notify(NotificationKind.Chat, $"{wanted.Count} chat messages ({_profile.DisplayName})",
+                $"Latest: {wanted[^1].Author ?? "?"}: {wanted[^1].Text}");
+    }
+
     // ---- connection ----
 
     [ObservableProperty] private string host = "";
@@ -254,6 +363,8 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             await _rcon.ConnectAsync(Host.Trim(), RconPort, RconPassword);
+            _knownPlayers = null;
+            _connectionLost = _expectingShutdown = false;
             IsSessionActive = true;
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
             Log(ConsoleKind.Info, StatusText);
@@ -276,6 +387,7 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task DisconnectAsync()
     {
         await _rcon.DisconnectAsync();
+        _knownPlayers = null;
         IsSessionActive = false;
         OnlinePlayers.Clear();
         OnlinePlayersChanged?.Invoke(this, EventArgs.Empty);
@@ -295,7 +407,9 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         // the in-game console wants "/players", RCON wants "players"
         if (command.StartsWith('/'))
-            command = command[1..];
+            command = command[1..].Trim();
+        if (command.Length == 0)
+            return;
 
         _history.Remove(command);
         _history.Add(command);
@@ -328,6 +442,18 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var reply = await _rcon.ExecuteAsync(command);
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
+            // quit's own reply comes before the server goes away: it is not a return
+            if (_connectionLost && command != "quit")
+            {
+                _connectionLost = false;
+                Log(ConsoleKind.Info, "Connected again.");
+                Notify(NotificationKind.Connection, "Server back", $"{_profile.DisplayName} answers again.");
+                if (_expectingShutdown)
+                {
+                    _expectingShutdown = false;
+                    ServerBack?.Invoke(this, EventArgs.Empty);
+                }
+            }
             if (quiet)
                 return reply;
             if (logReply)
@@ -339,11 +465,20 @@ public sealed partial class MainViewModel : ObservableObject
         catch (RconException ex)
         {
             Log(ex is RconTimeoutException ? ConsoleKind.Warning : ConsoleKind.Error, (quiet ? command + ": " : "") + ex.Message);
-            if (ex is RconAuthenticationException)
+            // after our own quit a failing command means it is down, even if no drop was seen
+            if (_expectingShutdown && command != "quit")
+                _connectionLost = true;
+            // a server shutting down or starting up may drop logins: not a wrong password
+            if (ex is RconAuthenticationException && !_expectingShutdown)
             {
                 IsSessionActive = false;
                 StatusText = "Disconnected: the password was rejected";
             }
+            return null;
+        }
+        catch (ObjectDisposedException)
+        {
+            // the window is closing (or the server was switched) while a command was on its way
             return null;
         }
     }
@@ -355,6 +490,9 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Raised after <see cref="OnlinePlayers"/> was refreshed.</summary>
     public event EventHandler? OnlinePlayersChanged;
 
+    /// <summary>Raised when the server answers again after a shutdown SpiffoCON asked for.</summary>
+    public event EventHandler? ServerBack;
+
     internal async Task RefreshPlayersAsync(bool quiet = false)
     {
         if (!IsSessionActive)
@@ -362,13 +500,66 @@ public sealed partial class MainViewModel : ObservableObject
         var reply = await RunAsync("players", quiet: quiet);
         if (reply is null)
             return;
-        var names = PlayerCommands.ParsePlayers(reply);
-        if (names.SequenceEqual(OnlinePlayers))
+        var names = PlayerCommands.ParsePlayers(reply).Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+        NotifyJoins(names);
+        SetOnlinePlayers(names);
+    }
+
+    /// <summary>
+    /// Updates the list in place: a Clear() would reset every list and combo box bound to it,
+    /// and they would lose (or write back an empty) choice of player.
+    /// </summary>
+    internal void SetOnlinePlayers(IReadOnlyList<string> sortedNames)
+    {
+        if (sortedNames.SequenceEqual(OnlinePlayers))
             return;
-        OnlinePlayers.Clear();
-        foreach (var n in names.Order(StringComparer.CurrentCultureIgnoreCase))
-            OnlinePlayers.Add(n);
+        var keep = sortedNames.ToHashSet(StringComparer.Ordinal);
+        for (int i = OnlinePlayers.Count - 1; i >= 0; i--)
+            if (!keep.Contains(OnlinePlayers[i]))
+                OnlinePlayers.RemoveAt(i);
+        // what is left is in the same order as the new list: insert the newcomers in place
+        for (int i = 0; i < sortedNames.Count; i++)
+            if (i >= OnlinePlayers.Count || OnlinePlayers[i] != sortedNames[i])
+                OnlinePlayers.Insert(i, sortedNames[i]);
         OnlinePlayersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Joins and leaves since the last refresh (the first list after connecting is the baseline).</summary>
+    void NotifyJoins(IReadOnlyList<string> names)
+    {
+        var now = names.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (_knownPlayers is { } before)
+        {
+            var joined = now.Where(n => !before.Contains(n)).ToList();
+            var left = before.Where(n => !now.Contains(n)).ToList();
+            if (joined.Count > 0)
+                Notify(NotificationKind.Players, $"{string.Join(", ", joined)} joined", $"{_profile.DisplayName}: {now.Count} online.");
+            if (left.Count > 0)
+                Notify(NotificationKind.Players, $"{string.Join(", ", left)} left", $"{_profile.DisplayName}: {now.Count} online.");
+        }
+        _knownPlayers = now;
+    }
+
+    /// <summary>
+    /// The server's workshop/content/108600 folder: the one remembered from the SFTP probe, or
+    /// found now (probing takes a moment). Null without SFTP or when there is none.
+    /// </summary>
+    internal async Task<string?> FindWorkshopFolderAsync(IProgress<string>? progress = null, CancellationToken ct = default)
+    {
+        if (_profile.SftpWorkshopFolder is { } known)
+            return known;
+        if (CurrentSftpSettings() is not { } sftp)
+            return null;
+        progress?.Report("Looking for the mod folder over SFTP...");
+        var probe = await SftpProbe.RunAsync(sftp, ct);
+        var folder = probe.WorkshopFolders.OrderByDescending(w => w.ItemCount).FirstOrDefault()?.Path;
+        if (_shutDown)
+            return folder;
+        RememberSftpHostKey(probe.HostKeyFingerprint);
+        _profile.SftpFoldersHost = sftp.Host;
+        _profile.SftpWorkshopFolder = folder;
+        SaveProfile();
+        return folder;
     }
 
     void Log(ConsoleKind kind, string text)
@@ -519,8 +710,14 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ---- profile ----
 
+    /// <summary>Set once the view model is shut down (server switch, close): it must not touch the book any more.</summary>
+    bool _shutDown;
+
     public void SaveProfile()
     {
+        // a scan still running for the server just left must not overwrite the list
+        if (_shutDown)
+            return;
         _profile.Host = Host.Trim();
         _profile.RconPort = RconPort;
         _profile.RememberPasswords = RememberPasswords;
@@ -551,9 +748,12 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task ShutdownAsync()
     {
         SaveProfile();
+        _shutDown = true;
+        Players.Close();
         Logs.Close();
         Bridge.Close();
         Events.Close();
+        Maintenance.Close();
         await _rcon.DisposeAsync();
     }
 }

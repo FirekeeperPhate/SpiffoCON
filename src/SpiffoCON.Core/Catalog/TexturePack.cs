@@ -102,7 +102,10 @@ public static class TexturePack
             int chunkLength = BinaryPrimitives.ReadInt32BigEndian(header); // PNG is always big-endian
             if (chunkLength < 0)
                 throw new InvalidDataException("Bad PNG chunk.");
-            r.Position += chunkLength + 4; // data + CRC
+            long next = r.Position + (long)chunkLength + 4; // data + CRC (long: a huge length must not wrap)
+            if (next > r.Length)
+                throw new InvalidDataException("Bad PNG chunk.");
+            r.Position = next;
             if (header.AsSpan(4, 4).SequenceEqual("IEND"u8))
                 return r.Position - start;
         }

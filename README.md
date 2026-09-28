@@ -20,8 +20,9 @@ Windows, .NET 10, WPF.
   - The server's mods come from `showoptions` (`Mods=`, `WorkshopItems=`), in its load
     order. Mod files are read from, in this order: the server over SFTP (only scripts,
     English translations and icons, only from the folders the game loads, over 4 parallel
-    connections; mods unchanged since the last copy are skipped, according to the server's
-    `appworkshop_108600.acf` or else Steam's update date), the local Steam workshop folder, SteamCMD
+    connections, one copy per server; mods unchanged since the last copy are skipped,
+    according to the server's `appworkshop_108600.acf`, and without it every mod is checked
+    again), the local Steam workshop folder, SteamCMD
     (anonymous download of whole mods, asked first, cached in
     `%LOCALAPPDATA%\SpiffoCON`).
   - Base-game icons: **Game icons…** reads the `Item_*` sprites from the texture packs
@@ -41,6 +42,17 @@ Windows, .NET 10, WPF.
   player, on every online player or on one player; helicopter and gunshot events (the server
   picks the player for these two), and a button to call the helicopter off. Every reply is
   checked and listed. Syntax and replies checked on a real B42 server.
+- Kits tab: sets of items (starter kit, event prizes) built from the catalog ("Add to kit"),
+  shared by all your servers, given in one go to a player or to every online player.
+- Maintenance tab:
+  - Mod updates: the server's installed copies (its `appworkshop_108600.acf`, over SFTP)
+    against Steam, mod by mod: newer on Steam, not installed yet, up to date, or not public.
+  - Restart with a countdown: warnings in chat as the time runs out (message and color
+    editable, `{time}` filled in), then `save` and `quit`; starting the server again is up to
+    the host. SpiffoCON tells you when it answers again.
+  - Desktop notifications (tray icon): players joining and leaving, chat messages containing
+    chosen words (from the Logs tab while it follows the chat log), connection lost and back;
+    by default only while SpiffoCON is in the background.
 - Options tab: all 144 server options grouped like the game's settings screen, with
   descriptions, defaults and ranges (dumped from a real B42 server by
   `tools/DumpServerOptions.lua`, built by `tools/MakeServerOptions.cs`). Values are
@@ -66,8 +78,8 @@ Windows, .NET 10, WPF.
   `Zomboid/Lua` folder, read and written over SFTP (`spiffocon_in.txt` /
   `spiffocon_out.txt`). Bridge v2 adds admin actions, each done the way the game's own
   server code does it (with its client sync) and written to the admin log: full heal,
-  remove items (not worn or attached ones), repair, refuel or remove a vehicle, all asked
-  for confirmation. The bridge runs while the server runs a game:
+  remove items (not worn or attached ones; bridge v3 removes them from the container they
+  are listed under), repair, refuel or remove a vehicle, all asked for confirmation. The bridge runs while the server runs a game:
   an empty server with `PauseEmpty=true` is paused and the bridge waits.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first

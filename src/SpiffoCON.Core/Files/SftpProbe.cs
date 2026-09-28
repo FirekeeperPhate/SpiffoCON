@@ -50,7 +50,8 @@ public static class SftpProbe
         {
             Timeout = TimeSpan.FromSeconds(10),
         };
-        var client = new SftpClient(info);
+        // keep-alives make a silently dead link fail instead of hanging a copy forever
+        var client = new SftpClient(info) { KeepAliveInterval = TimeSpan.FromSeconds(15) };
         client.HostKeyReceived += (_, e) =>
         {
             fingerprint = e.HostKeyName + " SHA256:" + e.FingerPrintSHA256;
@@ -151,6 +152,8 @@ public static class SftpProbe
         }
         catch (SftpPermissionDeniedException) { }
         catch (SftpPathNotFoundException) { }
+        // another error on one folder ("Failure") skips it; a dropped connection still stops the scan
+        catch (SshException) when (client.IsConnected) { }
         return list;
     }
 

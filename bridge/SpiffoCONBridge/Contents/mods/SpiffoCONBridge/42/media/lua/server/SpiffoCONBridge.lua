@@ -3,13 +3,13 @@
 -- refuel or remove vehicles). Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
---   spiffocon_in.txt   written by SpiffoCON:  "SEQ <n>" then one request per line: id<TAB>action<TAB>arg...
+--   spiffocon_in.txt   written by SpiffoCON:  "SEQ <n>", one request per line (id<TAB>action<TAB>arg...), "END <n>"
 --   spiffocon_out.txt  written here:          "SEQ <n>", one JSON reply per line, "END <n>"
--- A batch is handled once (the highest SEQ seen); requests already in the file when the server
+-- A batch is handled once (each new SEQ); requests already in the file when the server
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 2
+local VERSION = 3
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -19,9 +19,16 @@ local nextPoll = 0
 
 -- ---- JSON ----
 
+local CONTROL_ESCAPES = { [10] = '\\n', [13] = '\\r', [9] = '\\t' }
+
+-- every control character must be escaped, or SpiffoCON can't read the reply
 local function jsonString(s)
 	s = tostring(s)
-	s = s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n'):gsub('\r', '\\r'):gsub('\t', '\\t')
+	s = s:gsub('\\', '\\\\'):gsub('"', '\\"')
+	s = s:gsub('%c', function(c)
+		local b = c:byte()
+		return CONTROL_ESCAPES[b] or string.format('\\u%04x', b)
+	end)
 	return '"' .. s .. '"'
 end
 
@@ -63,6 +70,15 @@ local function try(f, ...)
 	return nil
 end
 
+-- the items inside a bag; nil for any other item (checked first: an error per plain item would
+-- cost a Java exception each)
+local function containerOf(item)
+	if instanceof(item, "InventoryContainer") then
+		return try(function() return item:getInventory() end)
+	end
+	return nil
+end
+
 -- ---- actions ----
 
 local function findPlayer(username)
@@ -88,8 +104,13 @@ local function playerInfo(p)
 		noclip = try(function() return p:isNoClip() end),
 		hoursSurvived = try(function() return math.floor(p:getHoursSurvived() * 10) / 10 end),
 		zombieKills = try(function() return p:getZombieKills() end),
-		profession = try(function() return p:getDescriptor():getProfession() end),
-		steamId = try(function() return tostring(p:getSteamID()) end),
+		-- B42 keeps a CharacterProfession object (getProfession is gone)
+		profession = try(function()
+			local cp = p:getDescriptor():getCharacterProfession()
+			return cp and (try(function() return cp:getName() end) or tostring(cp))
+		end) or try(function() return p:getDescriptor():getProfession() end),
+		-- as a string: a Java long through Lua is a double and loses the last digits
+		steamId = try(function() return getSteamIDFromUsername(p:getUsername()) end),
 	}
 	info.role = try(function() return p:getRole():getName() end) or try(function() return p:getAccessLevel() end)
 	local vehicle = try(function() return p:getVehicle() end)
@@ -127,7 +148,7 @@ local function addItems(result, container, label, player)
 			entry.equipped = true
 		end
 		-- bags and other containers: list what is inside them too
-		local inner = try(function() return item:getInventory() end)
+		local inner = containerOf(item)
 		if inner then
 			addItems(result, inner, label .. " > " .. entry.name, nil)
 		end
@@ -148,7 +169,9 @@ local function vehicles()
 	local list = getCell():getVehicles()
 	for i = 0, list:size() - 1 do
 		local v = list:get(i)
-		local driver = try(function() return v:getDriver():getUsername() end)
+		-- no error for the usual empty car (an error costs a Java exception each time)
+		local seat = try(function() return v:getDriver() end)
+		local driver = seat and try(function() return seat:getUsername() end)
 		result[#result + 1] = {
 			id = try(function() return v:getId() end),
 			script = try(function() return v:getScript():getFullName() end),
@@ -217,22 +240,33 @@ local function isWornOrAttached(p, item)
 		or try(function() return p:isAttachedItem(item) end)
 end
 
-local function collect(container, fullType, into)
+-- walks the inventory like addItems, so labels match the ones SpiffoCON shows
+-- ("Inventory", "Inventory > Backpack"); only items in the container named wanted count
+-- (nil: anywhere)
+local function collect(container, label, fullType, wanted, into)
 	local items = container:getItems()
+	local names = {}
 	for i = 0, items:size() - 1 do
 		local item = items:get(i)
-		if item:getFullType() == fullType then into[#into + 1] = item end
-		local inner = try(function() return item:getInventory() end)
-		if inner then collect(inner, fullType, into) end
+		local itemType = item:getFullType()
+		if itemType == fullType and (wanted == nil or wanted == label) then into[#into + 1] = item end
+		-- addItems names a bag after the first item of its type in this container
+		names[itemType] = names[itemType] or (try(function() return item:getDisplayName() end) or itemType)
+		local inner = containerOf(item)
+		if inner then collect(inner, label .. " > " .. names[itemType], fullType, wanted, into) end
 	end
 end
 
--- as buildUtil in server/BuildingObjects/ISBuildUtil.lua; count 0 = all of them
-local function removeItem(username, fullType, count)
+-- as buildUtil in server/BuildingObjects/ISBuildUtil.lua; count 0 = all of them; container
+-- (bridge v3) limits it to the items listed under that container
+local function removeItem(username, fullType, count, container)
 	local p = requirePlayer(username)
-	count = tonumber(count) or 0
+	-- a missing count must not mean "all of them" (a cut request line would remove everything)
+	count = tonumber(count)
+	if not count then error("removeitem needs a count (0 = all)") end
+	if container == "" then container = nil end
 	local found = {}
-	collect(p:getInventory(), fullType, found)
+	collect(p:getInventory(), "Inventory", fullType, container, found)
 	local removed, skipped = 0, 0
 	for _, item in ipairs(found) do
 		if count > 0 and removed >= count then break end
@@ -250,9 +284,17 @@ local function removeItem(username, fullType, count)
 	return { removed = removed, skippedWorn = skipped }
 end
 
-local function requireVehicle(id)
+-- ids are runtime ids, given again to other vehicles as areas unload and load: when SpiffoCON
+-- says which model it means (bridge v3), a different vehicle under that id is refused
+local function requireVehicle(id, expectedScript)
 	local v = getVehicleById(tonumber(id) or -1)
 	if not v then error("no vehicle with id " .. tostring(id) .. " (it may be in an area no player has loaded)") end
+	if expectedScript and expectedScript ~= "" then
+		local script = try(function() return v:getScript():getFullName() end)
+		if script ~= expectedScript then
+			error("vehicle #" .. tostring(id) .. " is now a " .. tostring(script) .. ", not " .. expectedScript .. ": refresh the list")
+		end
+	end
 	return v
 end
 
@@ -261,16 +303,16 @@ local function vehicleName(v)
 end
 
 -- as Commands.repair in server/Vehicles/VehicleCommands.lua
-local function repairVehicle(id)
-	local v = requireVehicle(id)
+local function repairVehicle(id, script)
+	local v = requireVehicle(id, script)
 	v:repair()
 	audit("repaired " .. vehicleName(v))
 	return { repaired = true }
 end
 
 -- as Commands.setContainerContentAmount, filling the gas tank to its capacity
-local function refuelVehicle(id)
-	local v = requireVehicle(id)
+local function refuelVehicle(id, script)
+	local v = requireVehicle(id, script)
 	local tank = v:getPartById("GasTank")
 	if not tank then error(vehicleName(v) .. " has no gas tank") end
 	local capacity = tank:getContainerCapacity()
@@ -281,8 +323,8 @@ local function refuelVehicle(id)
 end
 
 -- as Commands.remove
-local function removeVehicle(id)
-	local v = requireVehicle(id)
+local function removeVehicle(id, script)
+	local v = requireVehicle(id, script)
 	local name = vehicleName(v)
 	v:permanentlyRemove()
 	audit("removed " .. name)
@@ -310,23 +352,27 @@ local function split(line)
 	return parts
 end
 
--- returns seq, { {id, action, args...} }
+-- returns seq, { {id, action, args...} }, complete: a batch counts only once its "END <seq>" line
+-- is there (bridge v3), so a file read while it was being written is not run half
 local function readRequests()
 	local reader = getFileReader(IN_FILE, false)
-	if not reader then return nil, nil end
-	local seq = nil
+	if not reader then return nil, nil, false end
+	local seqText = nil
 	local requests = {}
+	local complete = false
 	local line = reader:readLine()
 	while line do
-		if not seq then
-			seq = tonumber(line:match("^SEQ (%d+)"))
+		if not seqText then
+			seqText = line:match("^SEQ (%d+)")
+		elseif line == "END " .. seqText then
+			complete = true
 		elseif line ~= "" then
 			requests[#requests + 1] = split(line)
 		end
 		line = reader:readLine()
 	end
 	reader:close()
-	return seq, requests
+	return tonumber(seqText), requests, complete
 end
 
 local function handle(seq, requests)
@@ -339,11 +385,16 @@ local function handle(seq, requests)
 			reply.ok = false
 			reply.error = "unknown action " .. tostring(action)
 		else
-			local ok, result = pcall(handler, request[3], request[4], request[5])
+			local ok, result = pcall(handler, request[3], request[4], request[5], request[6])
 			reply.ok = ok
 			if ok then reply.data = result else reply.error = tostring(result) end
 		end
-		lines[#lines + 1] = encode(reply)
+		-- a reply that can't be encoded still answers, or SpiffoCON would wait for nothing
+		local encoded, line = pcall(encode, reply)
+		if not encoded then
+			line = encode({ id = id, ok = false, error = "the bridge could not encode its reply: " .. tostring(line) })
+		end
+		lines[#lines + 1] = line
 	end
 	lines[#lines + 1] = "END " .. seq
 	local writer = getFileWriter(OUT_FILE, true, false)
@@ -356,12 +407,13 @@ local function poll()
 	if now < nextPoll then return end
 	nextPoll = now + POLL_MS
 	local ok, err = pcall(function()
-		local seq, requests = readRequests()
+		local seq, requests, complete = readRequests()
 		if lastSeq == nil then
 			lastSeq = seq or 0 -- whatever was there before this start is old
 			return
 		end
-		if seq and seq > lastSeq then
+		-- any new number is a new batch: "greater than" would ignore a PC whose clock is behind
+		if seq and complete and seq ~= lastSeq then
 			lastSeq = seq
 			handle(seq, requests)
 		end
@@ -369,5 +421,8 @@ local function poll()
 	if not ok then print("SpiffoCON bridge: " .. tostring(err)) end
 end
 
+-- after a Lua reload the previous copy's poller must go, or every batch would run twice
+if SpiffoCONBridgePoll then Events.OnTick.Remove(SpiffoCONBridgePoll) end
+SpiffoCONBridgePoll = poll
 Events.OnTick.Add(poll)
 print("SpiffoCON bridge " .. VERSION .. " loaded")

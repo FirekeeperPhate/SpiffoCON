@@ -85,6 +85,7 @@ public sealed partial class Translations
         }
     }
 
-    [GeneratedRegex("([A-Za-z0-9_.\\-]+)\\s*=\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")]
+    // one entry per line: a value missing its closing quote must not swallow the next entries
+    [GeneratedRegex("([A-Za-z0-9_.\\-]+)[ \\t]*=[ \\t]*\"((?:[^\"\\\\\\r\\n]|\\\\.)*)\"")]
     private static partial Regex LegacyEntry();
 }

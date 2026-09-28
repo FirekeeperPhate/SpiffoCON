@@ -54,7 +54,43 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
 
     public string DataFolder { get; } = dataFolder;
 
-    string SftpCache => Path.Combine(DataFolder, "cache", "sftp");
+    /// <summary>Seconds before an unlisted item (no Steam date) is downloaded again.</summary>
+    const long UnlistedMaxAge = 7 * 24 * 3600;
+
+    string SftpCacheRoot => Path.Combine(DataFolder, "cache", "sftp");
+
+    /// <summary>
+    /// One copy per server (host, port, folder): two servers may run different versions of the
+    /// same mod, and each copy's bookkeeping must describe its own server.
+    /// </summary>
+    string SftpCacheFor(SftpSettings sftp, string remoteFolder)
+    {
+        var key = $"{sftp.Host.ToLowerInvariant()}|{sftp.Port}|{remoteFolder.TrimEnd('/')}";
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..16];
+        RemoveLegacySftpCache();
+        // "s-": a hash made only of digits must not look like a 0.9.4 folder to the cleanup
+        return Path.Combine(SftpCacheRoot, "s-" + hash.ToLowerInvariant());
+    }
+
+    /// <summary>Up to 0.9.4 the copies of all servers shared cache/sftp/&lt;workshop id&gt;.</summary>
+    void RemoveLegacySftpCache()
+    {
+        try
+        {
+            if (!Directory.Exists(SftpCacheRoot))
+                return;
+            foreach (var dir in Directory.EnumerateDirectories(SftpCacheRoot))
+                if (Path.GetFileName(dir).All(char.IsAsciiDigit))
+                    Directory.Delete(dir, recursive: true);
+            var oldState = Path.Combine(SftpCacheRoot, "items.json");
+            if (File.Exists(oldState))
+                File.Delete(oldState);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // leftovers only cost disk space
+        }
+    }
     string SteamCmdFolder => Path.Combine(DataFolder, "steamcmd");
     string SteamCmdStateFile => Path.Combine(DataFolder, "cache", "steamcmd-items.json");
 
@@ -95,27 +131,29 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
                 details = await new WorkshopApi(http).GetDetailsAsync(ids, ct).ConfigureAwait(false);
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
+            // offline, or a reply of an unexpected shape: titles and dates are only a bonus
             warnings.Add("Steam Workshop info unavailable: " + ex.Message);
         }
 
         // 1. SFTP: the files the server really runs
         SftpFetchStats? sftpStats = null;
+        bool sftpBusy = false;
         if (options.Sftp is not null && options.RemoteWorkshopFolder is not null && ids.Count > 0)
         {
             try
             {
-                var fetcher = new SftpModFetcher(options.Sftp, options.RemoteWorkshopFolder, SftpCache)
+                var fetcher = new SftpModFetcher(options.Sftp, options.RemoteWorkshopFolder, SftpCacheFor(options.Sftp, options.RemoteWorkshopFolder))
                 {
                     Language = options.Language,
                     GameVersion = options.GameVersion,
-                    SteamUpdated = details.Values.Where(d => d.Exists).ToDictionary(d => d.Id, d => d.Updated),
                 };
                 var fetched = await fetcher.FetchAsync(ids, progress, ct).ConfigureAwait(false);
                 foreach (var (id, folder) in fetched.Folders)
                     folders[id] = (ModFileSource.Sftp, folder);
                 sftpStats = fetched.Stats;
+                sftpBusy = fetched.Stats.Busy;
                 if (fetched.Error is { } error)
                     warnings.Add("SFTP stopped early: " + error.Message);
             }
@@ -139,7 +177,8 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
 
         // 3. SteamCMD: anonymous download into our cache
         var remaining = ids.Where(id => !folders.ContainsKey(id)).ToList();
-        if (options.UseSteamCmd && remaining.Count > 0)
+        // not while another window is copying the same mods: they are likely there in a moment
+        if (options.UseSteamCmd && remaining.Count > 0 && !sftpBusy)
             await UseSteamCmdAsync(remaining, details, folders, options, progress, warnings, ct).ConfigureAwait(false);
 
         // mods in the server's load order
@@ -149,8 +188,16 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
         {
             if (!folders.TryGetValue(id, out var f))
                 continue;
-            foreach (var mod in ModInfo.Scan(f.Folder, id, options.GameVersion))
-                mods.TryAdd(mod.Id, mod);
+            // one unreadable workshop item must not cost the catalog all the others
+            try
+            {
+                foreach (var mod in ModInfo.Scan(f.Folder, id, options.GameVersion))
+                    mods.TryAdd(mod.Id, mod);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                warnings.Add($"Workshop item {id} could not be read: {ex.Message}");
+            }
         }
 
         var builder = new CatalogBuilder(options.Language);
@@ -159,10 +206,19 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
         var missing = new List<string>();
         foreach (var modId in server.Mods)
         {
-            if (mods.TryGetValue(modId, out var mod))
-                builder.AddMod(mod);
-            else
+            if (!mods.TryGetValue(modId, out var mod))
+            {
                 missing.Add(modId);
+                continue;
+            }
+            try
+            {
+                builder.AddMod(mod);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                warnings.Add($"Mod {modId} could not be read: {ex.Message}");
+            }
         }
 
         var reports = ids.Select(id => new ModSourceReport(
@@ -190,8 +246,12 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
             var cached = Path.Combine(steamCmd.WorkshopFolder, id);
             bool have = Directory.Exists(cached) && state.ContainsKey(id);
             var info = details.GetValueOrDefault(id);
-            // without Steam info (offline) a cached copy is used as is
-            bool stale = info is { Exists: true } && (!state.TryGetValue(id, out var stamp) || stamp < info.Updated.ToUnixTimeSeconds());
+            // without Steam info (offline) a cached copy is used as is; an item Steam doesn't list
+            // publicly (unlisted, like the SpiffoCON Bridge) has no date, so it is fetched again weekly
+            state.TryGetValue(id, out var stamp);
+            bool stale = info is { Exists: true }
+                ? stamp < info.Updated.ToUnixTimeSeconds()
+                : info is { Exists: false } && DateTimeOffset.UtcNow.ToUnixTimeSeconds() - stamp > UnlistedMaxAge;
             if (have && !stale)
                 folders[id] = (ModFileSource.SteamCmd, cached);
             else
@@ -224,12 +284,22 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
                     : DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             }
             foreach (var id in toDownload.Where(id => !done.ContainsKey(id)))
-                warnings.Add($"SteamCMD could not download workshop item {id}.");
+                warnings.Add($"SteamCMD could not download workshop item {id}." + (UseOlderCopy(id) ? " Using the copy downloaded earlier." : ""));
             SaveState(state);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            warnings.Add("SteamCMD: " + ex.Message);
+            int older = toDownload.Count(id => !folders.ContainsKey(id) && UseOlderCopy(id));
+            warnings.Add("SteamCMD: " + ex.Message + (older > 0 ? $" Using {older} copies downloaded earlier." : ""));
+        }
+
+        bool UseOlderCopy(string id)
+        {
+            var cached = Path.Combine(steamCmd.WorkshopFolder, id);
+            if (!Directory.Exists(cached))
+                return false;
+            folders[id] = (ModFileSource.SteamCmd, cached);
+            return true;
         }
     }
 

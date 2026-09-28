@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- only for the tray icon of desktop notifications (NotifyIcon) -->
+    <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>SpiffoCON</RootNamespace>
     <AssemblyName>SpiffoCON</AssemblyName>
     <Version>0.9.4</Version>
@@ -17,6 +19,12 @@
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF names win: no WinForms/Drawing global usings -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

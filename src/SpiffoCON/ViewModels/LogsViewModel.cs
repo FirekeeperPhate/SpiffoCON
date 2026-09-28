@@ -56,6 +56,9 @@ public sealed partial class LogsViewModel : ObservableObject
     /// <summary>Raised after new lines were added (the view scrolls to the end).</summary>
     public event EventHandler? LinesAdded;
 
+    /// <summary>A chat message written since the log was opened (not the older lines read at opening).</summary>
+    public event EventHandler<IReadOnlyList<LogLine>>? ChatReceived;
+
     public ICollectionView View { get; }
 
     public ObservableCollection<string> Types { get; } = [];
@@ -127,7 +130,7 @@ public sealed partial class LogsViewModel : ObservableObject
             StatusText = "Looking for the Logs folder over SFTP...";
             try
             {
-                var probe = await SftpProbe.RunAsync(sftp);
+                var probe = await _main.ProbeAsync(sftp);
                 path = probe.LogFolders.OrderBy(p => p.Contains("/Zomboid/", StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(p => p.Length).FirstOrDefault();
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -232,29 +235,52 @@ public sealed partial class LogsViewModel : ObservableObject
         try
         {
             var lines = await tail.PollAsync();
-            if (!ReferenceEquals(tail, _tail))
-                return; // the type changed meanwhile
-            foreach (var line in lines)
-                _lines.Add(new LogLineItem(line));
-            while (_lines.Count > MaxLines)
-                _lines.RemoveAt(0);
-            StatusText = tail.CurrentFile is null
-                ? $"No {tail.Type} log yet."
-                : $"{tail.CurrentFile} · {(Follow ? "following" : "paused")} · {DateTime.Now:HH:mm:ss}";
-            if (lines.Count > 0)
-                LinesAdded?.Invoke(this, EventArgs.Empty);
-            // new kinds of log appear as the server writes them (admin, pvp...): look every 30 s
-            if (_folder is not null && (++_pollCount % 6 == 0 || lines.Any(l => l.Kind == LogLineKind.Marker)))
-                UpdateTypes(await _folder.ListAsync());
+            // the type changed meanwhile: these lines are not for the list (the new one is read below)
+            if (ReferenceEquals(tail, _tail))
+            {
+                Show(tail, lines);
+                // new kinds of log appear as the server writes them (admin, pvp...): look every 30 s
+                if (_folder is not null && (++_pollCount % 6 == 0 || lines.Any(l => l.Kind == LogLineKind.Marker)))
+                    UpdateTypes(await _folder.ListAsync());
+            }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            StatusText = $"Reading the log failed ({ex.Message}); retrying every {_timer.Interval.TotalSeconds:0} s.";
+            // a poll of a log (or folder) that was replaced meanwhile failing is not news
+            if (ReferenceEquals(tail, _tail))
+                StatusText = $"Reading the log failed ({ex.Message}); retrying every {_timer.Interval.TotalSeconds:0} s.";
         }
         finally
         {
             _polling = false;
         }
+        // the type or folder changed during this poll: read the new one now, not at the next tick
+        if (!ReferenceEquals(tail, _tail) && _tail is not null)
+            await PollAsync();
+    }
+
+    /// <summary>Chat older than this is not worth a notification (it was held back, not news).</summary>
+    static readonly TimeSpan RecentChat = TimeSpan.FromMinutes(2);
+
+    void Show(LogTail tail, IReadOnlyList<LogLine> lines)
+    {
+        foreach (var line in lines)
+            _lines.Add(new LogLineItem(line));
+        // news only: not the past read when a log is opened, nor lines held back while
+        // following was paused or the connection was down
+        if (!tail.LastPollWasBacklog)
+        {
+            var recent = lines.Where(l => l.Kind == LogLineKind.Chat && (l.Time is not { } t || DateTime.Now - t < RecentChat)).ToList();
+            if (recent.Count > 0)
+                ChatReceived?.Invoke(this, recent);
+        }
+        while (_lines.Count > MaxLines)
+            _lines.RemoveAt(0);
+        StatusText = tail.CurrentFile is null
+            ? $"No {tail.Type} log yet."
+            : $"{tail.CurrentFile} · {(Follow ? "following" : "paused")} · {DateTime.Now:HH:mm:ss}";
+        if (lines.Count > 0)
+            LinesAdded?.Invoke(this, EventArgs.Empty);
     }
 
     // ---- replying ----

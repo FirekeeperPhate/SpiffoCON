@@ -97,12 +97,12 @@ public sealed class SftpModFetcherTests : IDisposable
             $"\"AppWorkshop\"\n{{\n\t\"appid\"\t\t\"108600\"\n\t\"WorkshopItemsInstalled\"\n\t{{\n{body}\t}}\n}}\n");
     }
 
-    SftpModFetcher Fetcher(string? failOn = null, int connections = 4) =>
+    SftpModFetcher Fetcher(string? failOn = null, int connections = 4, TimeSpan? lockWait = null) =>
         new(_ =>
         {
             Interlocked.Increment(ref _counters.Connections);
             return Task.FromResult<IRemoteFileSystem>(new LocalRemoteFileSystem(_counters, failOn));
-        }, Workshop, Cache) { Connections = connections };
+        }, Workshop, Cache) { Connections = connections, LockWait = lockWait ?? TimeSpan.FromMinutes(2) };
 
     IEnumerable<string> Cached(string id) =>
         Directory.EnumerateFiles(Path.Combine(Cache, id), "*", SearchOption.AllDirectories)
@@ -187,24 +187,50 @@ public sealed class SftpModFetcherTests : IDisposable
     }
 
     [Fact]
-    public async Task Without_a_manifest_Steam_update_times_are_used()
+    public async Task Without_a_manifest_every_item_is_read_again()
     {
+        // Steam's date says what is published, not what the server has installed
         File.Delete(WorkshopManifest.PathFor(Workshop)!);
-        var steam = new Dictionary<string, DateTimeOffset> { ["111"] = DateTimeOffset.FromUnixTimeSeconds(5000) };
-        SftpModFetcher WithSteam() => new(_ => Task.FromResult<IRemoteFileSystem>(new LocalRemoteFileSystem(_counters)), Workshop, Cache)
-        {
-            SteamUpdated = steam,
-        };
-
-        var first = await WithSteam().FetchAsync(["111", "222"]);
+        var first = await Fetcher().FetchAsync(["111", "222"]);
         Assert.False(first.Stats.ManifestFound);
         _counters.Listed.Clear();
+        _counters.Downloads = 0;
 
-        var second = await WithSteam().FetchAsync(["111", "222"]);
-        // 111 is known to Steam and unchanged; 222 (e.g. unlisted) has no date and is checked again
-        Assert.Equal(1, second.Stats.UpToDate);
-        Assert.DoesNotContain(_counters.Listed, p => p.Contains("/111"));
-        Assert.Contains(_counters.Listed, p => p.Contains("/222"));
+        var second = await Fetcher().FetchAsync(["111", "222"]);
+        Assert.Equal(0, second.Stats.UpToDate);
+        Assert.Contains(_counters.Listed, p => p.Contains("/111"));
+        // listed again, but only the (missing) manifest was asked for: the cached files match
+        Assert.Equal(1, _counters.Downloads);
+        Assert.Equal(2, second.Folders.Count);
+    }
+
+    [Fact]
+    public async Task Keeps_the_version_folder_the_game_loads_even_when_nothing_is_copied_from_it()
+    {
+        // mod.info only at the root, content in common, the 42 folder holding only models
+        var mod = Path.Combine(Workshop, "333", "mods", "ModC");
+        Write(Path.Combine(mod, "mod.info"), "name=Mod C\nid=ModC");
+        Write(Path.Combine(mod, "common", "media", "scripts", "c.txt"), "module C { item Spoon { } }");
+        Write(Path.Combine(mod, "42", "media", "models_X", "spoon.fbx"), "mesh");
+
+        var result = await Fetcher().FetchAsync(["333"]);
+        var info = Assert.Single(ModInfo.Scan(result.Folders["333"], "333"));
+        Assert.False(info.LegacyLayout);
+        Assert.Equal(["common", "42"], info.ContentRoots.Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public async Task A_second_copy_of_the_same_cache_waits_its_turn()
+    {
+        Directory.CreateDirectory(Cache);
+        using (new FileStream(Path.Combine(Cache, ".lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            var busy = await Fetcher(lockWait: TimeSpan.FromMilliseconds(300)).FetchAsync(["111"]);
+            Assert.True(busy.Stats.Busy);
+            Assert.IsType<IOException>(busy.Error);
+            Assert.Empty(busy.Folders);
+        }
+        Assert.Null((await Fetcher().FetchAsync(["111"])).Error);
     }
 
     [Fact]

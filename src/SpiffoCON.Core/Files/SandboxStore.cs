@@ -30,7 +30,9 @@ static class SandboxText
         }
         catch (DecoderFallbackException)
         {
-            return (Encoding.Latin1.GetString(body), bom);
+            // the game writes UTF-8; reading another encoding and saving it back as UTF-8 would
+            // change characters nobody edited
+            throw new InvalidDataException("The file is not UTF-8 text, so SpiffoCON won't edit it (saving would change characters you didn't touch).");
         }
     }
 
@@ -96,13 +98,37 @@ public sealed class SftpSandboxStore(SftpSettings settings, string remotePath) :
             {
                 // atomic replace where the server supports posix-rename (OpenSSH does)
                 client.RenameFile(temp, RemotePath, isPosix: true);
+                return;
             }
             catch (Exception ex) when (ex is SshException or NotSupportedException)
             {
-                using (var upload = new MemoryStream(bytes))
-                    await client.UploadFileAsync(upload, RemotePath, ct).ConfigureAwait(false);
-                try { await client.DeleteFileAsync(temp, ct).ConfigureAwait(false); } catch (SshException) { }
+                // no posix-rename: fall through, never upload over the live file (a drop halfway
+                // would leave it truncated)
             }
+
+            // move the original aside, put the new one in place, then drop the original; if the
+            // second step fails, the original goes back
+            var old = RemotePath + ".spiffocon-old";
+            try { await client.DeleteFileAsync(old, ct).ConfigureAwait(false); } catch (SshException) { }
+            try
+            {
+                client.RenameFile(RemotePath, old);
+            }
+            catch (SshException)
+            {
+                try { await client.DeleteFileAsync(temp, ct).ConfigureAwait(false); } catch (SshException) { }
+                throw;
+            }
+            try
+            {
+                client.RenameFile(temp, RemotePath);
+            }
+            catch (SshException)
+            {
+                try { client.RenameFile(old, RemotePath); } catch (SshException) { }
+                throw;
+            }
+            try { await client.DeleteFileAsync(old, ct).ConfigureAwait(false); } catch (SshException) { }
         }
     }
 }

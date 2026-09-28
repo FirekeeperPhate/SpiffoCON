@@ -64,13 +64,14 @@ public sealed partial record ModInfo(
             return null;
 
         var values = ParseInfo(File.ReadAllLines(infoFile));
-        var id = values.GetValueOrDefault("id") ?? Path.GetFileName(modFolder);
+        // an empty "id=" or "name=" counts as missing
+        var id = values.GetValueOrDefault("id") is { Length: > 0 } given ? given : Path.GetFileName(modFolder);
         var requires = (values.GetValueOrDefault("require") ?? "")
             .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(NormalizeId)
             .Where(r => r.Length > 0)
             .ToList();
-        return new ModInfo(NormalizeId(id), values.GetValueOrDefault("name") ?? id, modFolder, workshopId, roots, requires, legacy);
+        return new ModInfo(NormalizeId(id), values.GetValueOrDefault("name") is { Length: > 0 } name ? name : id, modFolder, workshopId, roots, requires, legacy);
     }
 
     /// <summary>B42 writes mod ids with a leading backslash in Mods= and require=.</summary>
@@ -94,7 +95,9 @@ public sealed partial record ModInfo(
         {
             if (!VersionName().IsMatch(name))
                 continue;
-            var version = Version.Parse(name.Contains('.') ? name : name + ".0");
+            // TryParse: a folder like "42.99999999999" overflows
+            if (!Version.TryParse(name.Contains('.') ? name : name + ".0", out var version))
+                continue;
             if (version.Major < 42)
                 continue;
             if (gameVersion is not null && version > gameVersion)

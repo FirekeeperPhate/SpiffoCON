@@ -31,27 +31,35 @@ public sealed class ScriptBlock(string type, string name)
 /// </summary>
 public static class ScriptParser
 {
+    /// <summary>Deeper blocks are read as text: a mod file of 20 000 '{' must not overflow the stack.</summary>
+    const int MaxDepth = 256;
+
     public static ScriptBlock Parse(string text)
     {
         var root = new ScriptBlock("", "");
         int pos = 0;
-        ParseBody(StripComments(text), ref pos, root);
+        // one kind of line end (a file may use CR alone), and no stray BOM from joined files
+        text = text.Replace("\r\n", "\n").Replace('\r', '\n').Replace('﻿', ' ');
+        ParseBody(StripComments(text), ref pos, root, 0);
         return root;
     }
 
-    static void ParseBody(string text, ref int pos, ScriptBlock block)
+    static void ParseBody(string text, ref int pos, ScriptBlock block, int depth)
     {
         var buffer = new StringBuilder();
+        // kept as a flag: searching the buffer at every line end is quadratic on long lines
+        bool hasEquals = false;
         while (pos < text.Length)
         {
             char c = text[pos++];
             switch (c)
             {
-                case '{':
+                case '{' when depth < MaxDepth:
                     var (type, name) = SplitHeader(buffer.ToString());
                     buffer.Clear();
+                    hasEquals = false;
                     var child = new ScriptBlock(type, name);
-                    ParseBody(text, ref pos, child);
+                    ParseBody(text, ref pos, child, depth + 1);
                     block.Children.Add(child);
                     break;
                 case '}':
@@ -59,20 +67,26 @@ public static class ScriptParser
                     return;
                 case ',':
                     Flush(buffer, block);
+                    hasEquals = false;
                     break;
                 case '\n':
                     // a line without a trailing comma still ends a "key = value" entry,
                     // but a header ("item Axe") continues until its '{' on the next line
-                    if (buffer.ToString().Contains('='))
+                    if (hasEquals)
+                    {
                         Flush(buffer, block);
+                        hasEquals = false;
+                    }
                     else
+                    {
                         buffer.Append(' ');
+                    }
                     break;
-                case '\r':
                 case '\t':
                     buffer.Append(' ');
                     break;
                 default:
+                    hasEquals |= c == '=';
                     buffer.Append(c);
                     break;
             }
@@ -113,8 +127,27 @@ public static class ScriptParser
         {
             if (text[i] == '/' && i + 1 < text.Length && text[i + 1] == '*')
             {
-                int end = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
-                i = end < 0 ? text.Length : end + 2;
+                // nested: commenting out a block that already holds a comment is common in mods,
+                // and the game ends such a comment at its matching "*/"
+                int depth = 1;
+                i += 2;
+                while (i < text.Length && depth > 0)
+                {
+                    if (text[i] == '/' && i + 1 < text.Length && text[i + 1] == '*')
+                    {
+                        depth++;
+                        i += 2;
+                    }
+                    else if (text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/')
+                    {
+                        depth--;
+                        i += 2;
+                    }
+                    else
+                    {
+                        i++;
+                    }
+                }
                 continue;
             }
             if (lineStart && text[i] == '/' && i + 1 < text.Length && text[i + 1] == '/')

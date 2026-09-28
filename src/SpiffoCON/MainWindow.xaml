@@ -58,7 +58,9 @@
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
             <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
             <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
-            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+            <!-- Standard, not Recycling: a recycled enum ComboBox moved to another option wrote its
+                 index into it (options changed without being touched, seen on Sandbox pages) -->
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Standard" />
             <Setter Property="ItemContainerStyle">
                 <Setter.Value>
                     <Style TargetType="ListBoxItem">
@@ -135,7 +137,7 @@
         <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="16,12,12,12">
             <StackPanel>
                 <TextBlock Text="Server" Style="{StaticResource SectionTitle}" />
-                <StackPanel IsEnabled="{Binding CanEditConnection}">
+                <StackPanel IsEnabled="{Binding CanEditConnection}" KeyDown="ConnectionFields_KeyDown">
                     <ComboBox ItemsSource="{Binding Servers}" SelectedItem="{Binding SelectedServer}"
                               DisplayMemberPath="DisplayName" HorizontalAlignment="Stretch" Margin="0,6,0,0"
                               ToolTip="Saved servers (disconnect to switch)" />
@@ -159,8 +161,8 @@
                 </StackPanel>
 
                 <Grid Margin="0,12,0,0">
+                    <!-- no IsDefault: Enter in any search box of the tabs would connect; the fields above handle it -->
                     <Button Content="Connect" Command="{Binding ConnectCommand}" HorizontalAlignment="Stretch"
-                            IsDefault="True"
                             Visibility="{Binding CanEditConnection, Converter={StaticResource BoolToVisibility}}"
                             x:Name="ConnectButton" />
                     <Button Content="Disconnect" Command="{Binding DisconnectCommand}" HorizontalAlignment="Stretch"
@@ -685,6 +687,9 @@
                                 ToolTip="Take the base-game item icons from your Project Zomboid install (the server has none)" />
                         <ProgressBar DockPanel.Dock="Left" Width="80" Height="4" Margin="12,0,0,0" IsIndeterminate="True"
                                      Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}" />
+                        <Button DockPanel.Dock="Left" Content="Cancel" Command="{Binding CancelLoadCommand}" Margin="8,0,0,0"
+                                Padding="8,2" MinHeight="0" FontSize="12"
+                                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}" />
                         <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" Opacity="0.85" />
                     </DockPanel>
 
@@ -797,6 +802,17 @@
                                         <TextBox Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" />
                                         <Button Content="Give item" Command="{Binding GiveItemCommand}" Margin="0,12,0,0" HorizontalAlignment="Stretch"
                                                 IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        <TextBlock Text="Kit" Style="{StaticResource FieldLabel}" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox ItemsSource="{Binding Kits}" SelectedItem="{Binding KitTarget}" DisplayMemberPath="Name"
+                                                      ToolTip="The kit to add to (none chosen: a new kit)" />
+                                            <Button Grid.Column="1" Content="Add to kit" Command="{Binding AddToKitCommand}" Margin="6,0,0,0"
+                                                    ToolTip="Add this item, in the quantity above, to the kit" />
+                                        </Grid>
                                     </StackPanel>
                                     <Button Content="Spawn vehicle next to player" Command="{Binding SpawnVehicleCommand}" Margin="0,12,0,0"
                                             HorizontalAlignment="Stretch"
@@ -823,6 +839,109 @@
                             </ListView>
                         </StackPanel>
                     </Expander>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Kits" DataContext="{Binding Kits}">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="260" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- kits -->
+                    <DockPanel Margin="0,0,10,0">
+                        <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,8,0,0">
+                            <Button Content="New kit" Command="{Binding NewKitCommand}" HorizontalAlignment="Stretch" Margin="0,0,3,0" />
+                            <Button Content="Delete" Command="{Binding DeleteKitCommand}" HorizontalAlignment="Stretch" Margin="3,0,0,0"
+                                    IsEnabled="{Binding HasKit}" />
+                        </UniformGrid>
+                        <TextBlock DockPanel.Dock="Top" Text="Kits" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <ListBox ItemsSource="{Binding Kits}" SelectedItem="{Binding SelectedKit}" HorizontalContentAlignment="Stretch">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:KitView}">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" Opacity="0.5" FontSize="12" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+
+                    <!-- contents -->
+                    <DockPanel Grid.Column="1" IsEnabled="{Binding HasKit}">
+                        <StackPanel DockPanel.Dock="Top">
+                            <TextBlock Text="Name" Style="{StaticResource FieldLabel}" Margin="0" />
+                            <TextBox Text="{Binding SelectedKit.Name, UpdateSourceTrigger=PropertyChanged}" FontSize="15" />
+                            <TextBlock Text="Add items from the Catalog tab: select an item, set the quantity, then Add to kit. Kits are shared by all your servers."
+                                       Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,8" />
+                        </StackPanel>
+                        <ListView ItemsSource="{Binding SelectedKit.Items}" ItemContainerStyle="{StaticResource GridRow}">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Width="40">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Grid Width="24" Height="24">
+                                                    <Image Source="{Binding IconPath, Converter={StaticResource Icon}}" RenderOptions.BitmapScalingMode="HighQuality" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Item" Width="180">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Name}" />
+                                                    <TextBlock Text="not in this server's catalog" FontSize="11" Foreground="#F2C14E"
+                                                               Visibility="{Binding Known, Converter={StaticResource InverseBoolToVisibility}}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="ID" Width="170">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding FullType}" FontFamily="{StaticResource MonoFont}" FontSize="12" Opacity="0.8" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Qty" Width="74">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBox Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}" Width="60" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Width="50">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Content="&#xE711;" FontFamily="{StaticResource IconFont}" ToolTip="Remove from the kit"
+                                                        Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                        CommandParameter="{Binding}" Padding="6,2" MinHeight="0" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+
+                    <!-- give -->
+                    <Border Grid.Column="2" Style="{StaticResource Card}" Margin="10,0,0,0" VerticalAlignment="Top"
+                            IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <StackPanel IsEnabled="{Binding HasKit}">
+                            <TextBlock Text="Give the kit" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="Player" Style="{StaticResource FieldLabel}" />
+                            <ComboBox IsEditable="True" ItemsSource="{Binding OnlinePlayers}" Text="{Binding Player, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEnabled="{Binding ToPlayer}" />
+                            <CheckBox Content="To every online player instead" IsChecked="{Binding Everyone}" Margin="0,8,0,0" />
+                            <Button Content="Give" Command="{Binding GiveCommand}" HorizontalAlignment="Stretch" Margin="0,12,0,0" />
+                            <TextBlock Text="{Binding Result}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </TabItem>
 
@@ -971,7 +1090,7 @@
                                 Margin="6,0,0,0" ToolTip="Clear the list (the log file is not touched)" />
                     </Grid>
 
-                    <ListBox Grid.Row="2" x:Name="LogList" ItemsSource="{Binding View}" FontSize="13"
+                    <ListBox Grid.Row="2" x:Name="LogList" ItemsSource="{Binding View}" FontSize="13" IsSynchronizedWithCurrentItem="False"
                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemContainerStyle>
@@ -1252,6 +1371,110 @@
                         <Button Grid.Column="2" Content="Send to all players" Command="{Binding SendMessageCommand}"
                                 IsEnabled="{Binding IsSessionActive}" MinWidth="140" />
                     </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Maintenance" DataContext="{Binding Maintenance}">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="370" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- mod updates -->
+                    <Border Style="{StaticResource Card}" VerticalAlignment="Stretch" Margin="0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Check now" Command="{Binding CheckUpdatesCommand}"
+                                            IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                    <ProgressBar DockPanel.Dock="Right" Width="60" Height="4" Margin="0,0,10,0" IsIndeterminate="True"
+                                                 Visibility="{Binding IsChecking, Converter={StaticResource BoolToVisibility}}" />
+                                    <TextBlock Text="Mod updates" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding UpdatesText}" TextWrapping="Wrap" Margin="0,8,0,8" />
+                            </StackPanel>
+                            <ListView ItemsSource="{Binding Mods}" ItemContainerStyle="{StaticResource GridRow}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Workshop item" Width="220">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding WorkshopId}" />
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="State" Width="128">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock x:Name="State" Text="{Binding StateText}" />
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding NeedsAttention}" Value="True">
+                                                            <Setter TargetName="State" Property="Foreground" Value="#F2C14E" />
+                                                            <Setter TargetName="State" Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Server's copy" Width="112" DisplayMemberBinding="{Binding OnServer}" />
+                                        <GridViewColumn Header="On Steam" Width="112" DisplayMemberBinding="{Binding OnSteam}" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </DockPanel>
+                    </Border>
+
+                    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <!-- restart -->
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,10"
+                                    IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <StackPanel>
+                                    <TextBlock Text="Restart with a countdown" Style="{StaticResource SectionTitle}" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" IsEnabled="{Binding IsIdle}">
+                                        <TextBlock Text="In" VerticalAlignment="Center" />
+                                        <ComboBox ItemsSource="{Binding MinuteChoices}" SelectedItem="{Binding RestartMinutes}" Margin="8,0" MinWidth="70" />
+                                        <TextBlock Text="minutes" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBlock Text="Warning (in chat, as time runs out)" Style="{StaticResource FieldLabel}" />
+                                    <TextBox Text="{Binding RestartMessage, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" IsEnabled="{Binding IsIdle}"
+                                             ToolTip="{}{time} becomes &quot;5 minutes&quot;, &quot;30 seconds&quot;...; &lt;RGB:r,g,b&gt; sets the color" />
+                                    <TextBlock Text="{}{time} becomes the time left. At zero: save, then quit; starting the server again is up to the host."
+                                               Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                    <WrapPanel Margin="0,10,0,0">
+                                        <Button Content="Start countdown" Command="{Binding StartRestartCommand}" Style="{StaticResource PairButton}"
+                                                Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}" />
+                                        <Button Content="Call it off" Command="{Binding CancelRestartCommand}" Style="{StaticResource PairButton}"
+                                                Visibility="{Binding IsCountingDown, Converter={StaticResource BoolToVisibility}}" />
+                                    </WrapPanel>
+                                    <TextBlock Text="{Binding CountdownText}" FontSize="28" FontWeight="SemiBold" Foreground="#F2C14E" Margin="0,8,0,0"
+                                               Visibility="{Binding IsCountingDown, Converter={StaticResource BoolToVisibility}}" />
+                                    <TextBlock Text="{Binding RestartStatus}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- notifications -->
+                            <Border Style="{StaticResource Card}" Margin="0"
+                                    DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <StackPanel>
+                                    <TextBlock Text="Desktop notifications" Style="{StaticResource SectionTitle}" />
+                                    <CheckBox Content="Players joining and leaving" IsChecked="{Binding NotifyPlayerJoins}" Margin="0,8,0,0"
+                                              ToolTip="Seen with the online list, refreshed every 30 s while connected" />
+                                    <CheckBox Content="Chat messages containing" IsChecked="{Binding NotifyChat}" Margin="0,6,0,0"
+                                              ToolTip="Needs the Logs tab following the server's chat log" />
+                                    <TextBox Text="{Binding NotifyChatWords, UpdateSourceTrigger=PropertyChanged}" Margin="28,4,0,0" IsEnabled="{Binding NotifyChat}"
+                                             ToolTip="Words separated by commas; empty: every message" />
+                                    <TextBlock Text="Words separated by commas, empty for every message. Chat comes from the Logs tab, while it follows the chat log."
+                                               Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="28,4,0,0" />
+                                    <CheckBox Content="Connection lost and server back" IsChecked="{Binding NotifyConnection}" Margin="0,6,0,0" />
+                                    <CheckBox Content="Only while SpiffoCON is in the background" IsChecked="{Binding NotifyOnlyWhenInactive}" Margin="0,6,0,0" />
+                                    <Button Content="Try one" Command="{Binding TestNotificationCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </TabItem>
 

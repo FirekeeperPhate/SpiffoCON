@@ -82,18 +82,24 @@ var
   FindRec: TFindRec;
 begin
   App := ExpandConstant('{app}\');
-  { Only a folder this setup installed before }
+  { Only a folder this setup installed before, and only one named for it: a folder chosen by
+    hand (say D:\Tools) may hold other programs' files }
   if (WizardForm.PrevAppDir = '') or
      (CompareText(AddBackslash(WizardForm.PrevAppDir), App) <> 0) or
-     not FileExists(App + '{#AppExe}') then
+     not FileExists(App + '{#AppExe}') or
+     (CompareText(ExtractFileName(RemoveBackslash(App)), 'SpiffoCON') <> 0) then
     Exit;
   if FindFirst(App + '*', FindRec) then
   begin
     try
       repeat
         Name := FindRec.Name;
+        { program files only: runtime and app DLLs, exes, their .json configs, the license }
         if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0) and
-           (CompareText(Copy(Name, 1, 5), 'unins') <> 0) then
+           (CompareText(Copy(Name, 1, 5), 'unins') <> 0) and
+           ((CompareText(ExtractFileExt(Name), '.dll') = 0) or (CompareText(ExtractFileExt(Name), '.exe') = 0) or
+            (CompareText(ExtractFileExt(Name), '.json') = 0) or (CompareText(ExtractFileExt(Name), '.pdb') = 0) or
+            (CompareText(Name, 'LICENSE.txt') = 0)) then
           DeleteFile(App + Name);
       until not FindNext(FindRec);
     finally

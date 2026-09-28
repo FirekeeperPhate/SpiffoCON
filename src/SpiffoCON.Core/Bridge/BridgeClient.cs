@@ -54,9 +54,13 @@ public sealed class SftpBridgeFiles(SftpSettings settings, string remoteFolder) 
     {
         if (_client is { IsConnected: true })
             return _client;
+        // forget the old client before reconnecting: if this attempt fails, the next one must
+        // not find a disposed client (IsConnected throws then) and never try again
         _client?.Dispose();
-        (_client, _) = await SftpProbe.ConnectAsync(settings, ct).ConfigureAwait(false);
-        return _client;
+        _client = null;
+        var (client, _) = await SftpProbe.ConnectAsync(settings, ct).ConfigureAwait(false);
+        _client = client;
+        return client;
     }
 
     public async Task<string?> ReadAsync(string name, CancellationToken ct = default)
@@ -87,8 +91,11 @@ public sealed class SftpBridgeFiles(SftpSettings settings, string remoteFolder) 
         }
         catch (Exception ex) when (ex is SshException or NotSupportedException)
         {
+            // no posix-rename: a request file is small and rewritten every time, so an in-place
+            // upload is acceptable here (the SEQ/END framing rejects a half-read one)
             using (var upload = new MemoryStream(bytes))
                 await client.UploadFileAsync(upload, Remote(name), ct).ConfigureAwait(false);
+            try { await client.DeleteFileAsync(temp, ct).ConfigureAwait(false); } catch (SshException) { }
         }
     }
 
@@ -105,7 +112,7 @@ public sealed record BridgeReply(string Id, bool Ok, JsonElement Data, string? E
 /// spiffocon_out.txt ("SEQ n", one JSON reply per line, "END n"). Sequence numbers are
 /// millisecond timestamps, so they keep growing across app restarts.
 /// </summary>
-public sealed class BridgeClient(IBridgeFiles files)
+public sealed partial class BridgeClient(IBridgeFiles files)
 {
     public const string InFile = "spiffocon_in.txt";
     public const string OutFile = "spiffocon_out.txt";
@@ -133,6 +140,8 @@ public sealed class BridgeClient(IBridgeFiles files)
             var sb = new StringBuilder().Append("SEQ ").Append(seq).Append('\n');
             for (int i = 0; i < requests.Count; i++)
                 sb.Append(i + 1).Append('\t').Append(string.Join('\t', requests[i].Args.Prepend(requests[i].Action))).Append('\n');
+            // bridge v3 runs a batch only once it sees its END line: never half a request file
+            sb.Append("END ").Append(seq).Append('\n');
             await Files.WriteAsync(InFile, sb.ToString(), ct).ConfigureAwait(false);
 
             var deadline = DateTime.UtcNow + Timeout;
@@ -142,6 +151,17 @@ public sealed class BridgeClient(IBridgeFiles files)
                 var text = await Files.ReadAsync(OutFile, ct).ConfigureAwait(false);
                 if (text is not null && TryParse(text, seq, out var replies))
                     return replies;
+            }
+            // an empty batch replaces the unanswered one: a paused server must not run it much later,
+            // after the user was told it failed (and maybe tried again)
+            try
+            {
+                long cancel = Math.Max(_lastSeq + 1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                _lastSeq = cancel;
+                await Files.WriteAsync(InFile, $"SEQ {cancel}\nEND {cancel}\n", ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
             }
             throw new BridgeException(
                 $"No reply from the bridge within {Timeout.TotalSeconds:0} s. Check that the SpiffoCON Bridge mod is in the server's mod list " +
@@ -161,22 +181,35 @@ public sealed class BridgeClient(IBridgeFiles files)
         return reply.Data;
     }
 
+    [System.Text.RegularExpressions.GeneratedRegex(@"""id""\s*:\s*""?([^"",}]+)")]
+    private static partial System.Text.RegularExpressions.Regex ReplyId();
+
     static bool TryParse(string text, long seq, out IReadOnlyList<BridgeReply> replies)
     {
         replies = [];
-        var lines = text.ReplaceLineEndings("\n").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        // '\n' only: ReplaceLineEndings would also break a reply at a U+2028 inside a name
+        var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0).ToArray();
         if (lines.Length < 2 || lines[0] != $"SEQ {seq}" || lines[^1] != $"END {seq}")
             return false;
         var list = new List<BridgeReply>();
         foreach (var line in lines[1..^1])
         {
-            using var doc = JsonDocument.Parse(line);
-            var root = doc.RootElement;
-            list.Add(new BridgeReply(
-                root.GetProperty("id").ToString(),
-                root.TryGetProperty("ok", out var ok) && ok.GetBoolean(),
-                root.TryGetProperty("data", out var data) ? data.Clone() : default,
-                root.TryGetProperty("error", out var error) ? error.GetString() : null));
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                list.Add(new BridgeReply(
+                    root.GetProperty("id").ToString(),
+                    root.TryGetProperty("ok", out var ok) && ok.GetBoolean(),
+                    root.TryGetProperty("data", out var data) ? data.Clone() : default,
+                    root.TryGetProperty("error", out var error) ? error.GetString() : null));
+            }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+            {
+                // one unreadable reply (bridge v2 left control characters unescaped) fails only its request
+                var id = ReplyId().Match(line) is { Success: true } m ? m.Groups[1].Value : "?";
+                list.Add(new BridgeReply(id, false, default, "The bridge sent a reply SpiffoCON could not read: " + ex.Message));
+            }
         }
         replies = list;
         return true;
@@ -211,17 +244,28 @@ public sealed class BridgeClient(IBridgeFiles files)
     /// Removes up to <paramref name="count"/> items of a type (0 = all), bags included. Worn clothes
     /// and attached items are left alone: they are counted in SkippedWorn.
     /// </summary>
-    public async Task<(int Removed, int SkippedWorn)> RemoveItemAsync(string username, string fullType, int count)
+    /// <param name="container">Only items listed under this container ("Inventory > Backpack"); bridge v3.</param>
+    public async Task<(int Removed, int SkippedWorn)> RemoveItemAsync(string username, string fullType, int count, string? container = null)
     {
-        var data = await SendAsync("removeitem", username, fullType, Math.Max(0, count).ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false);
+        var countText = Math.Max(0, count).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var data = await (string.IsNullOrEmpty(container)
+            ? SendAsync("removeitem", username, fullType, countText)
+            : SendAsync("removeitem", username, fullType, countText, container)).ConfigureAwait(false);
         return (data.GetProperty("removed").GetInt32(), data.TryGetProperty("skippedWorn", out var s) ? s.GetInt32() : 0);
     }
 
-    public Task RepairVehicleAsync(int id) => SendAsync("repairvehicle", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    // the script name makes bridge v3 refuse another vehicle that got the same runtime id meanwhile
+    public Task RepairVehicleAsync(int id, string? script = null) => VehicleAsync("repairvehicle", id, script);
 
-    public Task RefuelVehicleAsync(int id) => SendAsync("refuelvehicle", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    public Task RefuelVehicleAsync(int id, string? script = null) => VehicleAsync("refuelvehicle", id, script);
 
-    public Task RemoveVehicleAsync(int id) => SendAsync("removevehicle", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    public Task RemoveVehicleAsync(int id, string? script = null) => VehicleAsync("removevehicle", id, script);
+
+    Task VehicleAsync(string action, int id, string? script)
+    {
+        var idText = id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return string.IsNullOrEmpty(script) ? SendAsync(action, idText) : SendAsync(action, idText, script);
+    }
 
     /// <summary>World, players and vehicles in one round trip.</summary>
     public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default)

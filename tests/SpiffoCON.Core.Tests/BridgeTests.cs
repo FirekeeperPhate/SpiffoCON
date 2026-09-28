@@ -28,11 +28,12 @@ public sealed class BridgeTests : IDisposable
                     continue;
                 string[] lines;
                 try { lines = File.ReadAllLines(path); } catch (IOException) { continue; }
-                if (lines.Length == 0 || !long.TryParse(lines[0]["SEQ ".Length..], out var seq) || seq <= last)
+                // like bridge v3: a batch counts once its END line is there, and END is not a request
+                if (lines.Length == 0 || !long.TryParse(lines[0]["SEQ ".Length..], out var seq) || seq == last || !lines.Contains($"END {seq}"))
                     continue;
                 last = seq;
                 var output = new List<string> { $"SEQ {seq}" };
-                foreach (var line in lines.Skip(1).Where(l => l.Length > 0))
+                foreach (var line in lines.Skip(1).Where(l => l.Length > 0 && l != $"END {seq}"))
                 {
                     var parts = line.Split('\t');
                     output.Add(reply(parts[1], parts[2..]).Replace("$ID", parts[0]));

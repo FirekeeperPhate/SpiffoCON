@@ -100,12 +100,29 @@ public sealed class ServerProfile : INotifyPropertyChanged
     void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
+/// <summary>Which desktop notifications to show (for every server).</summary>
+public sealed class NotificationSettings
+{
+    public bool PlayerJoins { get; set; } = true;
+
+    public bool Chat { get; set; } = true;
+
+    /// <summary>Words that make a chat message worth a notification; empty: every message.</summary>
+    public string ChatWords { get; set; } = "admin";
+
+    public bool Connection { get; set; } = true;
+
+    public bool OnlyWhenInactive { get; set; } = true;
+}
+
 /// <summary>The saved servers and the one in use.</summary>
 public sealed class ServerBook
 {
     public string? Selected { get; set; }
 
     public ObservableCollection<ServerProfile> Servers { get; set; } = [];
+
+    public NotificationSettings Notifications { get; set; } = new();
 
     /// <summary>Passwords typed in this session, by server id, also when they are not remembered on disk.</summary>
     [JsonIgnore]
@@ -143,23 +160,50 @@ public static class ProfileStore
     /// <summary>The single profile of versions up to 0.9.2; read once, then left alone.</summary>
     static string LegacyPath => Path.Combine(Folder, "profile.json");
 
+    /// <summary>Why the server list could not be read at start-up (null: it could).</summary>
+    public static string? LoadProblem { get; private set; }
+
+    /// <summary>The list exists but could not be read (locked...): saving would wipe it.</summary>
+    static bool _readOnly;
+
     public static ServerBook Load()
     {
+        if (File.Exists(BookPath))
+        {
+            try
+            {
+                var book = JsonSerializer.Deserialize<ServerBook>(File.ReadAllText(BookPath)) ?? new();
+                // hand edits may leave nulls behind
+                book.Servers ??= [];
+                book.Notifications ??= new();
+                foreach (var bad in book.Servers.Where(s => s is null || string.IsNullOrEmpty(s.Id)).ToList())
+                    book.Servers.Remove(bad);
+                return book;
+            }
+            catch (JsonException)
+            {
+                if (SetAside(BookPath) is { } aside)
+                    LoadProblem = $"The server list could not be read and was moved to {Path.GetFileName(aside)}; starting with an empty list.";
+                else
+                {
+                    _readOnly = true;
+                    LoadProblem = "The server list could not be read; it is not overwritten this time.";
+                }
+                return new();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _readOnly = true;
+                LoadProblem = $"The server list could not be read ({ex.Message}); it is not overwritten this time. Restart SpiffoCON.";
+                return new();
+            }
+        }
         try
         {
-            if (File.Exists(BookPath))
+            if (File.Exists(LegacyPath) && JsonSerializer.Deserialize<ServerProfile>(File.ReadAllText(LegacyPath)) is { } old)
             {
-                var book = JsonSerializer.Deserialize<ServerBook>(File.ReadAllText(BookPath));
-                if (book is not null)
-                {
-                    // drop entries a hand edit may have broken
-                    foreach (var bad in book.Servers.Where(s => s is null || string.IsNullOrEmpty(s.Id)).ToList())
-                        book.Servers.Remove(bad);
-                    return book;
-                }
-            }
-            else if (File.Exists(LegacyPath) && JsonSerializer.Deserialize<ServerProfile>(File.ReadAllText(LegacyPath)) is { } old)
-            {
+                old.Name ??= "";
+                old.Host ??= "";
                 if (old.Name.Length == 0)
                     old.Name = old.Host.Length > 0 ? old.Host : "My server";
                 return new ServerBook { Selected = old.Id, Servers = [old] };
@@ -167,12 +211,30 @@ public static class ProfileStore
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
+            // the old profile stays where it is
         }
         return new();
     }
 
+    /// <summary>Renames a file that can't be read to name.bad-yyyyMMdd-HHmmss; returns the new path.</summary>
+    internal static string? SetAside(string path)
+    {
+        var aside = $"{path}.bad-{DateTime.Now:yyyyMMdd-HHmmss}";
+        try
+        {
+            File.Move(path, aside);
+            return aside;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public static void Save(ServerBook book)
     {
+        if (_readOnly)
+            throw new IOException("the server list could not be read at start-up, so it is not overwritten");
         Directory.CreateDirectory(Folder);
         var temp = BookPath + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(book, Json));

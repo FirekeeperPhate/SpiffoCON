@@ -154,14 +154,19 @@ public static partial class ServerOptionCatalog
     /// </summary>
     public static ChangeResult InterpretChange(string reply, string sentValue)
     {
-        if (reply.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase))
-            return new ChangeResult(ChangeOutcome.UnknownOption, null);
+        // the success form first: a text value may itself contain "doesn't exist"
         var m = ChangeReply().Match(reply);
         if (!m.Success)
-            return new ChangeResult(ChangeOutcome.Unconfirmed, null);
-        var now = EnumLabel().Replace(m.Groups[1].Value.TrimEnd('\r', '\n'), "");
+            return new ChangeResult(
+                reply.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase) ? ChangeOutcome.UnknownOption : ChangeOutcome.Unconfirmed, null);
+        var now = m.Groups[1].Value.TrimEnd('\r', '\n');
         // the command quoting turns " into ', so compare the same way
         var expected = sentValue.Replace('"', '\'');
+        if (SameValue(now, expected))
+            return new ChangeResult(ChangeOutcome.Applied, now);
+        // enums answer "2(kick)": only a number followed by a label is one (a text may end in ")")
+        if (EnumLabel().Match(now) is { Success: true } label)
+            now = label.Groups[1].Value;
         return new ChangeResult(SameValue(now, expected) ? ChangeOutcome.Applied : ChangeOutcome.Rejected, now);
     }
 
@@ -191,7 +196,7 @@ public static partial class ServerOptionCatalog
     [GeneratedRegex(@"is now : ?(.*)$", RegexOptions.Singleline)]
     private static partial Regex ChangeReply();
 
-    [GeneratedRegex(@"\(.*\)$")]
+    [GeneratedRegex(@"^(-?\d+)\(.*\)$")]
     private static partial Regex EnumLabel();
 
     [GeneratedRegex(@" ?<LINE> ?")]

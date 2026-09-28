@@ -86,28 +86,28 @@ public static class PlayerCommands
         $"addxp {Q(player)} {perkId}={amount}" + (useMultiplier ? " -true" : "");
 
     /// <summary>"Item Base.Axe Added in Rick's inventory." / "No such user".</summary>
-    public static CommandOutcome InterpretAddItem(string reply)
+    public static CommandOutcome InterpretAddItem(string reply, string? player = null)
     {
         if (reply.Contains("Added in", StringComparison.OrdinalIgnoreCase))
             return CommandOutcome.Success;
-        return IsError(reply) ? CommandOutcome.Failed : CommandOutcome.Unconfirmed;
+        return IsError(reply, player) ? CommandOutcome.Failed : CommandOutcome.Unconfirmed;
     }
 
     /// <summary>"Vehicle spawned" / "Unknown vehicle script ..." / "User ... not found".</summary>
-    public static CommandOutcome InterpretAddVehicle(string reply)
+    public static CommandOutcome InterpretAddVehicle(string reply, string? player = null)
     {
         if (reply.Contains("Vehicle spawned", StringComparison.OrdinalIgnoreCase))
             return CommandOutcome.Success;
-        return IsError(reply) ? CommandOutcome.Failed : CommandOutcome.Unconfirmed;
+        return IsError(reply, player) ? CommandOutcome.Failed : CommandOutcome.Unconfirmed;
     }
 
     /// <summary>
     /// For the other player commands: their success texts vary ("User rj kicked.", "User rj is now
     /// invincible."), their failures share a few phrases taken from the server code.
     /// </summary>
-    public static CommandOutcome Interpret(string reply)
+    public static CommandOutcome Interpret(string reply, string? player = null)
     {
-        if (IsError(reply))
+        if (IsError(reply, player))
             return CommandOutcome.Failed;
         return reply.Trim().Length > 0 ? CommandOutcome.Success : CommandOutcome.Unconfirmed;
     }
@@ -118,7 +118,26 @@ public static class PlayerCommands
         "Wrong arguments", "Not enough rights", "Unknown", "Invalid", "Error", "not match", "Observer can only",
     ];
 
-    static bool IsError(string reply) => ErrorPhrases.Any(p => reply.Contains(p, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// An error phrase counts unless it lies entirely inside the echoed player name: a player
+    /// called "InvalidSam" must not turn "User InvalidSam kicked." into a failure, and a player
+    /// called "User" must not hide the "user" of "No such user".
+    /// </summary>
+    static bool IsError(string reply, string? player)
+    {
+        var name = player?.Trim() ?? "";
+        var names = new List<(int Start, int End)>();
+        for (int i = name.Length == 0 ? -1 : reply.IndexOf(name, StringComparison.OrdinalIgnoreCase); i >= 0;
+             i = reply.IndexOf(name, i + 1, StringComparison.OrdinalIgnoreCase))
+            names.Add((i, i + name.Length));
+
+        foreach (var phrase in ErrorPhrases)
+            for (int i = reply.IndexOf(phrase, StringComparison.OrdinalIgnoreCase); i >= 0;
+                 i = reply.IndexOf(phrase, i + 1, StringComparison.OrdinalIgnoreCase))
+                if (!names.Any(n => i >= n.Start && i + phrase.Length <= n.End))
+                    return true;
+        return false;
+    }
 
     static string Q(string value) => CommandText.Quote(value.Trim());
 

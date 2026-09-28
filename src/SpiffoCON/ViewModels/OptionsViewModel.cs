@@ -60,7 +60,12 @@ public sealed partial class OptionItem : ObservableObject
     public int EnumIndex
     {
         get => int.TryParse(EditText, out var i) ? i - 1 : -1;
-        set => EditText = (value + 1).ToString();
+        set
+        {
+            // a recycled ComboBox moving to another option can push -1: not a choice
+            if (value >= 0)
+                EditText = (value + 1).ToString();
+        }
     }
 
     public ValidationResult Validation => ServerOptionCatalog.Validate(Info, EditText);
@@ -68,7 +73,13 @@ public sealed partial class OptionItem : ObservableObject
     public string? Error => Validation.Error;
 
     /// <summary>Compares normalized values: the server writes doubles as "40.0", the editor sends "40".</summary>
-    public bool IsChanged => !Validation.Ok || Validation.Value != NormalizedServerValue;
+    /// <remarks>
+    /// A value the file already had that fails validation (a mod's value, a newer game's range)
+    /// is only "changed" once the user edits it: otherwise it would block every save.
+    /// </remarks>
+    public bool IsChanged => Validation.Ok
+        ? Validation.Value != NormalizedServerValue
+        : EditText != ServerOptionCatalog.ToEditorText(Info, ServerValue);
 
     string NormalizedServerValue => Normalize(ServerValue);
 
@@ -220,6 +231,9 @@ public sealed partial class OptionsViewModel : ObservableObject
 
     void Build(ServerOptions server)
     {
+        // a reply that arrives after Disconnect must not fill the cleared tab again
+        if (!_main.IsSessionActive)
+            return;
         var keepPage = SelectedPage?.Title;
         foreach (var item in _items)
             item.PropertyChanged -= OnItemChanged;

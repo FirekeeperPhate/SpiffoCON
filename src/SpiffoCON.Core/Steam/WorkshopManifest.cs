@@ -22,11 +22,33 @@ public static class WorkshopManifest
             : null;
     }
 
+    /// <summary>
+    /// The installed items of the manifest next to a remote workshop content folder; null when
+    /// there is none or it can't be read.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, InstalledWorkshopItem>?> ReadAsync(
+        SpiffoCON.Core.Files.IRemoteFileSystem fs, string workshopContentFolder, CancellationToken ct = default)
+    {
+        if (PathFor(workshopContentFolder) is not { } path)
+            return null;
+        try
+        {
+            using var buffer = new MemoryStream();
+            await fs.DownloadAsync(path, buffer, ct).ConfigureAwait(false);
+            var items = Parse(Encoding.UTF8.GetString(buffer.ToArray()));
+            return items.Count > 0 ? items : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>The WorkshopItemsInstalled section; empty when the text is not a workshop manifest.</summary>
     public static IReadOnlyDictionary<string, InstalledWorkshopItem> Parse(string text)
     {
         var result = new Dictionary<string, InstalledWorkshopItem>();
-        if (Vdf.Parse(text) is not { } root
+        if (Vdf.Parse(text.TrimStart('﻿')) is not { } root
             || root.GetValueOrDefault("AppWorkshop") is not Dictionary<string, object> app
             || Find(app, "WorkshopItemsInstalled") is not Dictionary<string, object> installed)
             return result;
@@ -51,7 +73,7 @@ public static class WorkshopManifest
             int i = 0;
             try
             {
-                return Block(text, ref i, topLevel: true);
+                return Block(text, ref i, topLevel: true, depth: 0);
             }
             catch (FormatException)
             {
@@ -59,8 +81,11 @@ public static class WorkshopManifest
             }
         }
 
-        static Dictionary<string, object> Block(string s, ref int i, bool topLevel)
+        static Dictionary<string, object> Block(string s, ref int i, bool topLevel, int depth)
         {
+            // a manifest is a few levels deep; this only stops a broken file from overflowing the stack
+            if (depth > 64)
+                throw new FormatException("Too deeply nested.");
             var node = new Dictionary<string, object>();
             while (true)
             {
@@ -70,7 +95,7 @@ public static class WorkshopManifest
                 if (key == "}")
                     return topLevel ? throw new FormatException("Unexpected }.") : node;
                 var next = Token(s, ref i) ?? throw new FormatException("Missing value.");
-                node[key] = next == "{" ? Block(s, ref i, topLevel: false) : next;
+                node[key] = next == "{" ? Block(s, ref i, topLevel: false, depth + 1) : next;
             }
         }
 

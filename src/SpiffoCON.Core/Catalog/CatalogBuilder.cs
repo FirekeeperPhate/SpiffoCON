@@ -61,7 +61,7 @@ public sealed partial class CatalogBuilder
             {
                 string text;
                 try { text = File.ReadAllText(file); }
-                catch (IOException) { continue; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
                 AddScript(text, source);
                 ScriptFiles++;
             }

@@ -33,6 +33,17 @@ public sealed partial class LogTail(ILogFolder folder, string type)
 
     public string? CurrentFile { get; private set; }
 
+    /// <summary>
+    /// The last poll returned older lines, not news: the first read, or a new file found after a
+    /// long gap without polls (following paused, connection down) while the server restarted.
+    /// </summary>
+    public bool LastPollWasBacklog { get; private set; }
+
+    /// <summary>A new file seen within this time of the last poll is followed from its start.</summary>
+    public TimeSpan FreshFileWindow { get; init; } = TimeSpan.FromMinutes(1);
+
+    DateTime _lastPoll = DateTime.MinValue;
+
     long _offset;
     byte[] _partial = [];
 
@@ -40,9 +51,12 @@ public sealed partial class LogTail(ILogFolder folder, string type)
     public async Task<IReadOnlyList<LogLine>> PollAsync(CancellationToken ct = default)
     {
         var lines = new List<LogLine>();
+        LastPollWasBacklog = false;
         var newest = (await folder.ListAsync(ct).ConfigureAwait(false))
             .Where(f => f.Type.Equals(Type, StringComparison.OrdinalIgnoreCase))
             .MaxBy(f => f.Started);
+        var sinceLastPoll = DateTime.Now - _lastPoll;
+        _lastPoll = DateTime.Now;
         if (newest is null)
             return lines;
 
@@ -52,7 +66,10 @@ public sealed partial class LogTail(ILogFolder folder, string type)
                 lines.Add(new LogLine(DateTime.Now, "", $"New log file {newest.Name} (the server restarted)", LogLineKind.Marker));
             bool first = CurrentFile is null;
             CurrentFile = newest.Name;
-            _offset = first ? Math.Max(0, newest.Size - InitialBytes) : 0;
+            // a restart seen live: the new file is news, from its first line (mod errors at start-up);
+            // after a long gap it was written while nobody watched: only its tail, as the past
+            LastPollWasBacklog = first || sinceLastPoll > FreshFileWindow;
+            _offset = LastPollWasBacklog ? Math.Max(0, newest.Size - InitialBytes) : 0;
             _partial = [];
             if (_offset > 0)
                 _partial = [(byte)'\u0001']; // the first line is cut: drop it

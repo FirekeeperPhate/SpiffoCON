@@ -50,6 +50,8 @@ public sealed partial class PlayersViewModel : ObservableObject
             _poll.Stop();
     }
 
+    public void Close() => _poll.Stop();
+
     void UpdateCount() => OnlineCount = _main.IsSessionActive ? $"{OnlinePlayers.Count} online" : "Not connected";
 
     [RelayCommand]
@@ -185,7 +187,7 @@ public sealed partial class PlayersViewModel : ObservableObject
         var reply = await _main.RunAsync(command);
         Result = reply is null
             ? "Failed: see the console."
-            : PlayerCommands.Interpret(reply) switch
+            : PlayerCommands.Interpret(reply, Target) switch
             {
                 CommandOutcome.Success => reply.Trim(),
                 CommandOutcome.Failed => "Failed: " + reply.Trim(),

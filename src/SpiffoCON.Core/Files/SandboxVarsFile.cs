@@ -31,14 +31,17 @@ public sealed class SandboxVarsFile
         lexer.Expect(TokenType.Name, "SandboxVars");
         lexer.Expect(TokenType.Equals);
         lexer.Expect(TokenType.OpenBrace);
-        file.ParseTable(lexer, "");
+        file.ParseTable(lexer, "", 0);
         if (lexer.Next().Type != TokenType.End)
             throw lexer.Error("unexpected text after the SandboxVars table");
         return file;
     }
 
-    void ParseTable(Lexer lexer, string prefix)
+    void ParseTable(Lexer lexer, string prefix, int depth)
     {
+        // the game's file is a few levels deep; this only keeps a broken one from overflowing the stack
+        if (depth > 64)
+            throw lexer.Error("tables nested too deeply");
         while (true)
         {
             var token = lexer.Next();
@@ -53,7 +56,7 @@ public sealed class SandboxVarsFile
                     var path = prefix + token.Text;
                     var value = lexer.Next();
                     if (value.Type == TokenType.OpenBrace)
-                        ParseTable(lexer, path + ".");
+                        ParseTable(lexer, path + ".", depth + 1);
                     else if (value.Type is TokenType.Number or TokenType.Boolean or TokenType.String)
                         _values[path] = new SandboxValue(path, value.Text, (LuaValueKind)(value.Type - TokenType.Number), value.Start, value.Length);
                     else
@@ -62,7 +65,7 @@ public sealed class SandboxVarsFile
                 case TokenType.Number or TokenType.Boolean or TokenType.String:
                     break; // list item: not a setting, left as is
                 case TokenType.OpenBrace:
-                    ParseTable(lexer, prefix + "?."); // nested list item
+                    ParseTable(lexer, prefix + "?.", depth + 1); // nested list item
                     break;
                 default:
                     throw lexer.Error("expected a setting name or '}'");

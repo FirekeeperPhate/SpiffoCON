@@ -86,15 +86,27 @@ public sealed partial class CatalogViewModel : ObservableObject
             var entries = await Task.Run(() => _service.LoadVanilla());
             SetEntries(entries);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StatusText = "Could not load the base game catalog: " + ex.Message;
         }
     }
 
+    /// <summary>Raised when the catalog changes (base game loaded, server mods loaded).</summary>
+    public event EventHandler? EntriesChanged;
+
+    Dictionary<string, CatalogEntry> _byType = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The entry for an item or vehicle id, in the catalog now loaded.</summary>
+    internal CatalogEntry? Find(string fullType) => _byType.GetValueOrDefault(fullType);
+
     void SetEntries(IReadOnlyList<CatalogEntry> entries)
     {
+        SpiffoCON.Controls.IconConverter.Clear();
         _entries = entries;
+        _byType = new Dictionary<string, CatalogEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in entries)
+            _byType[e.FullType] = e;
         var sources = entries.Where(e => !e.Source.IsVanilla).Select(e => e.Source.Label).Distinct().Order(StringComparer.CurrentCultureIgnoreCase);
         var keep = SourceFilter;
         SourceOptions.Clear();
@@ -105,6 +117,7 @@ public sealed partial class CatalogViewModel : ObservableObject
         var view = new ListCollectionView(entries.ToList()) { Filter = Matches };
         View = view;
         UpdateCount();
+        EntriesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     void ApplyFilter()
@@ -169,6 +182,8 @@ public sealed partial class CatalogViewModel : ObservableObject
     [RelayCommand]
     private async Task ExtractIconsAsync()
     {
+        if (IsLoading)
+            return;
         var packs = IconExtractor.FindTexturePacks();
         if (packs is null)
         {
@@ -190,9 +205,11 @@ public sealed partial class CatalogViewModel : ObservableObject
             int count = await Task.Run(() => IconExtractor.Extract(packs, _service.VanillaIconFolder, progress));
             OnPropertyChanged(nameof(HasVanillaIcons));
             if (_loadedFromServer && _main.IsSessionActive)
-                await LoadFromServerAsync();
-            else
+                await LoadFromServerCoreAsync();
+            else if (!_loadedFromServer)
                 await LoadVanillaAsync();
+            // else: the server's mods stay listed (disconnected, they can't be read again now);
+            // the new icons show after the next "Load from server"
             StatusText = count > 0
                 ? $"{count} base-game icons taken from {packs}."
                 : "No item icons found in those texture packs.";
@@ -210,6 +227,11 @@ public sealed partial class CatalogViewModel : ObservableObject
     public ObservableCollection<ModSourceReport> ModSources { get; } = [];
     [ObservableProperty] private string modSummary = "";
 
+    CancellationTokenSource? _loadCts;
+
+    [RelayCommand]
+    private void CancelLoad() => _loadCts?.Cancel();
+
     [RelayCommand]
     private async Task LoadFromServerAsync()
     {
@@ -218,8 +240,25 @@ public sealed partial class CatalogViewModel : ObservableObject
             StatusText = "Connect to the server first: the mod list comes from its options.";
             return;
         }
+        if (IsLoading)
+            return;
 
         IsLoading = true;
+        try
+        {
+            await LoadFromServerCoreAsync();
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    /// <summary>The load itself; the caller holds <see cref="IsLoading"/>.</summary>
+    async Task LoadFromServerCoreAsync()
+    {
+        using var cts = _loadCts = new CancellationTokenSource();
+        var ct = cts.Token;
         try
         {
             StatusText = "Reading the server's mod list (showoptions)...";
@@ -237,26 +276,21 @@ public sealed partial class CatalogViewModel : ObservableObject
             }
 
             var sftp = _main.CurrentSftpSettings();
-            string? remoteWorkshop = _main.Profile.SftpWorkshopFolder;
-            if (sftp is not null && remoteWorkshop is null && options.WorkshopItems.Count > 0)
+            var progress = new Progress<string>(s => StatusText = s);
+            string? remoteWorkshop = null;
+            if (sftp is not null && options.WorkshopItems.Count > 0)
             {
-                StatusText = "Looking for the mod folder over SFTP...";
                 try
                 {
-                    var probe = await SftpProbe.RunAsync(sftp);
-                    remoteWorkshop = probe.WorkshopFolders.OrderByDescending(w => w.ItemCount).FirstOrDefault()?.Path;
-                    _main.RememberSftpHostKey(probe.HostKeyFingerprint);
-                    _main.Profile.SftpWorkshopFolder = remoteWorkshop;
-                    _main.SaveProfile();
+                    remoteWorkshop = await _main.FindWorkshopFolderAsync(progress, ct);
                 }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
+                catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
                 {
                     StatusText = "SFTP: " + ex.Message;
                 }
             }
 
             var dispatcher = Application.Current.Dispatcher;
-            var progress = new Progress<string>(s => StatusText = s);
             var loadOptions = new CatalogLoadOptions
             {
                 Sftp = sftp,
@@ -266,7 +300,7 @@ public sealed partial class CatalogViewModel : ObservableObject
                     $"Download them with SteamCMD ({FormatSize(bytes)})? SteamCMD downloads whole mods, " +
                     "models and sounds included; SpiffoCON keeps them in its cache for next time.") ?? true).Task,
             };
-            var result = await Task.Run(() => _service.LoadAsync(options, loadOptions, progress));
+            var result = await Task.Run(() => _service.LoadAsync(options, loadOptions, progress, ct), ct);
 
             SetEntries(result.Entries);
             _loadedFromServer = true;
@@ -276,13 +310,17 @@ public sealed partial class CatalogViewModel : ObservableObject
             ModSummary = Summarize(result, options);
             StatusText = $"Loaded {result.Entries.Count(e => !e.Source.IsVanilla)} entries from {options.Mods.Count - result.MissingMods.Count} mods.";
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            StatusText = "Loading cancelled.";
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StatusText = "Loading failed: " + ex.Message;
         }
         finally
         {
-            IsLoading = false;
+            _loadCts = null;
         }
     }
 
@@ -303,7 +341,9 @@ public sealed partial class CatalogViewModel : ObservableObject
             });
         }
         var text = string.Join(" · ", parts);
-        if (result.SftpStats is { } s)
+        if (result.SftpStats is { Busy: true })
+            text += "\nSFTP: another SpiffoCON window was copying these mods; the copies from last time were not checked.";
+        else if (result.SftpStats is { } s)
         {
             text += s.Read == 0
                 ? $"\nSFTP: all {s.UpToDate} items unchanged since the last copy ({s.Elapsed.TotalSeconds:0.0} s)."
@@ -311,7 +351,7 @@ public sealed partial class CatalogViewModel : ObservableObject
                   + $"connection{(s.Connections == 1 ? "" : "s")}: {s.Folders} folders, {s.Files} files, {s.Downloaded} downloaded"
                   + (s.Downloaded > 0 ? $" ({FormatBytes(s.Bytes)})." : ".");
             if (!s.ManifestFound)
-                text += " No workshop manifest on the server: Steam's update dates tell which mods changed.";
+                text += " No workshop manifest on the server, so every mod is checked again each time.";
         }
         if (result.MissingMods.Count > 0)
             text += "\nMods without files: " + string.Join(", ", result.MissingMods);
@@ -336,10 +376,21 @@ public sealed partial class CatalogViewModel : ObservableObject
     [RelayCommand]
     private Task RefreshPlayersAsync() => _main.RefreshPlayersAsync();
 
+    bool _playerFilled;
+
+    /// <summary>
+    /// Fills the player once, from the first list after connecting; never swaps a chosen or typed
+    /// name for another player (an item would go to the wrong one).
+    /// </summary>
     void OnPlayersChanged(object? sender, EventArgs e)
     {
-        if (!Players.Contains(Player))
-            Player = Players.FirstOrDefault() ?? Player;
+        if (Players.Count == 0)
+            _playerFilled = false;
+        else if (!_playerFilled && string.IsNullOrWhiteSpace(Player))
+        {
+            Player = Players[0];
+            _playerFilled = true;
+        }
     }
 
     [RelayCommand]
@@ -348,7 +399,7 @@ public sealed partial class CatalogViewModel : ObservableObject
         if (Selected is not { Kind: CatalogKind.Item } item || !CheckTarget())
             return;
         var reply = await _main.RunAsync(PlayerCommands.AddItem(Player.Trim(), item.FullType, Quantity));
-        ActionResult = Describe(reply, reply is null ? CommandOutcome.Failed : PlayerCommands.InterpretAddItem(reply),
+        ActionResult = Describe(reply, reply is null ? CommandOutcome.Failed : PlayerCommands.InterpretAddItem(reply, Player),
             $"Gave {Math.Max(1, Quantity)} × {item.DisplayName} to {Player.Trim()}.");
     }
 
@@ -358,15 +409,32 @@ public sealed partial class CatalogViewModel : ObservableObject
         if (Selected is not { Kind: CatalogKind.Vehicle } vehicle || !CheckTarget())
             return;
         var reply = await _main.RunAsync(PlayerCommands.AddVehicle(vehicle.FullType, Player.Trim()));
-        ActionResult = Describe(reply, reply is null ? CommandOutcome.Failed : PlayerCommands.InterpretAddVehicle(reply),
+        ActionResult = Describe(reply, reply is null ? CommandOutcome.Failed : PlayerCommands.InterpretAddVehicle(reply, Player),
             $"Spawned {vehicle.DisplayName} next to {Player.Trim()}.");
+    }
+
+    // ---- kits ----
+
+    public ObservableCollection<KitView> Kits => _main.Kits.Kits;
+
+    /// <summary>The kit "Add to kit" adds to (null: a new one).</summary>
+    [ObservableProperty] private KitView? kitTarget;
+
+    [RelayCommand]
+    private void AddToKit()
+    {
+        if (Selected is not { Kind: CatalogKind.Item } item)
+            return;
+        var kit = _main.Kits.AddItem(item, Quantity, KitTarget);
+        KitTarget = kit;
+        ActionResult = $"Added {Math.Max(1, Quantity)} × {item.DisplayName} to the kit \"{kit.Name}\" (see the Kits tab).";
     }
 
     [RelayCommand]
     private void CopyId()
     {
         if (Selected is not null)
-            Clipboard.SetText(Selected.FullType);
+            SafeClipboard.SetText(Selected.FullType);
     }
 
     bool CheckTarget()
