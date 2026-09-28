@@ -97,11 +97,11 @@ public sealed partial class PlayersViewModel : ObservableObject
 
     // ---- access level ----
 
-    [ObservableProperty] private string accessLevel = "none";
+    [ObservableProperty] private string accessLevel = "user";
 
     [RelayCommand]
     private Task SetAccessLevelAsync() => RunAsync(PlayerCommands.SetAccessLevel(Target, AccessLevel),
-        AccessLevel is "Admin" or "Moderator" ? $"Give {Target.Trim()} the {AccessLevel} access level?" : null);
+        AccessLevel is "admin" or "moderator" ? $"Give {Target.Trim()} the {AccessLevel} access level?" : null);
 
     // ---- teleport ----
 

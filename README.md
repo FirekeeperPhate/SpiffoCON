@@ -27,7 +27,9 @@ Windows, .NET 10, WPF.
 - Players tab: online list (auto refresh), kick and ban (with reason, optional IP ban),
   unban, voice mute, access level, teleport to a player or to coordinates, god mode,
   invisibility, no clip, XP per skill. Command syntax comes from the B42 server's
-  `@CommandArgs` annotations.
+  `@CommandArgs` annotations, and replies were checked against a real B42 dedicated
+  server (access levels are the lowercase B42 roles: user, priority, observer, gm,
+  moderator, admin).
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.

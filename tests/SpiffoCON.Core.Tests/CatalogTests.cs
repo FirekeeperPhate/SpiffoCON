@@ -173,7 +173,7 @@ public sealed class CatalogTests : IDisposable
         Assert.Equal("kickuser \"rj\" -r \"spawn 'kill'\"", PlayerCommands.Kick(" rj ", "spawn \"kill\""));
         Assert.Equal("banuser \"rj\" -ip -r \"grief\"", PlayerCommands.Ban("rj", true, "grief"));
         Assert.Equal("banuser \"rj\"", PlayerCommands.Ban("rj", false, null));
-        Assert.Equal("setaccesslevel \"rj\" \"Moderator\"", PlayerCommands.SetAccessLevel("rj", "Moderator"));
+        Assert.Equal("setaccesslevel \"rj\" \"moderator\"", PlayerCommands.SetAccessLevel("rj", "Moderator"));
         Assert.Equal("teleportplayer \"rj\" \"bob\"", PlayerCommands.TeleportToPlayer("rj", "bob"));
         Assert.Equal("teleportto \"rj\" 10000,-11000,0", PlayerCommands.TeleportToCoordinates("rj", 10000, -11000, 0));
         Assert.Equal("godmodeplayer \"rj\" -true", PlayerCommands.GodMode("rj", true));

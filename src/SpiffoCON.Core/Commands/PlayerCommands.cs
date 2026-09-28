@@ -10,8 +10,12 @@ public sealed record Perk(string Id, string Name);
 /// </summary>
 public static class PlayerCommands
 {
-    /// <summary>setaccesslevel values; "none" makes a regular player.</summary>
-    public static IReadOnlyList<string> AccessLevels { get; } = ["none", "Observer", "GM", "Overseer", "Moderator", "Admin"];
+    /// <summary>
+    /// setaccesslevel values, as a B42 server lists them when given an unknown one ("banned" is left
+    /// out: banning has its own command). They are case-sensitive: "Moderator" is rejected. The
+    /// in-game help text still names the B41 levels (Overseer, none), which B42 no longer accepts.
+    /// </summary>
+    public static IReadOnlyList<string> AccessLevels { get; } = ["user", "priority", "observer", "gm", "moderator", "admin"];
 
     /// <summary>Skill ids accepted by addxp (PerkFactory.Perks) with their English names.</summary>
     public static IReadOnlyList<Perk> Perks { get; } =
@@ -61,7 +65,7 @@ public static class PlayerCommands
 
     public static string Unban(string player) => $"unbanuser {Q(player)}";
 
-    public static string SetAccessLevel(string player, string level) => $"setaccesslevel {Q(player)} {Q(level)}";
+    public static string SetAccessLevel(string player, string level) => $"setaccesslevel {Q(player)} {Q(level.ToLowerInvariant())}";
 
     /// <summary>Moves <paramref name="player"/> to <paramref name="target"/>.</summary>
     public static string TeleportToPlayer(string player, string target) => $"teleportplayer {Q(player)} {Q(target)}";

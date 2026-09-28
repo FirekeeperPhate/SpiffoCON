@@ -189,7 +189,7 @@
                                                 <ComboBox ItemsSource="{Binding AccessLevels}" SelectedItem="{Binding AccessLevel}" />
                                                 <Button Grid.Column="1" Content="Set" Command="{Binding SetAccessLevelCommand}" Margin="8,0,0,0" MinWidth="64" />
                                             </Grid>
-                                            <TextBlock Text="none = regular player" Opacity="0.6" FontSize="12" Margin="0,6,0,0" />
+                                            <TextBlock Text="user = regular player, priority = can join a full server" Opacity="0.6" FontSize="12" Margin="0,6,0,0" />
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
