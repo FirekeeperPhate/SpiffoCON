@@ -122,6 +122,161 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Players" DataContext="{Binding Players}">
+                <Grid Margin="0,8,0,0" IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="230" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- online list -->
+                    <DockPanel Margin="0,0,10,0">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                            <Button DockPanel.Dock="Right" Content="&#xE72C;" FontFamily="{StaticResource IconFont}"
+                                    Command="{Binding RefreshCommand}" ToolTip="Refresh now" />
+                            <TextBlock Text="{Binding OnlineCount}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <CheckBox DockPanel.Dock="Bottom" Content="Refresh every 30 s" IsChecked="{Binding AutoRefresh}" Margin="0,6,0,0" />
+                        <ListBox ItemsSource="{Binding OnlinePlayers}" SelectedItem="{Binding SelectedOnline}" />
+                    </DockPanel>
+
+                    <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Player" Style="{StaticResource SectionTitle}" />
+                                    <TextBox Text="{Binding Target, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" FontSize="15"
+                                             ToolTip="Pick from the list, or type any username (also offline, e.g. to ban or unban)" />
+                                    <TextBlock Text="{Binding Result}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Grid IsEnabled="{Binding HasTarget}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel>
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <TextBlock Text="Moderation" Style="{StaticResource SectionTitle}" />
+                                            <TextBlock Text="Reason (optional, shown to the player)" Style="{StaticResource FieldLabel}" />
+                                            <TextBox Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}" />
+                                            <WrapPanel Margin="0,10,0,0">
+                                                <Button Content="Kick" Command="{Binding KickCommand}" Style="{StaticResource PairButton}" />
+                                                <Button Content="Ban" Command="{Binding BanCommand}" Style="{StaticResource PairButton}" />
+                                                <Button Content="Unban" Command="{Binding UnbanCommand}" Style="{StaticResource PairButton}" />
+                                            </WrapPanel>
+                                            <CheckBox Content="Ban the IP address too" IsChecked="{Binding BanIp}" Margin="0,8,0,0" />
+                                            <TextBlock Text="Voice chat" Style="{StaticResource FieldLabel}" />
+                                            <WrapPanel>
+                                                <Button Content="Mute" Command="{Binding VoiceBanCommand}" CommandParameter="true" Style="{StaticResource PairButton}" />
+                                                <Button Content="Unmute" Command="{Binding VoiceBanCommand}" CommandParameter="false" Style="{StaticResource PairButton}" />
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <TextBlock Text="Access level" Style="{StaticResource SectionTitle}" />
+                                            <Grid Margin="0,8,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <ComboBox ItemsSource="{Binding AccessLevels}" SelectedItem="{Binding AccessLevel}" />
+                                                <Button Grid.Column="1" Content="Set" Command="{Binding SetAccessLevelCommand}" Margin="8,0,0,0" MinWidth="64" />
+                                            </Grid>
+                                            <TextBlock Text="none = regular player" Opacity="0.6" FontSize="12" Margin="0,6,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <TextBlock Text="Teleport" Style="{StaticResource SectionTitle}" />
+                                            <TextBlock Text="To another player" Style="{StaticResource FieldLabel}" />
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <ComboBox ItemsSource="{Binding OnlinePlayers}" SelectedItem="{Binding TeleportTarget}" />
+                                                <Button Grid.Column="1" Content="Go" Command="{Binding TeleportToPlayerCommand}" Margin="8,0,0,0" MinWidth="64" />
+                                            </Grid>
+                                            <TextBlock Text="To coordinates (x, y, floor)" Style="{StaticResource FieldLabel}" />
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="50" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox Text="{Binding CoordX, UpdateSourceTrigger=PropertyChanged}" ToolTip="x" />
+                                                <TextBox Grid.Column="1" Text="{Binding CoordY, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0" ToolTip="y" />
+                                                <TextBox Grid.Column="2" Text="{Binding CoordZ, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0" ToolTip="floor (0 = ground)" />
+                                                <Button Grid.Column="3" Content="Go" Command="{Binding TeleportToCoordinatesCommand}" Margin="8,0,0,0" MinWidth="64" />
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Style="{StaticResource Card}">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Powers" Style="{StaticResource SectionTitle}" Grid.ColumnSpan="2" Margin="0,4,0,4" />
+                                            <TextBlock Grid.Row="1" Text="God mode" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                                                <Button Content="On" Command="{Binding GodModeCommand}" CommandParameter="true" Style="{StaticResource PairButton}" />
+                                                <Button Content="Off" Command="{Binding GodModeCommand}" CommandParameter="false" Style="{StaticResource PairButton}" Margin="0" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Row="2" Text="Invisible to zombies" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                                                <Button Content="On" Command="{Binding InvisibleCommand}" CommandParameter="true" Style="{StaticResource PairButton}" />
+                                                <Button Content="Off" Command="{Binding InvisibleCommand}" CommandParameter="false" Style="{StaticResource PairButton}" Margin="0" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Row="3" Text="No clip (walk through walls)" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                                                <Button Content="On" Command="{Binding NoClipCommand}" CommandParameter="true" Style="{StaticResource PairButton}" />
+                                                <Button Content="Off" Command="{Binding NoClipCommand}" CommandParameter="false" Style="{StaticResource PairButton}" Margin="0" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <TextBlock Text="Skills" Style="{StaticResource SectionTitle}" />
+                                            <Grid Margin="0,8,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="80" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <ComboBox ItemsSource="{Binding Perks}" SelectedItem="{Binding SelectedPerk}" DisplayMemberPath="Name" />
+                                                <TextBox Grid.Column="1" Text="{Binding XpAmount, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0" ToolTip="XP to add" />
+                                                <Button Grid.Column="2" Content="Add XP" Command="{Binding AddXpCommand}" Margin="8,0,0,0" />
+                                            </Grid>
+                                            <CheckBox Content="Apply the server's XP multiplier" IsChecked="{Binding UseMultiplier}" Margin="0,8,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Catalog" DataContext="{Binding Catalog}">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>

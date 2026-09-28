@@ -42,6 +42,7 @@ public sealed partial class CatalogViewModel : ObservableObject
             _searchDelay.Stop();
             ApplyFilter();
         };
+        _main.OnlinePlayersChanged += OnPlayersChanged;
         _ = LoadVanillaAsync();
     }
 
@@ -258,25 +259,18 @@ public sealed partial class CatalogViewModel : ObservableObject
 
     // ---- actions ----
 
-    public ObservableCollection<string> Players { get; } = [];
+    public ObservableCollection<string> Players => _main.OnlinePlayers;
     [ObservableProperty] private string player = "";
     [ObservableProperty] private int quantity = 1;
     [ObservableProperty] private string actionResult = "";
 
     [RelayCommand]
-    private async Task RefreshPlayersAsync()
+    private Task RefreshPlayersAsync() => _main.RefreshPlayersAsync();
+
+    void OnPlayersChanged(object? sender, EventArgs e)
     {
-        if (!_main.IsSessionActive)
-            return;
-        var reply = await _main.RunAsync("players");
-        if (reply is null)
-            return;
-        var names = PlayerCommands.ParsePlayers(reply);
-        var keep = Player;
-        Players.Clear();
-        foreach (var n in names)
-            Players.Add(n);
-        Player = names.Contains(keep) ? keep : names.FirstOrDefault() ?? keep;
+        if (!Players.Contains(Player))
+            Player = Players.FirstOrDefault() ?? Player;
     }
 
     [RelayCommand]

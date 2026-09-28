@@ -165,6 +165,26 @@ public sealed class CatalogTests : IDisposable
         Assert.Equal(CommandOutcome.Failed, PlayerCommands.InterpretAddVehicle("Unknown vehicle script \"Base.Nope\""));
     }
 
+    [Fact]
+    public void Moderation_and_power_commands()
+    {
+        Assert.Equal(["rj", "Two Words"], PlayerCommands.ParsePlayers("Players connected (2): <LINE> -rj <LINE> -Two Words <LINE> "));
+        Assert.Equal("kickuser \"rj\"", PlayerCommands.Kick("rj", "  "));
+        Assert.Equal("kickuser \"rj\" -r \"spawn 'kill'\"", PlayerCommands.Kick(" rj ", "spawn \"kill\""));
+        Assert.Equal("banuser \"rj\" -ip -r \"grief\"", PlayerCommands.Ban("rj", true, "grief"));
+        Assert.Equal("banuser \"rj\"", PlayerCommands.Ban("rj", false, null));
+        Assert.Equal("setaccesslevel \"rj\" \"Moderator\"", PlayerCommands.SetAccessLevel("rj", "Moderator"));
+        Assert.Equal("teleportplayer \"rj\" \"bob\"", PlayerCommands.TeleportToPlayer("rj", "bob"));
+        Assert.Equal("teleportto \"rj\" 10000,-11000,0", PlayerCommands.TeleportToCoordinates("rj", 10000, -11000, 0));
+        Assert.Equal("godmodeplayer \"rj\" -true", PlayerCommands.GodMode("rj", true));
+        Assert.Equal("noclip \"rj\" -false", PlayerCommands.NoClip("rj", false));
+        Assert.Equal("addxp \"rj\" Woodwork=500 -true", PlayerCommands.AddXp("rj", "Woodwork", 500, true));
+        Assert.Equal(CommandOutcome.Success, PlayerCommands.Interpret("User rj kicked."));
+        Assert.Equal(CommandOutcome.Failed, PlayerCommands.Interpret("User rj doesn't exist."));
+        Assert.Equal(CommandOutcome.Failed, PlayerCommands.Interpret("Can't find player bob"));
+        Assert.Equal(CommandOutcome.Unconfirmed, PlayerCommands.Interpret(""));
+    }
+
     string MakeRoot(string name, string scripts, Dictionary<string, string>? translations = null, string[]? icons = null)
     {
         var root = Path.Combine(_temp, name);

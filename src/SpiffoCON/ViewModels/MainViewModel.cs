@@ -62,9 +62,12 @@ public sealed partial class MainViewModel : ObservableObject
 
         UpdateMessagePreview();
         Catalog = new CatalogViewModel(this);
+        Players = new PlayersViewModel(this);
     }
 
     public CatalogViewModel Catalog { get; }
+
+    public PlayersViewModel Players { get; }
 
     internal ServerProfile Profile => _profile;
 
@@ -117,7 +120,7 @@ public sealed partial class MainViewModel : ObservableObject
             IsSessionActive = true;
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
             Log(ConsoleKind.Info, StatusText);
-            _ = Catalog.RefreshPlayersCommand.ExecuteAsync(null);
+            await RefreshPlayersAsync();
             SaveProfile();
         }
         catch (RconException ex)
@@ -136,6 +139,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         await _rcon.DisconnectAsync();
         IsSessionActive = false;
+        OnlinePlayers.Clear();
+        OnlinePlayersChanged?.Invoke(this, EventArgs.Empty);
         StatusText = "Disconnected";
         Log(ConsoleKind.Info, "Disconnected");
     }
@@ -173,14 +178,20 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ClearConsole() => ConsoleLines.Clear();
 
-    /// <summary>Runs a command, logging it and its reply; null when it failed (the error is logged).</summary>
-    internal async Task<string?> RunAsync(string command, bool logReply = true)
+    /// <summary>
+    /// Runs a command, logging it and its reply; null when it failed (the error is logged).
+    /// <paramref name="quiet"/> logs only failures (background polling).
+    /// </summary>
+    internal async Task<string?> RunAsync(string command, bool logReply = true, bool quiet = false)
     {
-        Log(ConsoleKind.Command, "> " + command);
+        if (!quiet)
+            Log(ConsoleKind.Command, "> " + command);
         try
         {
             var reply = await _rcon.ExecuteAsync(command);
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
+            if (quiet)
+                return reply;
             if (logReply)
                 Log(ConsoleKind.Reply, reply.Length == 0 ? "(empty reply)" : reply.TrimEnd());
             else
@@ -189,7 +200,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (RconException ex)
         {
-            Log(ex is RconTimeoutException ? ConsoleKind.Warning : ConsoleKind.Error, ex.Message);
+            Log(ex is RconTimeoutException ? ConsoleKind.Warning : ConsoleKind.Error, (quiet ? command + ": " : "") + ex.Message);
             if (ex is RconAuthenticationException)
             {
                 IsSessionActive = false;
@@ -197,6 +208,29 @@ public sealed partial class MainViewModel : ObservableObject
             }
             return null;
         }
+    }
+
+    // ---- online players (shared by the Catalog and Players tabs) ----
+
+    public ObservableCollection<string> OnlinePlayers { get; } = [];
+
+    /// <summary>Raised after <see cref="OnlinePlayers"/> was refreshed.</summary>
+    public event EventHandler? OnlinePlayersChanged;
+
+    internal async Task RefreshPlayersAsync(bool quiet = false)
+    {
+        if (!IsSessionActive)
+            return;
+        var reply = await RunAsync("players", quiet: quiet);
+        if (reply is null)
+            return;
+        var names = PlayerCommands.ParsePlayers(reply);
+        if (names.SequenceEqual(OnlinePlayers))
+            return;
+        OnlinePlayers.Clear();
+        foreach (var n in names.Order(StringComparer.CurrentCultureIgnoreCase))
+            OnlinePlayers.Add(n);
+        OnlinePlayersChanged?.Invoke(this, EventArgs.Empty);
     }
 
     void Log(ConsoleKind kind, string text)

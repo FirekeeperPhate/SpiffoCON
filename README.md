@@ -24,6 +24,10 @@ Windows, .NET 10, WPF.
     `%LOCALAPPDATA%\SpiffoCON`).
   - B42 layout (`common` + the newest `42.x` folder), JSON and legacy translation files,
     vehicle names through `carModelName` / `template!`, mods that change base-game items.
+- Players tab: online list (auto refresh), kick and ban (with reason, optional IP ban),
+  unban, voice mute, access level, teleport to a player or to coordinates, god mode,
+  invisibility, no clip, XP per skill. Command syntax comes from the B42 server's
+  `@CommandArgs` annotations.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.
@@ -32,7 +36,7 @@ Windows, .NET 10, WPF.
 
 ## Planned
 
-- Players (kick, ban, teleport, access level), server options, chat log tail over SFTP,
+- Server options, chat log tail over SFTP,
   optional server-side Lua bridge.
 - Base-game item icons (the dedicated server has no textures).
 
