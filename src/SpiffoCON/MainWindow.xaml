@@ -751,6 +751,150 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Bridge" DataContext="{Binding Bridge}">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- setup and connection -->
+                    <DockPanel Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Left" Content="Prepare Workshop upload" Command="{Binding PrepareUploadCommand}"
+                                ToolTip="Copy the bridge mod to %USERPROFILE%\Zomboid\Workshop, ready to upload from the game's Workshop menu" />
+                        <Button DockPanel.Dock="Left" Content="Copy server settings" Command="{Binding CopyServerSettingsCommand}" Margin="8,0,0,0"
+                                ToolTip="The Mods= and WorkshopItems= values to add to the server" />
+                        <Border DockPanel.Dock="Left" Style="{StaticResource ToolSeparatorLine}" />
+                        <Button DockPanel.Dock="Left" Content="Find on server" Command="{Binding FindOnServerCommand}"
+                                ToolTip="Talk to the bridge through Zomboid/Lua over SFTP" />
+                        <Button DockPanel.Dock="Left" Content="Open folder…" Command="{Binding OpenFolderCommand}" Margin="8,0,0,0"
+                                ToolTip="A local Zomboid/Lua folder (a server on this PC)" />
+                        <Button DockPanel.Dock="Left" Content="&#xE72C;" FontFamily="{StaticResource IconFont}" Command="{Binding RefreshCommand}"
+                                Margin="8,0,0,0" IsEnabled="{Binding IsConnected}" ToolTip="Refresh now" />
+                        <CheckBox DockPanel.Dock="Left" Content="Every 15 s" IsChecked="{Binding AutoRefresh}" Margin="12,0,0,0" />
+                        <TextBlock Text="{Binding Source}" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                    </DockPanel>
+
+                    <!-- how to install, until the bridge answers -->
+                    <Border Grid.Row="1" Style="{StaticResource Card}"
+                            Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Text="Setting up the bridge" Style="{StaticResource SectionTitle}" />
+                            <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" LineHeight="20">
+                                <Run Text="1. Prepare Workshop upload, then in Project Zomboid open Workshop from the main menu and upload SpiffoCON Bridge (unlisted is enough)." /><LineBreak />
+                                <Run Text="2. Add it to the server: Mods = SpiffoCONBridge, WorkshopItems = its Workshop id (Copy server settings), then restart the server." /><LineBreak />
+                                <Run Text="3. Enable SFTP on the left and press Find on server." /><LineBreak />
+                                <Run Text="The bridge answers while the server is running a game: with PauseEmpty on, an empty server is paused and the bridge waits for a player." Foreground="#F2C14E" />
+                            </TextBlock>
+                            <TextBlock Margin="0,8,0,0" Opacity="0.7">
+                                <Run Text="Workshop id:" />
+                                <Run Text="{Binding WorkshopId, Mode=OneWay, TargetNullValue='not uploaded yet'}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Grid.Row="1" Text="{Binding WorldText}" Margin="0,0,0,8" Opacity="0.85"
+                               Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibility}}" />
+
+                    <!-- players and inventory -->
+                    <Grid Grid.Row="2" IsEnabled="{Binding IsConnected}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="340" />
+                        </Grid.ColumnDefinitions>
+                        <ListView ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" ItemContainerStyle="{StaticResource GridRow}">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Player" Width="150" DisplayMemberBinding="{Binding Username}" />
+                                    <GridViewColumn Header="Role" Width="80" DisplayMemberBinding="{Binding Role}" />
+                                    <GridViewColumn Header="Position" Width="130">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock FontFamily="{StaticResource MonoFont}" FontSize="12">
+                                                    <Run Text="{Binding X, Mode=OneWay}" />,<Run Text="{Binding Y, Mode=OneWay}" />,<Run Text="{Binding Z, Mode=OneWay}" />
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Health" Width="60" DisplayMemberBinding="{Binding Health}" />
+                                    <GridViewColumn Header="Vehicle" Width="140" DisplayMemberBinding="{Binding Vehicle}" />
+                                    <GridViewColumn Header="Hours" Width="60" DisplayMemberBinding="{Binding HoursSurvived}" />
+                                    <GridViewColumn Header="Kills" Width="55" DisplayMemberBinding="{Binding ZombieKills}" />
+                                    <GridViewColumn Width="190">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button Content="Copy x,y,z" FontSize="11" Padding="8,2" MinHeight="0"
+                                                            Command="{Binding DataContext.CopyPositionCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Content="To Players tab" FontSize="11" Padding="8,2" MinHeight="0" Margin="6,0,0,0"
+                                                            Command="{Binding DataContext.UseInPlayersTabCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+
+                        <DockPanel Grid.Column="1" Margin="10,0,0,0">
+                            <TextBlock DockPanel.Dock="Top" Text="{Binding InventoryTitle}" TextWrapping="Wrap" Margin="0,0,0,6" FontWeight="SemiBold" />
+                            <ListView ItemsSource="{Binding Inventory}" ItemContainerStyle="{StaticResource GridRow}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Item" Width="170">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock ToolTip="{Binding FullType}">
+                                                        <Run Text="{Binding Name, Mode=OneWay}" />
+                                                        <Run x:Name="Eq" Text="" Foreground="#8FD694" />
+                                                    </TextBlock>
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding Equipped}" Value="True">
+                                                            <Setter TargetName="Eq" Property="Text" Value="(equipped)" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="#" Width="40" DisplayMemberBinding="{Binding Count}" />
+                                        <GridViewColumn Header="In" Width="110" DisplayMemberBinding="{Binding Container}" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </DockPanel>
+                    </Grid>
+
+                    <Expander Grid.Row="3" Header="Vehicles in loaded areas" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}">
+                        <ListView ItemsSource="{Binding Vehicles}" MaxHeight="160" ItemContainerStyle="{StaticResource GridRow}" Margin="0,6,0,0">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Vehicle" Width="220" DisplayMemberBinding="{Binding Script}" />
+                                    <GridViewColumn Header="Id" Width="70" DisplayMemberBinding="{Binding Id}" />
+                                    <GridViewColumn Header="Position" Width="140">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock FontFamily="{StaticResource MonoFont}" FontSize="12">
+                                                    <Run Text="{Binding X, Mode=OneWay}" />,<Run Text="{Binding Y, Mode=OneWay}" />,<Run Text="{Binding Z, Mode=OneWay}" />
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Driver" Width="140" DisplayMemberBinding="{Binding Driver}" />
+                                    <GridViewColumn Header="Engine on" Width="80" DisplayMemberBinding="{Binding EngineRunning}" />
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </Expander>
+
+                    <TextBlock Grid.Row="4" Text="{Binding StatusText}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Broadcast">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>

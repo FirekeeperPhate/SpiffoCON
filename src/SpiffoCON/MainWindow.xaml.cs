@@ -34,6 +34,11 @@ public partial class MainWindow : Window
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose the server's Logs folder" };
             return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
         };
+        _vm.Bridge.PickFolder = () =>
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose the server's Zomboid\\Lua folder" };
+            return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+        };
         _vm.Logs.LinesAdded += (_, _) => Dispatcher.BeginInvoke(() =>
         {
             if (LogList.Items.Count > 0)

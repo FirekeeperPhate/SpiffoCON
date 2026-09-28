@@ -25,4 +25,9 @@
     <ProjectReference Include="..\SpiffoCON.Core\SpiffoCON.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- the bridge mod ships next to the exe, for "Prepare Workshop upload" -->
+    <None Include="..\..\bridge\**\*" LinkBase="bridge" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

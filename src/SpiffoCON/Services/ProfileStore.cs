@@ -34,6 +34,9 @@ public sealed class ServerProfile
 
     /// <summary>The server's Zomboid/Logs folder found over SFTP.</summary>
     public string? SftpLogsFolder { get; set; }
+
+    /// <summary>The server's Zomboid/Lua folder, where the bridge mod exchanges files.</summary>
+    public string? SftpLuaFolder { get; set; }
 }
 
 /// <summary>Stores the profile in %APPDATA%\SpiffoCON; passwords are encrypted with DPAPI.</summary>

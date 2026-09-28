@@ -117,17 +117,17 @@ public class SandboxTests
     }
 
     [Fact]
-    public void Local_store_keeps_encoding_and_line_endings()
+    public async Task Local_store_keeps_encoding_and_line_endings()
     {
         var path = Path.Combine(Path.GetTempPath(), $"spiffocon-{Guid.NewGuid():N}_SandboxVars.lua");
         try
         {
             File.WriteAllBytes(path, [0xEF, 0xBB, 0xBF, .. System.Text.Encoding.UTF8.GetBytes(Sample)]);
             var store = new LocalSandboxStore(path);
-            var text = store.ReadAsync().Result;
+            var text = await store.ReadAsync();
             Assert.Equal(Sample, text);
             var changed = SandboxVarsFile.Parse(text).With(new Dictionary<string, string> { ["Zombies"] = "3" }, out _);
-            store.WriteAsync(changed).Wait();
+            await store.WriteAsync(changed);
             var bytes = File.ReadAllBytes(path);
             Assert.Equal([0xEF, 0xBB, 0xBF], bytes[..3]);
             Assert.Equal(changed, System.Text.Encoding.UTF8.GetString(bytes[3..]));

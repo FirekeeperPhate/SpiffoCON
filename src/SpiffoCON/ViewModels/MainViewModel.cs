@@ -66,7 +66,10 @@ public sealed partial class MainViewModel : ObservableObject
         Options = new OptionsViewModel(this);
         Sandbox = new SandboxViewModel(this);
         Logs = new LogsViewModel(this);
+        Bridge = new BridgeViewModel(this);
     }
+
+    public BridgeViewModel Bridge { get; }
 
     public LogsViewModel Logs { get; }
 
@@ -413,6 +416,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         SaveProfile();
         Logs.Close();
+        Bridge.Close();
         await _rcon.DisposeAsync();
     }
 }

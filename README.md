@@ -44,6 +44,12 @@ Windows, .NET 10, WPF.
   player chat (which RCON can't see), broadcasts, joins, admin actions and any other log
   the server writes. Switches to the new files by itself when the server restarts, and has
   a quick broadcast box.
+- Bridge tab, with the **SpiffoCON Bridge** mod (`bridge/SpiffoCONBridge`, B42, server
+  side only): player positions, health, role, vehicle and inventory, vehicles in loaded
+  areas and world state, which RCON can't give. It talks through files in the server's
+  `Zomboid/Lua` folder, read and written over SFTP (`spiffocon_in.txt` /
+  `spiffocon_out.txt`); read actions only. The bridge runs while the server runs a game:
+  an empty server with `PauseEmpty=true` is paused and the bridge waits.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.
@@ -52,7 +58,7 @@ Windows, .NET 10, WPF.
 
 ## Planned
 
-- Optional server-side Lua bridge (player positions, inventories, offline players).
+- Bridge write actions (heal, remove items) and offline players from the server database.
 - Base-game item icons (the dedicated server has no textures).
 
 ## Build
@@ -71,3 +77,15 @@ server (`steamcmd +login anonymous +app_update 380870 +quit`) and run:
 ```
 dotnet run tools/MakeVanillaSnapshot.cs -- "<dedicated server folder>"
 ```
+
+## Publishing the bridge mod
+
+1. In SpiffoCON's Bridge tab press **Prepare Workshop upload**: it copies
+   `bridge/SpiffoCONBridge` to `%USERPROFILE%\Zomboid\Workshop\SpiffoCONBridge` (keeping
+   the `id=` line the game writes into `workshop.txt` after the first upload).
+2. Start Project Zomboid, open **Workshop** from the main menu, pick SpiffoCON Bridge and
+   upload it (`workshop.txt` sets it unlisted).
+3. On the server add `SpiffoCONBridge` to `Mods=` and the Workshop id to `WorkshopItems=`
+   (**Copy server settings** puts both on the clipboard), then restart the server.
+
+`tools/MakeBridgeImages.cs` redraws `preview.png` and `poster.png`.

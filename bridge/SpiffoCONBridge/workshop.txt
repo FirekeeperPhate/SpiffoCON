@@ -1,0 +1,9 @@
+version=1
+title=SpiffoCON Bridge
+description=Server-side helper for SpiffoCON, a remote admin tool for Project Zomboid servers.
+description=
+description=It lets SpiffoCON read what RCON can't: player positions, inventories, vehicles and world state. It runs on the server only and does nothing on players' games.
+description=
+description=Communication goes through files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP. Only read actions are available.
+tags=Build 42;Multiplayer;Misc
+visibility=unlisted
