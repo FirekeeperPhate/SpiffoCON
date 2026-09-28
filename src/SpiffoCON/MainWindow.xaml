@@ -412,6 +412,127 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Events" DataContext="{Binding Events}">
+                <Grid Margin="0,8,0,0" IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- weather -->
+                    <StackPanel>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Rain" Style="{StaticResource SectionTitle}" />
+                                <DockPanel Margin="0,8,0,0">
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding RainIntensity}" Width="34" TextAlignment="Right" VerticalAlignment="Center" />
+                                    <TextBlock Text="Intensity" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                    <Slider Minimum="1" Maximum="100" Value="{Binding RainIntensity}" IsSnapToTickEnabled="True" TickFrequency="1"
+                                            VerticalAlignment="Center" ToolTip="1 = drizzle, 100 = downpour" />
+                                </DockPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <CheckBox Content="Stop it after" IsChecked="{Binding RainStopsAfter}" VerticalAlignment="Center" />
+                                    <TextBox Text="{Binding RainMinutes, UpdateSourceTrigger=PropertyChanged}" Width="64" Margin="8,0" IsEnabled="{Binding RainStopsAfter}" />
+                                    <TextBlock Text="minutes" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Text="The server has no rain duration: SpiffoCON sends stoprain when the time is up, so it must stay open and connected."
+                                           Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                <WrapPanel Margin="0,10,0,0">
+                                    <Button Content="Start rain" Command="{Binding StartRainCommand}" Style="{StaticResource PairButton}" />
+                                    <Button Content="Stop rain" Command="{Binding StopRainCommand}" Style="{StaticResource PairButton}" />
+                                </WrapPanel>
+                                <DockPanel Margin="0,8,0,0" Visibility="{Binding RainTimerVisible, Converter={StaticResource BoolToVisibility}}">
+                                    <Button DockPanel.Dock="Right" Content="Cancel timer" Command="{Binding CancelRainTimerCommand}" FontSize="12" Padding="8,2" MinHeight="0" />
+                                    <TextBlock Text="{Binding RainTimerText}" Foreground="#F2C14E" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Thunderstorm" Style="{StaticResource SectionTitle}" />
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="Lasts" VerticalAlignment="Center" />
+                                    <TextBox Text="{Binding StormHours, UpdateSourceTrigger=PropertyChanged}" Width="64" Margin="8,0" />
+                                    <TextBlock Text="game hours" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Text="Game time: how long that is in real time depends on the server's day length."
+                                           Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                <WrapPanel Margin="0,10,0,0">
+                                    <Button Content="Start storm" Command="{Binding StartStormCommand}" Style="{StaticResource PairButton}" />
+                                    <Button Content="Stop all weather" Command="{Binding StopWeatherCommand}" Style="{StaticResource PairButton}" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- events on players -->
+                    <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
+                        <StackPanel>
+                            <TextBlock Text="Events on players" Style="{StaticResource SectionTitle}" />
+                            <ComboBox ItemsSource="{Binding Events}" SelectedItem="{Binding SelectedEvent}" DisplayMemberPath="Name" Margin="0,8,0,0" />
+                            <TextBlock Text="{Binding SelectedEvent.Description}" Opacity="0.75" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+
+                            <StackPanel Visibility="{Binding PlayerTargeted, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="On" Style="{StaticResource FieldLabel}" />
+                                <RadioButton Content="A random online player" IsChecked="{Binding TargetRandom}" GroupName="EventTarget" />
+                                <RadioButton Content="Every online player" IsChecked="{Binding TargetEveryone}" GroupName="EventTarget" Margin="0,4,0,0" />
+                                <DockPanel Margin="0,4,0,0">
+                                    <RadioButton Content="This player" IsChecked="{Binding TargetChosen}" GroupName="EventTarget" VerticalAlignment="Center" />
+                                    <ComboBox ItemsSource="{Binding OnlinePlayers}" SelectedItem="{Binding ChosenPlayer}" Margin="10,0,0,0" />
+                                </DockPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0"
+                                            Visibility="{Binding IsHorde, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="Zombies" VerticalAlignment="Center" />
+                                    <TextBox Text="{Binding HordeSize, UpdateSourceTrigger=PropertyChanged}" Width="64" Margin="8,0" />
+                                    <TextBlock Text="per player (max 500)" Opacity="0.6" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <WrapPanel Margin="0,12,0,0">
+                                <Button Content="Trigger" Command="{Binding TriggerCommand}" MinWidth="120" Style="{StaticResource PairButton}" />
+                                <Button Content="Stop helicopter" Command="{Binding StopChopperCommand}" Style="{StaticResource PairButton}"
+                                        Visibility="{Binding IsChopper, Converter={StaticResource BoolToVisibility}}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- log -->
+                    <DockPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,4,0,0">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                            <Button DockPanel.Dock="Right" Content="Clear" Command="{Binding ClearLogCommand}" FontSize="12" Padding="8,2" MinHeight="0" />
+                            <TextBlock Text="Sent events" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <ListBox ItemsSource="{Binding Log}" FontSize="13">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                    <Setter Property="Padding" Value="10,3" />
+                                    <Setter Property="MinHeight" Value="0" />
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:EventLogLine}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding TimeText}" Opacity="0.5" FontFamily="{StaticResource MonoFont}" Margin="0,0,10,0" />
+                                        <TextBlock x:Name="Line" Text="{Binding Text}" />
+                                    </StackPanel>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding Failed}" Value="True">
+                                            <Setter TargetName="Line" Property="Foreground" Value="#FF7A7A" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Accounts" DataContext="{Binding Accounts}">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>

@@ -78,9 +78,12 @@ public sealed partial class MainViewModel : ObservableObject
         Logs = new LogsViewModel(this);
         Bridge = new BridgeViewModel(this);
         Accounts = new AccountsViewModel(this);
+        Events = new EventsViewModel(this);
     }
 
     public AccountsViewModel Accounts { get; }
+
+    public EventsViewModel Events { get; }
 
     public BridgeViewModel Bridge { get; }
 
@@ -550,6 +553,7 @@ public sealed partial class MainViewModel : ObservableObject
         SaveProfile();
         Logs.Close();
         Bridge.Close();
+        Events.Close();
         await _rcon.DisposeAsync();
     }
 }
