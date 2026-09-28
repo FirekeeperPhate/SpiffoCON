@@ -42,6 +42,7 @@ MinVersion=10.0
 OutputDir=Output
 OutputBaseFilename=SpiffoCON-Setup-{#AppVersion}-{#Flavor}
 SetupIconFile=..\src\SpiffoCON\Assets\spiffocon.ico
+LicenseFile=..\LICENSE
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName} ({#Flavor})
 WizardStyle=modern dynamic
@@ -61,6 +62,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; the program, plus the bridge mod in "bridge" (used by the Bridge tab's "Prepare Workshop upload")
 Source: "{#SourceDir}\*"; Excludes: "*.pdb"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"

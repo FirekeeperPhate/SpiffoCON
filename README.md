@@ -109,3 +109,8 @@ Runtime) and `publish\full` (self-contained), and builds with Inno Setup
 be chosen); Light and Full replace each other. User data (`%APPDATA%\SpiffoCON`,
 `%LOCALAPPDATA%\SpiffoCON`) is never touched by setup or uninstall.
 `tools/MakeAppIcon.cs` redraws `src/SpiffoCON/Assets/spiffocon.ico`.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Project Zomboid and its art belong to The Indie Stone: SpiffoCON
+ships none of it (base-game icons are read from your own game install).
