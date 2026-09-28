@@ -393,6 +393,140 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Accounts" DataContext="{Binding Accounts}">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Left" Content="Find on server" Command="{Binding FindOnServerCommand}"
+                                ToolTip="Read Zomboid/db and players.db over SFTP" />
+                        <Button DockPanel.Dock="Left" Content="Open folder…" Command="{Binding OpenFolderCommand}" Margin="8,0,0,0"
+                                ToolTip="A local Zomboid folder (a server on this PC)" />
+                        <ComboBox DockPanel.Dock="Left" ItemsSource="{Binding Servers}" SelectedItem="{Binding SelectedServer}" Margin="8,0,0,0" MinWidth="130"
+                                  ToolTip="Server (db/&lt;name&gt;.db)" IsEnabled="{Binding IsLoaded}" />
+                        <Button DockPanel.Dock="Left" Content="&#xE72C;" FontFamily="{StaticResource IconFont}" Command="{Binding ReadCommand}"
+                                Margin="8,0,0,0" IsEnabled="{Binding IsLoaded}" ToolTip="Read the databases again" />
+                        <TextBlock Text="{Binding Source}" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                    </DockPanel>
+
+                    <Grid Grid.Row="1" Margin="0,0,0,8" IsEnabled="{Binding IsLoaded}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search username, character, Steam ID or role" />
+                        <CheckBox Grid.Column="1" Content="Only banned" IsChecked="{Binding OnlyBanned}" Margin="12,0,0,0" />
+                    </Grid>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="330" />
+                        </Grid.ColumnDefinitions>
+                        <ListView ItemsSource="{Binding View}" SelectedItem="{Binding Selected}" ItemContainerStyle="{StaticResource GridRow}"
+                                  IsSynchronizedWithCurrentItem="False">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Account" Width="140" DisplayMemberBinding="{Binding Username}" />
+                                    <GridViewColumn Header="Character" Width="140" DisplayMemberBinding="{Binding CharacterName}" />
+                                    <GridViewColumn Header="Role" Width="85" DisplayMemberBinding="{Binding Role}" />
+                                    <GridViewColumn Header="Status" Width="70">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock x:Name="S" Text="{Binding Status}" />
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding Status}" Value="online">
+                                                        <Setter TargetName="S" Property="Foreground" Value="#8FD694" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Status}" Value="banned">
+                                                        <Setter TargetName="S" Property="Foreground" Value="#FF7A7A" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Last login" Width="110" DisplayMemberBinding="{Binding LastSeen}" />
+                                    <GridViewColumn Header="Last position" Width="120">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Position}" FontFamily="{StaticResource MonoFont}" FontSize="12" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Kicks" Width="50" DisplayMemberBinding="{Binding Kicks}" />
+                                    <GridViewColumn Header="Bans" Width="50" DisplayMemberBinding="{Binding Bans}" />
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+
+                        <Border Grid.Column="1" Margin="10,0,0,0" Style="{StaticResource Card}">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Select an account." Opacity="0.6"
+                                           Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <StackPanel DockPanel.Dock="Top" Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="{Binding Selected.Username}" FontSize="16" FontWeight="SemiBold" />
+                                    <TextBlock Opacity="0.7" TextWrapping="Wrap" Margin="0,2,0,0">
+                                        <Run Text="Steam ID:" /> <Run Text="{Binding Selected.Account.SteamId, Mode=OneWay, TargetNullValue='—'}" />
+                                    </TextBlock>
+                                    <WrapPanel Margin="0,10,0,0">
+                                        <Button Content="To Players tab" Command="{Binding UseInPlayersTabCommand}" Margin="0,0,6,6"
+                                                ToolTip="Put this account (and its last saved position) in the Players tab" />
+                                        <Button Content="Ban" Command="{Binding BanCommand}" Margin="0,0,6,6" />
+                                        <Button Content="Unban" Command="{Binding UnbanCommand}" Margin="0,0,6,6" />
+                                    </WrapPanel>
+                                    <TextBlock Text="History" Style="{StaticResource FieldLabel}" />
+                                </StackPanel>
+                                <ListView ItemsSource="{Binding History}" ItemContainerStyle="{StaticResource GridRow}"
+                                          Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="What" Width="65" DisplayMemberBinding="{Binding Type}" />
+                                            <GridViewColumn Header="Reason" Width="110" DisplayMemberBinding="{Binding Text}" />
+                                            <GridViewColumn Header="By" Width="55" DisplayMemberBinding="{Binding IssuedBy}" />
+                                            <GridViewColumn Header="When" Width="80" DisplayMemberBinding="{Binding When, StringFormat='dd/MM HH:mm'}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+
+                    <Expander Grid.Row="3" Header="Banned IP addresses and Steam IDs" Margin="0,8,0,0" IsEnabled="{Binding IsLoaded}">
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ListView ItemsSource="{Binding BannedIps}" MaxHeight="140" ItemContainerStyle="{StaticResource GridRow}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="IP" Width="120" DisplayMemberBinding="{Binding Ip}" />
+                                        <GridViewColumn Header="Account" Width="110" DisplayMemberBinding="{Binding Username}" />
+                                        <GridViewColumn Header="Reason" Width="160" DisplayMemberBinding="{Binding Reason}" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                            <ListView Grid.Column="1" ItemsSource="{Binding BannedSteamIds}" MaxHeight="140" Margin="10,0,0,0" ItemContainerStyle="{StaticResource GridRow}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Steam ID" Width="160" DisplayMemberBinding="{Binding SteamId}" />
+                                        <GridViewColumn Header="Reason" Width="200" DisplayMemberBinding="{Binding Reason}" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </Grid>
+                    </Expander>
+
+                    <TextBlock Grid.Row="4" Text="{Binding StatusText}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Catalog" DataContext="{Binding Catalog}">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>

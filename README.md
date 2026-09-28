@@ -44,6 +44,11 @@ Windows, .NET 10, WPF.
   player chat (which RCON can't see), broadcasts, joins, admin actions and any other log
   the server writes. Switches to the new files by itself when the server restarts, and has
   a quick broadcast box.
+- Accounts tab: every account the server knows, online or not, from a copy of its SQLite
+  databases read over SFTP (or a local Zomboid folder): role (banned included), last login,
+  character name, last saved position, dead or alive, and the kick/ban history with reasons.
+  Password hashes are never read. Ban, unban and "To Players tab" (with the last position)
+  go through RCON.
 - Bridge tab, with the **SpiffoCON Bridge** mod (`bridge/SpiffoCONBridge`, B42, server
   side only): player positions, health, role, vehicle and inventory, vehicles in loaded
   areas and world state, which RCON can't give. It talks through files in the server's
@@ -61,7 +66,6 @@ Windows, .NET 10, WPF.
 
 ## Planned
 
-- Offline players from the server database (SQLite over SFTP).
 - Base-game item icons (the dedicated server has no textures).
 
 ## Build

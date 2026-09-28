@@ -67,7 +67,10 @@ public sealed partial class MainViewModel : ObservableObject
         Sandbox = new SandboxViewModel(this);
         Logs = new LogsViewModel(this);
         Bridge = new BridgeViewModel(this);
+        Accounts = new AccountsViewModel(this);
     }
+
+    public AccountsViewModel Accounts { get; }
 
     public BridgeViewModel Bridge { get; }
 
