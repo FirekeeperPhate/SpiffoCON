@@ -303,12 +303,25 @@ public sealed partial class CatalogViewModel : ObservableObject
             });
         }
         var text = string.Join(" · ", parts);
+        if (result.SftpStats is { } s)
+        {
+            text += s.Read == 0
+                ? $"\nSFTP: all {s.UpToDate} items unchanged since the last copy ({s.Elapsed.TotalSeconds:0.0} s)."
+                : $"\nSFTP: {s.UpToDate} items unchanged, {s.Read} read in {s.Elapsed.TotalSeconds:0.0} s over {s.Connections} "
+                  + $"connection{(s.Connections == 1 ? "" : "s")}: {s.Folders} folders, {s.Files} files, {s.Downloaded} downloaded"
+                  + (s.Downloaded > 0 ? $" ({FormatBytes(s.Bytes)})." : ".");
+            if (!s.ManifestFound)
+                text += " No workshop manifest on the server: Steam's update dates tell which mods changed.";
+        }
         if (result.MissingMods.Count > 0)
             text += "\nMods without files: " + string.Join(", ", result.MissingMods);
         if (result.Warnings.Count > 0)
             text += "\n" + string.Join("\n", result.Warnings);
         return text;
     }
+
+    static string FormatBytes(long bytes) =>
+        bytes >= 1L << 20 ? $"{bytes / 1048576.0:0.0} MB" : $"{Math.Max(1, bytes >> 10)} KB";
 
     static string FormatSize(long bytes) =>
         bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} GB" : $"{Math.Max(1, bytes >> 20)} MB";

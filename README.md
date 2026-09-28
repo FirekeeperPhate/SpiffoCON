@@ -19,7 +19,9 @@ Windows, .NET 10, WPF.
     install is needed.
   - The server's mods come from `showoptions` (`Mods=`, `WorkshopItems=`), in its load
     order. Mod files are read from, in this order: the server over SFTP (only scripts,
-    translations and icons are copied), the local Steam workshop folder, SteamCMD
+    English translations and icons, only from the folders the game loads, over 4 parallel
+    connections; mods unchanged since the last copy are skipped, according to the server's
+    `appworkshop_108600.acf` or else Steam's update date), the local Steam workshop folder, SteamCMD
     (anonymous download of whole mods, asked first, cached in
     `%LOCALAPPDATA%\SpiffoCON`).
   - Base-game icons: **Game icons…** reads the `Item_*` sprites from the texture packs
@@ -33,6 +35,12 @@ Windows, .NET 10, WPF.
   `@CommandArgs` annotations, and replies were checked against a real B42 dedicated
   server (access levels are the lowercase B42 roles: user, priority, observer, gm,
   moderator, admin).
+- Events tab: rain with intensity (1-100), optionally stopped by SpiffoCON after a number of
+  minutes (the server has no rain duration), thunderstorms lasting a number of game hours,
+  stop rain / stop all weather; lightning, thunder or a zombie horde on a random online
+  player, on every online player or on one player; helicopter and gunshot events (the server
+  picks the player for these two), and a button to call the helicopter off. Every reply is
+  checked and listed. Syntax and replies checked on a real B42 server.
 - Options tab: all 144 server options grouped like the game's settings screen, with
   descriptions, defaults and ranges (dumped from a real B42 server by
   `tools/DumpServerOptions.lua`, built by `tools/MakeServerOptions.cs`). Values are

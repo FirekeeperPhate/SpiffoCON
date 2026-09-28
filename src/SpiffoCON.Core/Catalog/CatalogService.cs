@@ -15,7 +15,11 @@ public sealed record CatalogResult(
     IReadOnlyList<ModSourceReport> Sources,
     /// <summary>Mods= ids whose files were not found in any source.</summary>
     IReadOnlyList<string> MissingMods,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings)
+{
+    /// <summary>How the SFTP copy went (null when SFTP was not used).</summary>
+    public SftpFetchStats? SftpStats { get; init; }
+}
 
 public sealed class CatalogLoadOptions
 {
@@ -81,14 +85,39 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
         var ids = server.WorkshopItems;
         var folders = new Dictionary<string, (ModFileSource Source, string Folder)>();
 
+        // titles and update times (also tell SFTP which cached copies are still current)
+        IReadOnlyDictionary<string, WorkshopItemInfo> details = new Dictionary<string, WorkshopItemInfo>();
+        try
+        {
+            if (ids.Count > 0)
+            {
+                progress?.Report("Asking Steam about the server's mods...");
+                details = await new WorkshopApi(http).GetDetailsAsync(ids, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            warnings.Add("Steam Workshop info unavailable: " + ex.Message);
+        }
+
         // 1. SFTP: the files the server really runs
+        SftpFetchStats? sftpStats = null;
         if (options.Sftp is not null && options.RemoteWorkshopFolder is not null && ids.Count > 0)
         {
             try
             {
-                var fetcher = new SftpModFetcher(options.Sftp, options.RemoteWorkshopFolder, SftpCache);
-                foreach (var (id, folder) in await fetcher.FetchAsync(ids, progress, ct).ConfigureAwait(false))
+                var fetcher = new SftpModFetcher(options.Sftp, options.RemoteWorkshopFolder, SftpCache)
+                {
+                    Language = options.Language,
+                    GameVersion = options.GameVersion,
+                    SteamUpdated = details.Values.Where(d => d.Exists).ToDictionary(d => d.Id, d => d.Updated),
+                };
+                var fetched = await fetcher.FetchAsync(ids, progress, ct).ConfigureAwait(false);
+                foreach (var (id, folder) in fetched.Folders)
                     folders[id] = (ModFileSource.Sftp, folder);
+                sftpStats = fetched.Stats;
+                if (fetched.Error is { } error)
+                    warnings.Add("SFTP stopped early: " + error.Message);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -109,17 +138,6 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
         }
 
         // 3. SteamCMD: anonymous download into our cache
-        IReadOnlyDictionary<string, WorkshopItemInfo> details = new Dictionary<string, WorkshopItemInfo>();
-        try
-        {
-            if (ids.Count > 0)
-                details = await new WorkshopApi(http).GetDetailsAsync(ids, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
-        {
-            warnings.Add("Steam Workshop info unavailable: " + ex.Message);
-        }
-
         var remaining = ids.Where(id => !folders.ContainsKey(id)).ToList();
         if (options.UseSteamCmd && remaining.Count > 0)
             await UseSteamCmdAsync(remaining, details, folders, options, progress, warnings, ct).ConfigureAwait(false);
@@ -152,7 +170,7 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
             details.TryGetValue(id, out var d) && d.Exists ? d.Title : id,
             folders.TryGetValue(id, out var f) ? f.Source : ModFileSource.Missing,
             folders.TryGetValue(id, out var g) ? g.Folder : null)).ToList();
-        return new CatalogResult(builder.Build(), reports, missing, warnings);
+        return new CatalogResult(builder.Build(), reports, missing, warnings) { SftpStats = sftpStats };
     }
 
     async Task UseSteamCmdAsync(

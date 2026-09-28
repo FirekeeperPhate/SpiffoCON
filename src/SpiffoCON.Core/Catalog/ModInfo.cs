@@ -80,13 +80,18 @@ public sealed partial record ModInfo(
     /// The highest "42…" folder not newer than the game (or simply the highest when the game
     /// version is unknown), mirroring how B42 picks versioned mod content.
     /// </summary>
-    static string? PickVersionFolder(string modFolder, Version? gameVersion)
+    static string? PickVersionFolder(string modFolder, Version? gameVersion) =>
+        PickVersionName(Directory.EnumerateDirectories(modFolder).Select(d => Path.GetFileName(d)), gameVersion) is { } name
+            ? Path.Combine(modFolder, name)
+            : null;
+
+    /// <summary>Of a mod folder's subfolder names, the version folder the game would load (null: none).</summary>
+    public static string? PickVersionName(IEnumerable<string> folderNames, Version? gameVersion)
     {
         string? best = null;
         Version? bestVersion = null;
-        foreach (var dir in Directory.EnumerateDirectories(modFolder))
+        foreach (var name in folderNames)
         {
-            var name = Path.GetFileName(dir);
             if (!VersionName().IsMatch(name))
                 continue;
             var version = Version.Parse(name.Contains('.') ? name : name + ".0");
@@ -96,7 +101,7 @@ public sealed partial record ModInfo(
                 continue;
             if (bestVersion is null || version > bestVersion)
             {
-                best = dir;
+                best = name;
                 bestVersion = version;
             }
         }
