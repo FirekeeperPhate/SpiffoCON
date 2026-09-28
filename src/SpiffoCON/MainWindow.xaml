@@ -1,0 +1,196 @@
+<Window x:Class="SpiffoCON.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SpiffoCON.ViewModels"
+        xmlns:controls="clr-namespace:SpiffoCON.Controls"
+        Title="SpiffoCON" Width="1150" Height="740" MinWidth="820" MinHeight="520"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="290" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Connection panel -->
+        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="16,12,12,12">
+            <StackPanel>
+                <TextBlock Text="Server" Style="{StaticResource SectionTitle}" />
+                <StackPanel IsEnabled="{Binding CanEditConnection}">
+                    <TextBlock Text="Host (IP or name)" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="RCON port" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding RconPort, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="RCON password" Style="{StaticResource FieldLabel}" />
+                    <PasswordBox x:Name="RconPasswordBox" PasswordChanged="RconPasswordBox_PasswordChanged" />
+                    <CheckBox Content="Remember passwords (encrypted)" IsChecked="{Binding RememberPasswords}" Margin="0,8,0,0" />
+                </StackPanel>
+
+                <Grid Margin="0,12,0,0">
+                    <Button Content="Connect" Command="{Binding ConnectCommand}" HorizontalAlignment="Stretch"
+                            IsDefault="True"
+                            Visibility="{Binding CanEditConnection, Converter={StaticResource BoolToVisibility}}"
+                            x:Name="ConnectButton" />
+                    <Button Content="Disconnect" Command="{Binding DisconnectCommand}" HorizontalAlignment="Stretch"
+                            Visibility="{Binding IsSessionActive, Converter={StaticResource BoolToVisibility}}" />
+                </Grid>
+
+                <Separator Margin="0,18,0,8" />
+
+                <TextBlock Text="File access (SFTP, optional)" Style="{StaticResource SectionTitle}" />
+                <TextBlock TextWrapping="Wrap" Opacity="0.7" Margin="0,4,0,0" FontSize="12"
+                           Text="Used to read server config, logs and mod files. Without it, mods come from your Steam folder or SteamCMD." />
+                <CheckBox Content="Use SFTP" IsChecked="{Binding SftpEnabled}" Margin="0,8,0,0" />
+                <StackPanel IsEnabled="{Binding SftpEnabled}"
+                            Visibility="{Binding SftpEnabled, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="SFTP port" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding SftpPort, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="SFTP user" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding SftpUser, UpdateSourceTrigger=PropertyChanged}" />
+                    <CheckBox Content="Same password as RCON" IsChecked="{Binding SftpSamePassword}" Margin="0,8,0,0" x:Name="SamePasswordCheck" />
+                    <StackPanel Visibility="{Binding IsChecked, ElementName=SamePasswordCheck, Converter={StaticResource InverseBoolToVisibility}}">
+                        <TextBlock Text="SFTP password" Style="{StaticResource FieldLabel}" />
+                        <PasswordBox x:Name="SftpPasswordBox" PasswordChanged="SftpPasswordBox_PasswordChanged" />
+                    </StackPanel>
+                    <Button Content="Test SFTP" Command="{Binding TestSftpCommand}" HorizontalAlignment="Stretch" Margin="0,12,0,0"
+                            Click="TestSftp_Click" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Work area -->
+        <TabControl Grid.Column="1" Margin="0,8,12,8" x:Name="Tabs">
+            <TabItem Header="Console">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <ListBox x:Name="ConsoleList" ItemsSource="{Binding ConsoleLines}" SelectionMode="Extended"
+                             FontFamily="{StaticResource MonoFont}" FontSize="13"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                             KeyDown="ConsoleList_KeyDown">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Copy" Click="CopyConsole_Click" />
+                                <MenuItem Header="Clear" Command="{Binding ClearConsoleCommand}" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                <Setter Property="Padding" Value="6,1" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="MinHeight" Value="0" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ConsoleLine}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding TimeText}" Opacity="0.45" Margin="0,0,10,0" />
+                                    <TextBlock x:Name="LineText" Text="{Binding Text}" TextWrapping="NoWrap" />
+                                </StackPanel>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Kind}" Value="Command">
+                                        <Setter TargetName="LineText" Property="Foreground" Value="#7FB8FF" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Kind}" Value="Info">
+                                        <Setter TargetName="LineText" Property="Foreground" Value="#8FD694" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Kind}" Value="Warning">
+                                        <Setter TargetName="LineText" Property="Foreground" Value="#F2C14E" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Kind}" Value="Error">
+                                        <Setter TargetName="LineText" Property="Foreground" Value="#FF7A7A" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Grid Grid.Row="1" Margin="0,8,0,0" IsEnabled="{Binding IsSessionActive}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ConsoleInputBox" Text="{Binding ConsoleInput, UpdateSourceTrigger=PropertyChanged}"
+                                 FontFamily="{StaticResource MonoFont}" PreviewKeyDown="ConsoleInput_PreviewKeyDown"
+                                 ToolTip="Enter sends, Up/Down browse history. Example: players, save, servermsg &quot;hi&quot;" />
+                        <Button Grid.Column="1" Content="Send" Command="{Binding SendConsoleCommand}" Margin="8,0,0,0" MinWidth="80" />
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Broadcast">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="Color from the cursor on:" VerticalAlignment="Center" Margin="0,0,8,0" Opacity="0.8" />
+                        <ItemsControl ItemsSource="{Binding ColorPresets}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:ColorPreset}">
+                                    <Button Width="28" Height="28" Margin="2,0" Padding="0" MinWidth="0" MinHeight="0"
+                                            ToolTip="{Binding Name}" Tag="{Binding}" Click="ColorPreset_Click">
+                                        <Border Width="16" Height="16" CornerRadius="3" Background="{Binding Hex}" />
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <TextBox Grid.Row="1" x:Name="MessageEditor" Text="{Binding MessageText, UpdateSourceTrigger=PropertyChanged}"
+                             AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                             FontFamily="{StaticResource MonoFont}" VerticalContentAlignment="Top" />
+
+                    <TextBlock Grid.Row="2" Text="Preview" Style="{StaticResource FieldLabel}" />
+                    <Border Grid.Row="3" Background="#E0101010" CornerRadius="4" Padding="10,8">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding MessagePreview}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock controls:RichText.Segments="{Binding}" TextWrapping="Wrap" FontSize="14" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+
+                    <Grid Grid.Row="4" Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding MessageResult}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="1" Text="{Binding MessageInfo}" VerticalAlignment="Center" Opacity="0.6" Margin="12,0" />
+                        <Button Grid.Column="2" Content="Send to all players" Command="{Binding SendMessageCommand}"
+                                IsEnabled="{Binding IsSessionActive}" MinWidth="140" />
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Files">
+                <TextBox Margin="0,8,0,0" Text="{Binding SftpReport, Mode=OneWay}" IsReadOnly="True"
+                         FontFamily="{StaticResource MonoFont}" TextWrapping="NoWrap"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top" />
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Padding="16,6" Background="#20808080">
+            <TextBlock Text="{Binding StatusText}" />
+        </Border>
+    </Grid>
+</Window>

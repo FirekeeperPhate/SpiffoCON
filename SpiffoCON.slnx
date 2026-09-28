@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SpiffoCON.Core/SpiffoCON.Core.csproj" />
+    <Project Path="src/SpiffoCON/SpiffoCON.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SpiffoCON.Core.Tests/SpiffoCON.Core.Tests.csproj" />
+  </Folder>
+</Solution>
