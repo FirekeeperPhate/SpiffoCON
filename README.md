@@ -36,6 +36,10 @@ Windows, .NET 10, WPF.
   validated before `changeoption` and each reply is checked, since the server silently
   keeps the old value on bad input. ResetID, ServerPlayerID and Seed have no default and
   ask before changing.
+- Sandbox tab: the 269 sandbox options, edited in the server's `<name>_SandboxVars.lua`
+  over SFTP or in a local copy. Only the changed values are rewritten (comments, order,
+  line endings and unknown mod settings stay), a backup is kept, and the server applies
+  the file at its next start (checked on a real B42 server, also on an existing world).
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.
@@ -44,7 +48,7 @@ Windows, .NET 10, WPF.
 
 ## Planned
 
-- Sandbox options (SandboxVars.lua, over SFTP), chat log tail over SFTP,
+- Chat log tail over SFTP,
   optional server-side Lua bridge.
 - Base-game item icons (the dedicated server has no textures).
 

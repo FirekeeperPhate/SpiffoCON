@@ -19,6 +19,16 @@ public partial class MainWindow : Window
         _vm.Confirm = question =>
             MessageBox.Show(this, question, "SpiffoCON", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
+        _vm.Sandbox.PickFile = () =>
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Open SandboxVars.lua",
+                Filter = "Sandbox settings (*_SandboxVars.lua)|*_SandboxVars.lua|Lua files (*.lua)|*.lua|All files|*.*",
+            };
+            return dialog.ShowDialog(this) == true ? dialog.FileName : null;
+        };
+
         RconPasswordBox.Password = _vm.RconPassword;
         SftpPasswordBox.Password = _vm.SftpPassword;
 

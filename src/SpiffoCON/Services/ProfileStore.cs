@@ -28,6 +28,9 @@ public sealed class ServerProfile
 
     /// <summary>The server's workshop/content/108600 folder found by the SFTP probe.</summary>
     public string? SftpWorkshopFolder { get; set; }
+
+    /// <summary>The server's &lt;name&gt;_SandboxVars.lua chosen in the Sandbox tab.</summary>
+    public string? SftpSandboxPath { get; set; }
 }
 
 /// <summary>Stores the profile in %APPDATA%\SpiffoCON; passwords are encrypted with DPAPI.</summary>

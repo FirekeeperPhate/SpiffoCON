@@ -29,6 +29,9 @@ public sealed record ServerOptionInfo
     public IReadOnlyList<string> Values { get; init; } = [];
     public string? Description { get; init; }
 
+    /// <summary>Display name (sandbox options have one; server options show their key).</summary>
+    public string? Title { get; init; }
+
     /// <summary>The option has no meaningful default (per-server random ids); never reset it.</summary>
     public bool NoDefault { get; init; }
 
@@ -59,19 +62,27 @@ public sealed record ChangeResult(ChangeOutcome Outcome, string? ServerValue);
 /// </summary>
 public static partial class ServerOptionCatalog
 {
-    const string Resource = "SpiffoCON.Core.Data.server-options.json";
+    static readonly Lazy<IReadOnlyList<ServerOptionPage>> LoadedPages = new(() => Load("server-options.json"));
+    static readonly Lazy<IReadOnlyList<ServerOptionPage>> LoadedSandboxPages = new(() => Load("sandbox-options.json"));
 
-    static readonly Lazy<IReadOnlyList<ServerOptionPage>> LoadedPages = new(Load);
-
+    /// <summary>Server options (the .ini), changed over RCON.</summary>
     public static IReadOnlyList<ServerOptionPage> Pages => LoadedPages.Value;
 
-    public static ServerOptionInfo? Find(string name) =>
-        Pages.SelectMany(p => p.Options).FirstOrDefault(o => o.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+    /// <summary>Sandbox options (SandboxVars.lua), changed in the file; the server reads it at start-up.</summary>
+    public static IReadOnlyList<ServerOptionPage> SandboxPages => LoadedSandboxPages.Value;
 
-    static IReadOnlyList<ServerOptionPage> Load()
+    public static ServerOptionInfo? Find(string name) => Find(Pages, name, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Sandbox paths are case-sensitive Lua keys ("ZombieLore.Speed").</summary>
+    public static ServerOptionInfo? FindSandbox(string path) => Find(SandboxPages, path, StringComparison.Ordinal);
+
+    static ServerOptionInfo? Find(IReadOnlyList<ServerOptionPage> pages, string name, StringComparison comparison) =>
+        pages.SelectMany(p => p.Options).FirstOrDefault(o => o.Name.Equals(name, comparison));
+
+    static IReadOnlyList<ServerOptionPage> Load(string file)
     {
-        using var stream = typeof(ServerOptionCatalog).Assembly.GetManifestResourceStream(Resource)
-            ?? throw new InvalidOperationException("The server option metadata is missing from the build.");
+        using var stream = typeof(ServerOptionCatalog).Assembly.GetManifestResourceStream("SpiffoCON.Core.Data." + file)
+            ?? throw new InvalidOperationException($"{file} is missing from the build.");
         return JsonSerializer.Deserialize(stream, OptionsJson.Default.ListServerOptionPage) ?? [];
     }
 

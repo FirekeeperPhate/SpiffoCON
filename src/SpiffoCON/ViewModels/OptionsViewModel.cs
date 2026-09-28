@@ -33,6 +33,23 @@ public sealed partial class OptionItem : ObservableObject
     public string Name => Info.Name;
     public string? Description => Info.Description;
 
+    /// <summary>"Zombie Lore: Speed" for sandbox options, the key for server options.</summary>
+    public string DisplayName
+    {
+        get
+        {
+            if (Info.Title is not { } title)
+                return Info.Name;
+            int dot = Info.Name.LastIndexOf('.');
+            return dot > 0 ? SplitWords(Info.Name[..dot]) + ": " + title : title;
+        }
+    }
+
+    /// <summary>The key under a display name (sandbox options), else null.</summary>
+    public string? Key => Info.Title is null ? null : Info.Name;
+
+    static string SplitWords(string s) => System.Text.RegularExpressions.Regex.Replace(s.Replace('.', ' '), "(?<=[a-z])(?=[A-Z])", " ");
+
     public bool BoolValue
     {
         get => EditText.Equals("true", StringComparison.OrdinalIgnoreCase);
@@ -66,13 +83,13 @@ public sealed partial class OptionItem : ObservableObject
         return v.Ok ? v.Value : stored;
     }
 
-    public string Hint
+    public string? Hint
     {
         get
         {
             var parts = new List<string>();
             if (Info.NoDefault)
-                return "No default: unique to each server";
+                return Info.Warning is null ? null : "No default: unique to each server";
             var def = Info.Type switch
             {
                 ServerOptionType.Enum when int.TryParse(Info.Default, out var i) && i >= 1 && i <= Info.Values.Count => Info.Values[i - 1],

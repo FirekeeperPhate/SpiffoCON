@@ -64,7 +64,10 @@ public sealed partial class MainViewModel : ObservableObject
         Catalog = new CatalogViewModel(this);
         Players = new PlayersViewModel(this);
         Options = new OptionsViewModel(this);
+        Sandbox = new SandboxViewModel(this);
     }
+
+    public SandboxViewModel Sandbox { get; }
 
     public CatalogViewModel Catalog { get; }
 
