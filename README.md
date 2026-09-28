@@ -95,3 +95,17 @@ dotnet run tools/MakeVanillaSnapshot.cs -- "<dedicated server folder>"
    (**Copy server settings** puts both on the clipboard), then restart the server.
 
 `tools/MakeBridgeImages.cs` redraws `preview.png` and `poster.png`.
+
+## Installers
+
+```
+powershell -ExecutionPolicy Bypass -File installer\build.ps1
+```
+
+runs the tests, publishes `publish\light` (framework-dependent, needs the .NET 10 Desktop
+Runtime) and `publish\full` (self-contained), and builds with Inno Setup
+`installer\Output\SpiffoCON-Setup-<version>-Light.exe` / `-Full.exe`. The version comes from
+`<Version>` in `src\SpiffoCON\SpiffoCON.csproj`. Installs per user by default (all users can
+be chosen); Light and Full replace each other. User data (`%APPDATA%\SpiffoCON`,
+`%LOCALAPPDATA%\SpiffoCON`) is never touched by setup or uninstall.
+`tools/MakeAppIcon.cs` redraws `src/SpiffoCON/Assets/spiffocon.ico`.
