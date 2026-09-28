@@ -803,7 +803,7 @@
                     <Grid Grid.Row="2" IsEnabled="{Binding IsConnected}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="340" />
+                            <ColumnDefinition Width="420" />
                         </Grid.ColumnDefinitions>
                         <ListView ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" ItemContainerStyle="{StaticResource GridRow}">
                             <ListView.View>
@@ -823,30 +823,23 @@
                                     <GridViewColumn Header="Vehicle" Width="140" DisplayMemberBinding="{Binding Vehicle}" />
                                     <GridViewColumn Header="Hours" Width="60" DisplayMemberBinding="{Binding HoursSurvived}" />
                                     <GridViewColumn Header="Kills" Width="55" DisplayMemberBinding="{Binding ZombieKills}" />
-                                    <GridViewColumn Width="190">
-                                        <GridViewColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Button Content="Copy x,y,z" FontSize="11" Padding="8,2" MinHeight="0"
-                                                            Command="{Binding DataContext.CopyPositionCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
-                                                            CommandParameter="{Binding}" />
-                                                    <Button Content="To Players tab" FontSize="11" Padding="8,2" MinHeight="0" Margin="6,0,0,0"
-                                                            Command="{Binding DataContext.UseInPlayersTabCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
-                                                            CommandParameter="{Binding}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </GridViewColumn.CellTemplate>
-                                    </GridViewColumn>
                                 </GridView>
                             </ListView.View>
                         </ListView>
 
                         <DockPanel Grid.Column="1" Margin="10,0,0,0">
+                            <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="{Binding HasPlayer, Converter={StaticResource BoolToVisibility}}">
+                                <Button Content="Heal" Command="{Binding HealCommand}" CommandParameter="{Binding SelectedPlayer}"
+                                        ToolTip="Full heal: wounds, fractures, bites (bridge v2)" Margin="0,0,6,0" />
+                                <Button Content="Copy x,y,z" Command="{Binding CopyPositionCommand}" CommandParameter="{Binding SelectedPlayer}" Margin="0,0,6,0" />
+                                <Button Content="To Players tab" Command="{Binding UseInPlayersTabCommand}" CommandParameter="{Binding SelectedPlayer}"
+                                        ToolTip="Put this player and their position in the Players tab (teleport others here)" />
+                            </WrapPanel>
                             <TextBlock DockPanel.Dock="Top" Text="{Binding InventoryTitle}" TextWrapping="Wrap" Margin="0,0,0,6" FontWeight="SemiBold" />
                             <ListView ItemsSource="{Binding Inventory}" ItemContainerStyle="{StaticResource GridRow}">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="Item" Width="170">
+                                        <GridViewColumn Header="Item" Width="160">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <TextBlock ToolTip="{Binding FullType}">
@@ -862,7 +855,21 @@
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
                                         <GridViewColumn Header="#" Width="40" DisplayMemberBinding="{Binding Count}" />
-                                        <GridViewColumn Header="In" Width="110" DisplayMemberBinding="{Binding Container}" />
+                                        <GridViewColumn Header="In" Width="100" DisplayMemberBinding="{Binding Container}" />
+                                        <GridViewColumn Width="90">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Button Content="−1" FontSize="11" Padding="6,1" MinHeight="0" MinWidth="0" ToolTip="Remove one"
+                                                                Command="{Binding DataContext.RemoveOneCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Content="All" FontSize="11" Padding="6,1" MinHeight="0" MinWidth="0" Margin="4,0,0,0" ToolTip="Remove all of them"
+                                                                Command="{Binding DataContext.RemoveAllCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                                CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
                                     </GridView>
                                 </ListView.View>
                             </ListView>
@@ -886,6 +893,23 @@
                                     </GridViewColumn>
                                     <GridViewColumn Header="Driver" Width="140" DisplayMemberBinding="{Binding Driver}" />
                                     <GridViewColumn Header="Engine on" Width="80" DisplayMemberBinding="{Binding EngineRunning}" />
+                                    <GridViewColumn Width="210">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button Content="Repair" FontSize="11" Padding="8,1" MinHeight="0"
+                                                            Command="{Binding DataContext.RepairVehicleCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Content="Refuel" FontSize="11" Padding="8,1" MinHeight="0" Margin="4,0,0,0"
+                                                            Command="{Binding DataContext.RefuelVehicleCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Content="Remove" FontSize="11" Padding="8,1" MinHeight="0" Margin="4,0,0,0"
+                                                            Command="{Binding DataContext.RemoveVehicleCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
                                 </GridView>
                             </ListView.View>
                         </ListView>

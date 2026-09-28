@@ -1,5 +1,6 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
--- inventories, vehicles, world state). Server side only; it does nothing on clients.
+-- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
+-- refuel or remove vehicles). Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
 --   spiffocon_in.txt   written by SpiffoCON:  "SEQ <n>" then one request per line: id<TAB>action<TAB>arg...
@@ -8,7 +9,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 1
+local VERSION = 2
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -179,12 +180,126 @@ local function world()
 	}
 end
 
+-- ---- write actions ----
+-- Each one mirrors what the game's own server code does for the same admin action, including
+-- the call that syncs the change to the player's client, and is written to the admin log.
+
+local function audit(text)
+	try(function() writeLog("admin", "SpiffoCON bridge: " .. text) end)
+end
+
+local function requirePlayer(username)
+	local p = findPlayer(username)
+	if not p then error("player " .. tostring(username) .. " is not online") end
+	return p
+end
+
+-- as the health cheat "healthFullBody" in server/ClientCommands.lua
+local function heal(username)
+	local p = requirePlayer(username)
+	local parts = p:getBodyDamage():getBodyParts()
+	for i = 0, parts:size() - 1 do
+		local part = parts:get(i)
+		part:RestoreToFullHealth()
+		if part:getStiffness() > 0 then
+			part:setStiffness(0)
+			try(function() p:getFitness():removeStiffnessValue(BodyPartType.ToString(part:getType())) end)
+		end
+		syncBodyPart(part, 0xFFFFFFFFFFF)
+	end
+	audit("healed " .. username)
+	return { health = try(function() return math.floor(p:getBodyDamage():getOverallBodyHealth()) end) }
+end
+
+local function isWornOrAttached(p, item)
+	return try(function() return p:isEquippedClothing(item) end)
+		or try(function() return p:getWornItems():contains(item) end)
+		or try(function() return p:isAttachedItem(item) end)
+end
+
+local function collect(container, fullType, into)
+	local items = container:getItems()
+	for i = 0, items:size() - 1 do
+		local item = items:get(i)
+		if item:getFullType() == fullType then into[#into + 1] = item end
+		local inner = try(function() return item:getInventory() end)
+		if inner then collect(inner, fullType, into) end
+	end
+end
+
+-- as buildUtil in server/BuildingObjects/ISBuildUtil.lua; count 0 = all of them
+local function removeItem(username, fullType, count)
+	local p = requirePlayer(username)
+	count = tonumber(count) or 0
+	local found = {}
+	collect(p:getInventory(), fullType, found)
+	local removed, skipped = 0, 0
+	for _, item in ipairs(found) do
+		if count > 0 and removed >= count then break end
+		if isWornOrAttached(p, item) then
+			skipped = skipped + 1
+		else
+			try(function() p:removeFromHands(item) end)
+			local container = item:getContainer() or p:getInventory()
+			container:Remove(item)
+			sendRemoveItemFromContainer(container, item)
+			removed = removed + 1
+		end
+	end
+	if removed > 0 then audit("removed " .. removed .. " x " .. fullType .. " from " .. username) end
+	return { removed = removed, skippedWorn = skipped }
+end
+
+local function requireVehicle(id)
+	local v = getVehicleById(tonumber(id) or -1)
+	if not v then error("no vehicle with id " .. tostring(id) .. " (it may be in an area no player has loaded)") end
+	return v
+end
+
+local function vehicleName(v)
+	return (try(function() return v:getScript():getFullName() end) or "vehicle") .. " #" .. tostring(try(function() return v:getId() end))
+end
+
+-- as Commands.repair in server/Vehicles/VehicleCommands.lua
+local function repairVehicle(id)
+	local v = requireVehicle(id)
+	v:repair()
+	audit("repaired " .. vehicleName(v))
+	return { repaired = true }
+end
+
+-- as Commands.setContainerContentAmount, filling the gas tank to its capacity
+local function refuelVehicle(id)
+	local v = requireVehicle(id)
+	local tank = v:getPartById("GasTank")
+	if not tank then error(vehicleName(v) .. " has no gas tank") end
+	local capacity = tank:getContainerCapacity()
+	tank:setContainerContentAmount(capacity)
+	v:transmitPartModData(tank)
+	audit("refuelled " .. vehicleName(v))
+	return { fuel = capacity }
+end
+
+-- as Commands.remove
+local function removeVehicle(id)
+	local v = requireVehicle(id)
+	local name = vehicleName(v)
+	v:permanentlyRemove()
+	audit("removed " .. name)
+	return { removed = true }
+end
+
 local actions = {
 	ping = function() return { version = VERSION, players = getOnlinePlayers():size() } end,
 	players = function() return listPlayers() end,
 	inventory = function(username) return inventory(username) end,
 	vehicles = function() return vehicles() end,
 	world = function() return world() end,
+	heal = heal,
+	removeitem = removeItem,
+	repairvehicle = repairVehicle,
+	refuelvehicle = refuelVehicle,
+	removevehicle = removeVehicle,
 }
 
 -- ---- channel ----

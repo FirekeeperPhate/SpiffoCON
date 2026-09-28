@@ -150,8 +150,10 @@ public sealed partial class BridgeViewModel : ObservableObject
         {
             var started = DateTime.Now;
             int version = await _client.PingAsync();
+            BridgeVersion = version;
             IsConnected = true;
-            StatusText = $"Bridge v{version} answered in {(DateTime.Now - started).TotalSeconds:0.0} s.";
+            StatusText = $"Bridge v{version} answered in {(DateTime.Now - started).TotalSeconds:0.0} s."
+                + (CanAct ? "" : " Admin actions need bridge v2: upload the new version to the Workshop and restart the server.");
             await RefreshAsync();
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -243,6 +245,79 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
         StatusText = $"{player.Username} and their position are now in the Players tab.";
     }
+
+    // ---- admin actions (bridge v2) ----
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanAct))]
+    private int bridgeVersion;
+
+    /// <summary>Write actions arrived with bridge v2.</summary>
+    public bool CanAct => BridgeVersion >= 2;
+
+    async Task ActAsync(string confirm, Func<BridgeClient, Task<string>> action, bool reloadInventory = false)
+    {
+        if (_client is null)
+            return;
+        if (!CanAct)
+        {
+            StatusText = "This needs bridge v2 on the server: upload the new version to the Workshop and restart the server.";
+            return;
+        }
+        if (_main.Confirm?.Invoke(confirm) != true)
+            return;
+        try
+        {
+            StatusText = await action(_client);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            StatusText = "Failed: " + ex.Message;
+        }
+        await RefreshAsync();
+        if (reloadInventory && SelectedPlayer is { } p)
+            await LoadInventoryAsync(p.Username);
+    }
+
+    [RelayCommand]
+    private Task HealAsync(BridgePlayer? player) => player is null ? Task.CompletedTask : ActAsync(
+        $"Heal {player.Username} completely (all wounds, fractures and bites)?",
+        async c => $"{player.Username} healed" + (await c.HealAsync(player.Username) is { } h ? $": health {h}." : "."));
+
+    [RelayCommand]
+    private Task RemoveOneAsync(BridgeItem? item) => RemoveAsync(item, 1);
+
+    [RelayCommand]
+    private Task RemoveAllAsync(BridgeItem? item) => RemoveAsync(item, item?.Count ?? 0);
+
+    Task RemoveAsync(BridgeItem? item, int count)
+    {
+        if (item is null || SelectedPlayer is not { } player)
+            return Task.CompletedTask;
+        return ActAsync(
+            $"Remove {count} × {item.Name} ({item.FullType}) from {player.Username}'s inventory?\n\nWorn clothes and attached items are not touched.",
+            async c =>
+            {
+                var (removed, skipped) = await c.RemoveItemAsync(player.Username, item.FullType, count);
+                return $"Removed {removed} × {item.Name} from {player.Username}." + (skipped > 0 ? $" {skipped} worn or attached left in place." : "");
+            },
+            reloadInventory: true);
+    }
+
+    [RelayCommand]
+    private Task RepairVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
+        $"Repair {v.Script} #{id} completely?",
+        async c => { await c.RepairVehicleAsync(id); return $"{v.Script} #{id} repaired."; });
+
+    [RelayCommand]
+    private Task RefuelVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
+        $"Fill the tank of {v.Script} #{id}?",
+        async c => { await c.RefuelVehicleAsync(id); return $"{v.Script} #{id} refuelled."; });
+
+    [RelayCommand]
+    private Task RemoveVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
+        $"Remove {v.Script} #{id} from the world for good?" + (v.Driver is { } d ? $"\n\n{d} is driving it." : ""),
+        async c => { await c.RemoveVehicleAsync(id); return $"{v.Script} #{id} removed."; });
 
     public void Close()
     {

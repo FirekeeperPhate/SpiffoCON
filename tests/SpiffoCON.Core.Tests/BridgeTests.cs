@@ -52,6 +52,9 @@ public sealed class BridgeTests : IDisposable
             "players" => """{"id":"$ID","ok":true,"data":[{"username":"rj","role":"admin","x":10600,"y":9400,"z":0,"health":87,"god":false,"vehicle":"Base.CarNormal","hoursSurvived":12.5}]}""",
             "inventory" => """{"id":"$ID","ok":true,"data":[{"container":"Inventory","fullType":"Base.Axe","name":"Axe","count":1,"equipped":true},{"container":"Inventory > Big Hiking Bag","fullType":"Base.Nails","name":"Nails","count":42,"equipped":false}]}""",
             "vehicles" => """{"id":"$ID","ok":true,"data":[]}""",
+            "heal" => """{"id":"$ID","ok":true,"data":{"health":100}}""",
+            "removeitem" when args is ["rj", "Base.Nails", "5"] => """{"id":"$ID","ok":true,"data":{"removed":5,"skippedWorn":0}}""",
+            "removevehicle" => """{"id":"$ID","ok":false,"error":"no vehicle with id 7 (it may be in an area no player has loaded)"}""",
             _ => """{"id":"$ID","ok":false,"error":"unknown action x"}""",
         });
         var client = new BridgeClient(new LocalBridgeFiles(_dir)) { PollInterval = TimeSpan.FromMilliseconds(50) };
@@ -63,6 +66,10 @@ public sealed class BridgeTests : IDisposable
         Assert.Equal(42, items[1].Count);
         Assert.True(items[0].Equipped);
         Assert.Empty(await client.VehiclesAsync());
+        Assert.Equal(100, await client.HealAsync("rj"));
+        Assert.Equal((5, 0), await client.RemoveItemAsync("rj", "Base.Nails", 5));
+        var gone = await Assert.ThrowsAsync<BridgeException>(() => client.RemoveVehicleAsync(7));
+        Assert.Contains("no vehicle with id 7", gone.Message);
         var ex = await Assert.ThrowsAsync<BridgeException>(() => client.SendAsync("nope"));
         Assert.Contains("unknown action", ex.Message);
     }

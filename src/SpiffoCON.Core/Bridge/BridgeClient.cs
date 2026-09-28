@@ -198,6 +198,31 @@ public sealed class BridgeClient(IBridgeFiles files)
     public async Task<BridgeWorld> WorldAsync() =>
         (await SendAsync("world").ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld();
 
+    // ---- write actions (bridge v2); the bridge also writes each one to the admin log ----
+
+    /// <summary>Full heal of every body part, synced to the player's client. Returns the new health.</summary>
+    public async Task<int?> HealAsync(string username)
+    {
+        var data = await SendAsync("heal", username).ConfigureAwait(false);
+        return data.TryGetProperty("health", out var h) && h.ValueKind == JsonValueKind.Number ? h.GetInt32() : null;
+    }
+
+    /// <summary>
+    /// Removes up to <paramref name="count"/> items of a type (0 = all), bags included. Worn clothes
+    /// and attached items are left alone: they are counted in SkippedWorn.
+    /// </summary>
+    public async Task<(int Removed, int SkippedWorn)> RemoveItemAsync(string username, string fullType, int count)
+    {
+        var data = await SendAsync("removeitem", username, fullType, Math.Max(0, count).ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false);
+        return (data.GetProperty("removed").GetInt32(), data.TryGetProperty("skippedWorn", out var s) ? s.GetInt32() : 0);
+    }
+
+    public Task RepairVehicleAsync(int id) => SendAsync("repairvehicle", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    public Task RefuelVehicleAsync(int id) => SendAsync("refuelvehicle", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    public Task RemoveVehicleAsync(int id) => SendAsync("removevehicle", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
     /// <summary>World, players and vehicles in one round trip.</summary>
     public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default)
     {

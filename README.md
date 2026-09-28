@@ -48,7 +48,10 @@ Windows, .NET 10, WPF.
   side only): player positions, health, role, vehicle and inventory, vehicles in loaded
   areas and world state, which RCON can't give. It talks through files in the server's
   `Zomboid/Lua` folder, read and written over SFTP (`spiffocon_in.txt` /
-  `spiffocon_out.txt`); read actions only. The bridge runs while the server runs a game:
+  `spiffocon_out.txt`). Bridge v2 adds admin actions, each done the way the game's own
+  server code does it (with its client sync) and written to the admin log: full heal,
+  remove items (not worn or attached ones), repair, refuel or remove a vehicle, all asked
+  for confirmation. The bridge runs while the server runs a game:
   an empty server with `PauseEmpty=true` is paused and the bridge waits.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
@@ -58,7 +61,7 @@ Windows, .NET 10, WPF.
 
 ## Planned
 
-- Bridge write actions (heal, remove items) and offline players from the server database.
+- Offline players from the server database (SQLite over SFTP).
 - Base-game item icons (the dedicated server has no textures).
 
 ## Build
