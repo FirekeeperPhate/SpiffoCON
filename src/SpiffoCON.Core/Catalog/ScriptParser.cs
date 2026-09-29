@@ -118,38 +118,59 @@ public static class ScriptParser
         };
     }
 
+    /// <summary>
+    /// The game's zombie.scripting.ScriptParser.stripComments, ported step by step: from the last
+    /// "*/" backwards, pairing nested comments ("/* a /* b */ c */"), so mod files read the same as
+    /// in the game, oddities like "/*/" included.
+    /// </summary>
+    static string StripBlockComments(string text)
+    {
+        var sb = new StringBuilder(text);
+        int end = JavaLastIndexOf(sb, "*/", sb.Length);
+        while (end != -1)
+        {
+            int start = JavaLastIndexOf(sb, "/*", end - 1);
+            if (start == -1)
+                break;
+            int innerEnd = JavaLastIndexOf(sb, "*/", end - 1);
+            while (innerEnd > start)
+            {
+                int previous = start;
+                start = JavaLastIndexOf(sb, "/*", start - 2);
+                if (start == -1)
+                    break;
+                innerEnd = JavaLastIndexOf(sb, "*/", previous - 2);
+            }
+            if (start == -1)
+                break;
+            sb.Remove(start, end + 2 - start);
+            end = JavaLastIndexOf(sb, "*/", start);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Java's lastIndexOf(value, from): the last match starting at or before <paramref name="from"/>.</summary>
+    static int JavaLastIndexOf(StringBuilder sb, string value, int from)
+    {
+        for (int i = Math.Min(from, sb.Length - value.Length); i >= 0; i--)
+        {
+            int k = 0;
+            while (k < value.Length && sb[i + k] == value[k])
+                k++;
+            if (k == value.Length)
+                return i;
+        }
+        return -1;
+    }
+
     static string StripComments(string text)
     {
+        text = StripBlockComments(text);
         var sb = new StringBuilder(text.Length);
         int i = 0;
         bool lineStart = true;
         while (i < text.Length)
         {
-            if (text[i] == '/' && i + 1 < text.Length && text[i + 1] == '*')
-            {
-                // nested: commenting out a block that already holds a comment is common in mods,
-                // and the game ends such a comment at its matching "*/"
-                int depth = 1;
-                i += 2;
-                while (i < text.Length && depth > 0)
-                {
-                    if (text[i] == '/' && i + 1 < text.Length && text[i + 1] == '*')
-                    {
-                        depth++;
-                        i += 2;
-                    }
-                    else if (text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/')
-                    {
-                        depth--;
-                        i += 2;
-                    }
-                    else
-                    {
-                        i++;
-                    }
-                }
-                continue;
-            }
             if (lineStart && text[i] == '/' && i + 1 < text.Length && text[i + 1] == '/')
             {
                 int end = text.IndexOf('\n', i);

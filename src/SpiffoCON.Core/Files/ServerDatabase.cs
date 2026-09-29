@@ -74,6 +74,12 @@ public static class ServerDatabase
         // so the copy can be deleted afterwards. Only SELECTs run on it.
         var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadWrite, Pooling = false }.ToString());
         db.Open();
+        // the file comes from the server: views or triggers in it must not run SQL of its choosing
+        using (var pragma = db.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA trusted_schema = OFF;";
+            pragma.ExecuteNonQuery();
+        }
         return db;
     }
 

@@ -29,6 +29,18 @@
                     <TextBox Text="{Binding EditText, UpdateSourceTrigger=PropertyChanged}" />
                 </DataTemplate>
             </controls:OptionEditorSelector.Line>
+            <!-- Mods, WorkshopItems, Map: the list editor opens full width under the option -->
+            <controls:OptionEditorSelector.List>
+                <DataTemplate>
+                    <DockPanel>
+                        <ToggleButton DockPanel.Dock="Right" IsChecked="{Binding IsExpanded}" Margin="6,0,0,0" Padding="8,4"
+                                      ToolTip="Edit as a list, one entry per line">
+                            <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE8FD;" />
+                        </ToggleButton>
+                        <TextBox Text="{Binding EditText, UpdateSourceTrigger=PropertyChanged}" />
+                    </DockPanel>
+                </DataTemplate>
+            </controls:OptionEditorSelector.List>
         </controls:OptionEditorSelector>
 
         <Style x:Key="OptionPages" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
@@ -85,6 +97,21 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="300" />
                                 </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <!-- list options (Mods, WorkshopItems, Map) opened as one entry per line -->
+                                <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,0"
+                                            Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock FontSize="12" Opacity="0.7" Margin="0,0,0,4">
+                                        <Run Text="{Binding ListCount, Mode=OneWay}" />
+                                        <Run Text="entries, one per line, in load order. Applied to the field above when you leave the box." />
+                                    </TextBlock>
+                                    <TextBox Text="{Binding ListText, UpdateSourceTrigger=LostFocus}" AcceptsReturn="True" TextWrapping="NoWrap"
+                                             MinHeight="120" MaxHeight="360" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             VerticalContentAlignment="Top" FontFamily="{StaticResource MonoFont}" FontSize="13" />
+                                </StackPanel>
                                 <StackPanel Margin="0,0,14,0">
                                     <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding Key}" FontFamily="{StaticResource MonoFont}" FontSize="11" Opacity="0.5"
@@ -152,7 +179,7 @@
                     <TextBlock Text="Name" Style="{StaticResource FieldLabel}" />
                     <TextBox Text="{Binding ServerName, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBlock Text="Host (IP or name)" Style="{StaticResource FieldLabel}" />
-                    <TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox x:Name="HostBox" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBlock Text="RCON port" Style="{StaticResource FieldLabel}" />
                     <TextBox Text="{Binding RconPort, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBlock Text="RCON password" Style="{StaticResource FieldLabel}" />
@@ -809,7 +836,7 @@
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <ComboBox ItemsSource="{Binding Kits}" SelectedItem="{Binding KitTarget}" DisplayMemberPath="Name"
-                                                      ToolTip="The kit to add to (none chosen: a new kit)" />
+                                                      ToolTip="The kit to add to (before any kit exists, a new one is made)" />
                                             <Button Grid.Column="1" Content="Add to kit" Command="{Binding AddToKitCommand}" Margin="6,0,0,0"
                                                     ToolTip="Add this item, in the quantity above, to the kit" />
                                         </Grid>
@@ -1398,7 +1425,17 @@
                             <ListView ItemsSource="{Binding Mods}" ItemContainerStyle="{StaticResource GridRow}">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="Workshop item" Width="220">
+                                        <GridViewColumn Width="46">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="&#xE8A7;" FontFamily="{StaticResource IconFont}" Padding="6,2" MinHeight="0"
+                                                            ToolTip="Open the Workshop page in the browser"
+                                                            Command="{Binding DataContext.OpenWorkshopPageCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Workshop item" Width="170">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding WorkshopId}" />
@@ -1461,7 +1498,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Desktop notifications" Style="{StaticResource SectionTitle}" />
                                     <CheckBox Content="Players joining and leaving" IsChecked="{Binding NotifyPlayerJoins}" Margin="0,8,0,0"
-                                              ToolTip="Seen with the online list, refreshed every 30 s while connected" />
+                                              ToolTip="Seen with the online list: the Players tab refreshes it every 30 s while its auto refresh is on" />
                                     <CheckBox Content="Chat messages containing" IsChecked="{Binding NotifyChat}" Margin="0,6,0,0"
                                               ToolTip="Needs the Logs tab following the server's chat log" />
                                     <TextBox Text="{Binding NotifyChatWords, UpdateSourceTrigger=PropertyChanged}" Margin="28,4,0,0" IsEnabled="{Binding NotifyChat}"

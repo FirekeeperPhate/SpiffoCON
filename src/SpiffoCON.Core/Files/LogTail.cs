@@ -79,6 +79,18 @@ public sealed partial class LogTail(ILogFolder folder, string type)
             _offset = 0; // truncated
             _partial = [];
         }
+        else if (sinceLastPoll > FreshFileWindow)
+        {
+            // back after a long gap (following paused, link down, PC asleep): what was written
+            // meanwhile is the past, not news; if it is a lot, only its tail is worth reading
+            LastPollWasBacklog = true;
+            if (newest.Size - _offset > InitialBytes)
+            {
+                _offset = newest.Size - InitialBytes;
+                _partial = [(byte)'\u0001'];
+                lines.Add(new LogLine(DateTime.Now, "", "Earlier lines skipped (written while SpiffoCON was not following)", LogLineKind.Marker));
+            }
+        }
         if (newest.Size <= _offset)
             return lines;
 

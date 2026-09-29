@@ -128,6 +128,8 @@ public sealed partial class AccountsViewModel : ObservableObject
             try
             {
                 var probe = await _main.ProbeAsync(sftp);
+                // from now on the key this probe saw is required
+                sftp = _main.CurrentSftpSettings() ?? sftp;
                 var logs = probe.LogFolders.OrderBy(p => p.Contains("/Zomboid/", StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(p => p.Length).FirstOrDefault();
                 if (logs is null)
                 {

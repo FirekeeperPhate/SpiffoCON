@@ -190,7 +190,15 @@ public sealed partial class CatalogViewModel : ObservableObject
             var folder = PickGameFolder?.Invoke();
             if (folder is null)
                 return;
-            packs = IconExtractor.ResolveTexturePacks(folder);
+            try
+            {
+                packs = IconExtractor.ResolveTexturePacks(folder);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                StatusText = "Could not read that folder: " + ex.Message;
+                return;
+            }
             if (packs is null)
             {
                 StatusText = "No media\\texturepacks\\*.pack there: choose the ProjectZomboid folder of your game install.";
@@ -204,15 +212,23 @@ public sealed partial class CatalogViewModel : ObservableObject
             var progress = new Progress<string>(s => StatusText = s);
             int count = await Task.Run(() => IconExtractor.Extract(packs, _service.VanillaIconFolder, progress));
             OnPropertyChanged(nameof(HasVanillaIcons));
+            var taken = count > 0 ? $"{count} base-game icons taken from {packs}." : "No item icons found in those texture packs.";
             if (_loadedFromServer && _main.IsSessionActive)
+            {
                 await LoadFromServerCoreAsync();
+                // both outcomes count: the icons, and how the reload went
+                StatusText = taken + " " + StatusText;
+            }
             else if (!_loadedFromServer)
+            {
                 await LoadVanillaAsync();
-            // else: the server's mods stay listed (disconnected, they can't be read again now);
-            // the new icons show after the next "Load from server"
-            StatusText = count > 0
-                ? $"{count} base-game icons taken from {packs}."
-                : "No item icons found in those texture packs.";
+                StatusText = taken;
+            }
+            else
+            {
+                // disconnected: the server's mods stay listed as they are
+                StatusText = taken + " Connect and Load from server to see them on the list.";
+            }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -231,6 +247,9 @@ public sealed partial class CatalogViewModel : ObservableObject
 
     [RelayCommand]
     private void CancelLoad() => _loadCts?.Cancel();
+
+    /// <summary>Server switch or close: a load still running (a SteamCMD download too) stops.</summary>
+    public void Close() => _loadCts?.Cancel();
 
     [RelayCommand]
     private async Task LoadFromServerAsync()
@@ -278,15 +297,20 @@ public sealed partial class CatalogViewModel : ObservableObject
             var sftp = _main.CurrentSftpSettings();
             var progress = new Progress<string>(s => StatusText = s);
             string? remoteWorkshop = null;
+            // said in the summary: a status line is overwritten by the next step at once
+            string? sftpProblem = null;
             if (sftp is not null && options.WorkshopItems.Count > 0)
             {
                 try
                 {
                     remoteWorkshop = await _main.FindWorkshopFolderAsync(progress, ct);
+                    sftp = _main.CurrentSftpSettings() ?? sftp; // with the key the probe saw
+                    if (remoteWorkshop is null)
+                        sftpProblem = "SFTP: no workshop folder (steamapps/workshop/content/108600) found on the server.";
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
                 {
-                    StatusText = "SFTP: " + ex.Message;
+                    sftpProblem = "SFTP: " + ex.Message;
                 }
             }
 
@@ -307,7 +331,7 @@ public sealed partial class CatalogViewModel : ObservableObject
             ModSources.Clear();
             foreach (var s in result.Sources)
                 ModSources.Add(s);
-            ModSummary = Summarize(result, options);
+            ModSummary = Summarize(result, options) + (sftpProblem is null ? "" : "\n" + sftpProblem);
             StatusText = $"Loaded {result.Entries.Count(e => !e.Source.IsVanilla)} entries from {options.Mods.Count - result.MissingMods.Count} mods.";
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -342,7 +366,7 @@ public sealed partial class CatalogViewModel : ObservableObject
         }
         var text = string.Join(" · ", parts);
         if (result.SftpStats is { Busy: true })
-            text += "\nSFTP: another SpiffoCON window was copying these mods; the copies from last time were not checked.";
+            text += "\nSFTP: another SpiffoCON window was copying these mods, so they were not read this time: load again when it is done.";
         else if (result.SftpStats is { } s)
         {
             text += s.Read == 0
@@ -364,7 +388,7 @@ public sealed partial class CatalogViewModel : ObservableObject
         bytes >= 1L << 20 ? $"{bytes / 1048576.0:0.0} MB" : $"{Math.Max(1, bytes >> 10)} KB";
 
     static string FormatSize(long bytes) =>
-        bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} GB" : $"{Math.Max(1, bytes >> 20)} MB";
+        bytes <= 0 ? "size unknown" : bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} GB" : $"{Math.Max(1, bytes >> 20)} MB";
 
     // ---- actions ----
 

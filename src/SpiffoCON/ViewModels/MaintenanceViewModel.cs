@@ -34,7 +34,11 @@ public sealed partial class MaintenanceViewModel : ObservableObject
     readonly MainViewModel _main;
     readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(1) };
     readonly DispatcherTimer _waitBack = new() { Interval = TimeSpan.FromSeconds(15) };
-    DateTime _restartAt;
+    /// <summary>Restart time on a monotonic clock (Environment.TickCount64, ms): a clock change can't move it.</summary>
+    long _restartAtTicks;
+
+    /// <summary>When the countdown last ran; a long gap means the PC slept.</summary>
+    long _lastTickTicks;
     Queue<int> _warnings = new();
 
     public MaintenanceViewModel(MainViewModel main)
@@ -65,7 +69,7 @@ public sealed partial class MaintenanceViewModel : ObservableObject
 
     public ObservableCollection<ModUpdateRow> Mods { get; } = [];
 
-    [ObservableProperty] private string updatesText = "Compares the mods the server has installed with Steam. Needs SFTP.";
+    [ObservableProperty] private string updatesText = "Compares the mods the server has installed with Steam. Needs the RCON connection and SFTP.";
     [ObservableProperty] private bool isChecking;
     [ObservableProperty] private bool updatesFound;
 
@@ -104,6 +108,7 @@ public sealed partial class MaintenanceViewModel : ObservableObject
 
             var progress = new Progress<string>(s => UpdatesText = s);
             var folder = await _main.FindWorkshopFolderAsync(progress);
+            sftp = _main.CurrentSftpSettings() ?? sftp; // with the key the probe saw
             if (folder is null)
             {
                 UpdatesText = "No workshop folder found over SFTP (steamapps/workshop/content/108600).";
@@ -150,6 +155,24 @@ public sealed partial class MaintenanceViewModel : ObservableObject
         }
     }
 
+    /// <summary>The mod's Steam Workshop page in the default browser.</summary>
+    [RelayCommand]
+    private void OpenWorkshopPage(ModUpdateRow? row)
+    {
+        // ids come from the server's WorkshopItems, digits only: nothing else reaches the shell
+        if (row is null || !row.WorkshopId.All(char.IsAsciiDigit) || row.WorkshopId.Length == 0)
+            return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                $"https://steamcommunity.com/sharedfiles/filedetails/?id={row.WorkshopId}") { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            UpdatesText = "Could not open the browser: " + ex.Message;
+        }
+    }
+
     // ---- restart ----
 
     public IReadOnlyList<int> MinuteChoices { get; } = [1, 2, 5, 10, 15, 30, 60];
@@ -187,10 +210,11 @@ public sealed partial class MaintenanceViewModel : ObservableObject
         if (!_main.IsSessionActive || IsCountingDown || IsQuitting)
             return;
 
-        _restartAt = DateTime.Now.AddMinutes(RestartMinutes);
+        _restartAtTicks = Environment.TickCount64 + RestartMinutes * 60_000L;
+        _lastTickTicks = Environment.TickCount64;
         _warnings = new Queue<int>(RestartCountdown.WarningsFor(RestartMinutes * 60));
         IsCountingDown = true;
-        RestartStatus = $"Restarting at {_restartAt:HH:mm:ss}.";
+        RestartStatus = $"Restarting at {DateTime.Now.AddMinutes(RestartMinutes):HH:mm:ss}.";
         _tick.Start();
         await TickAsync();
     }
@@ -221,7 +245,18 @@ public sealed partial class MaintenanceViewModel : ObservableObject
         _ticking = true;
         try
         {
-            int left = (int)Math.Ceiling((_restartAt - DateTime.Now).TotalSeconds);
+            long now = Environment.TickCount64;
+            // the PC slept (or stalled) through part of the countdown: the players' last warning may be
+            // long gone, so don't quit on them now
+            if (now - _lastTickTicks > 20_000)
+            {
+                StopCountdown();
+                RestartStatus = $"Restart called off at {DateTime.Now:HH:mm:ss}: SpiffoCON was paused (the PC slept?) during the countdown. Start it again if you still want it.";
+                await _main.RunAsync(ServerMessage.BuildCommand("<RGB:0.3,0.9,0.3>The restart has been called off."));
+                return;
+            }
+            _lastTickTicks = now;
+            int left = (int)Math.Ceiling((_restartAtTicks - now) / 1000.0);
             CountdownText = left > 0 ? $"{left / 60}:{left % 60:00}" : "0:00";
             if (left > 0)
             {
@@ -242,10 +277,15 @@ public sealed partial class MaintenanceViewModel : ObservableObject
                 var saved = await _main.RunAsync("save");
                 if (_closed)
                     return;
+                if (!_main.IsSessionActive)
+                {
+                    RestartStatus = "Disconnected before quit was sent: the server was not restarted.";
+                    return;
+                }
                 RestartStatus = saved is null ? "save failed (see the console); quitting anyway..." : "Quitting...";
                 _main.ExpectShutdown();
                 var quit = await _main.RunAsync("quit");
-                if (_closed)
+                if (_closed || !_main.IsSessionActive)
                     return;
                 // no reply is normal when the server closes at once
                 RestartStatus = (quit is null ? $"quit sent at {DateTime.Now:HH:mm:ss} (no reply: the server may already be closing). " : $"Server stopped at {DateTime.Now:HH:mm:ss}. ")
@@ -280,17 +320,34 @@ public sealed partial class MaintenanceViewModel : ObservableObject
             RestartStatus = $"No answer {WaitBackLimit.TotalMinutes:0} minutes after quit: check the host's panel. SpiffoCON reconnects with the next command.";
             return;
         }
-        await _main.RefreshPlayersAsync(quiet: true);
-        // still answering a minute after quit, without ever dropping: it did not stop
-        if (!_main.ConnectionLostSinceShutdown && ++_answeredPolls >= 4)
+        if (_waitTicking)
+            return;
+        _waitTicking = true;
+        try
+        {
+            await _main.RefreshPlayersAsync(quiet: true);
+        }
+        finally
+        {
+            _waitTicking = false;
+        }
+        // "back" may have been announced during that poll, which stopped the wait
+        if (!_waitBack.IsEnabled)
+            return;
+        if (_main.ConnectionLostSinceShutdown)
+            _answeredPolls = 0;
+        // still answering 3 minutes after quit, without ever dropping: it did not stop (a big world
+        // may keep RCON up for a while as it saves)
+        if (!_main.ConnectionLostSinceShutdown && ++_answeredPolls >= 12)
         {
             _waitBack.Stop();
             _main.EndExpectedShutdown();
-            RestartStatus = "The server is still running: quit did not stop it (see the console).";
+            RestartStatus = "The server is still answering 3 minutes after quit: it did not stop (see the console).";
         }
     }
 
     int _answeredPolls;
+    bool _waitTicking;
 
     public void Close()
     {

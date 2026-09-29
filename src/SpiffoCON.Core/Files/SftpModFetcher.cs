@@ -53,8 +53,23 @@ public sealed class SftpModFetcher
     readonly string _remoteRoot;
 
     public SftpModFetcher(SftpSettings settings, string remoteWorkshopFolder, string cacheFolder)
-        : this(ct => SftpRemoteFileSystem.ConnectAsync(settings, ct), remoteWorkshopFolder, cacheFolder)
+        : this(PinningConnector(settings), remoteWorkshopFolder, cacheFolder)
     {
+    }
+
+    /// <summary>
+    /// Connections that insist on the key the first one saw: the extra ones opened next must not
+    /// accept another key when none was saved yet.
+    /// </summary>
+    static Func<CancellationToken, Task<IRemoteFileSystem>> PinningConnector(SftpSettings settings)
+    {
+        var current = settings;
+        return async ct =>
+        {
+            var (client, fingerprint) = await SftpProbe.ConnectAsync(current, ct).ConfigureAwait(false);
+            current = current.Pinned(fingerprint);
+            return new SftpRemoteFileSystem(client);
+        };
     }
 
     public SftpModFetcher(Func<CancellationToken, Task<IRemoteFileSystem>> connect, string remoteWorkshopFolder, string cacheFolder)
@@ -101,12 +116,14 @@ public sealed class SftpModFetcher
             {
                 lockStream = new FileStream(LockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             }
-            catch (IOException) when (DateTime.UtcNow < waitUntil)
+            // only a file held by another process means "someone else is copying" (HRESULT 32:
+            // sharing violation); other errors (disk, path) are reported as they are
+            catch (IOException ex) when ((ex.HResult & 0xFFFF) == 32 && DateTime.UtcNow < waitUntil)
             {
                 progress?.Report("SFTP: another SpiffoCON window is copying these mods; waiting for it...");
                 await Task.Delay(1000, ct).ConfigureAwait(false);
             }
-            catch (IOException)
+            catch (IOException ex) when ((ex.HResult & 0xFFFF) == 32)
             {
                 return new SftpFetchResult(result, Stats(0, 0, null, 0, false) with { Busy = true },
                     new IOException("another SpiffoCON window is copying this server's mods right now; try again when it is done."));
@@ -137,7 +154,11 @@ public sealed class SftpModFetcher
                 }
                 int upToDate = result.Count;
                 if (toRead.Count == 0)
+                {
+                    // still in use: the cache cleanup goes by this date
+                    try { File.SetLastWriteTimeUtc(StateFile, DateTime.UtcNow); } catch (IOException) { } catch (UnauthorizedAccessException) { }
                     return new SftpFetchResult(result, Stats(upToDate, 0, null, connections.Count, manifest is not null), null);
+                }
 
                 // the other connections, in parallel; a host that refuses them just gets fewer
                 var opening = Enumerable.Range(0, Math.Max(0, Connections - 1)).Select(_ => TryConnectAsync(ct)).ToList();

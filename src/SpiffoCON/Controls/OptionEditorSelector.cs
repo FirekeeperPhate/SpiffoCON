@@ -12,9 +12,10 @@ public sealed class OptionEditorSelector : DataTemplateSelector
     public DataTemplate? Enum { get; set; }
     public DataTemplate? Text { get; set; }
     public DataTemplate? Line { get; set; }
+    public DataTemplate? List { get; set; }
 
     public override DataTemplate? SelectTemplate(object item, DependencyObject container) =>
-        (item as OptionItem)?.Info.Type switch
+        item is OptionItem { IsList: true } ? List ?? Line : (item as OptionItem)?.Info.Type switch
         {
             ServerOptionType.Boolean => Boolean,
             ServerOptionType.Enum => Enum,

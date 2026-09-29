@@ -19,6 +19,9 @@ public sealed record RconOptions
 
     public int MaxPacketSize { get; init; } = 4 * 1024 * 1024;
 
+    /// <summary>Largest reply joined from several packets (PZ's longest, help, is about 7 KB).</summary>
+    public int MaxReplyChars { get; init; } = 8_000_000;
+
     /// <summary>Largest command body the Source protocol allows (4096 minus header).</summary>
     public int MaxCommandBytes { get; init; } = 4086;
 

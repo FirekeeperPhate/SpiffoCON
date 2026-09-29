@@ -24,7 +24,7 @@ public partial class MainWindow : Window
         Attach(new MainViewModel(_book));
         Loaded += (_, _) =>
         {
-            (string.IsNullOrEmpty(_vm.Host) ? (UIElement)ConnectButton : ConsoleInputBox).Focus();
+            (string.IsNullOrEmpty(_vm.Host) ? (UIElement)HostBox : ConsoleInputBox).Focus();
             if (ProfileStore.LoadProblem is { } problem)
                 MessageBox.Show(this, problem, "SpiffoCON", MessageBoxButton.OK, MessageBoxImage.Warning);
         };
@@ -228,9 +228,7 @@ public partial class MainWindow : Window
             _closeAfterSwitch = true;
             return;
         }
-        if (_vm.Maintenance.IsCountingDown && MessageBox.Show(this,
-                "A restart countdown is running. Close SpiffoCON anyway?\n\nThe restart is called off and the players are told.",
-                "SpiffoCON", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        if (!_vm.ConfirmLeaving("Close SpiffoCON"))
             return;
         // let the RCON connection close cleanly, then close for real
         _closing = true;

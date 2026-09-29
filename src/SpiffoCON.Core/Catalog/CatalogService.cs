@@ -72,7 +72,10 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
         return Path.Combine(SftpCacheRoot, "s-" + hash.ToLowerInvariant());
     }
 
-    /// <summary>Up to 0.9.4 the copies of all servers shared cache/sftp/&lt;workshop id&gt;.</summary>
+    /// <summary>
+    /// Up to 0.9.4 the copies of all servers shared cache/sftp/&lt;workshop id&gt;: removed. Per-server
+    /// copies unused for two months go too.
+    /// </summary>
     void RemoveLegacySftpCache()
     {
         try
@@ -85,6 +88,14 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
             var oldState = Path.Combine(SftpCacheRoot, "items.json");
             if (File.Exists(oldState))
                 File.Delete(oldState);
+            // copies of servers not loaded for two months (removed from the list, gone)
+            foreach (var dir in Directory.EnumerateDirectories(SftpCacheRoot, "s-*"))
+            {
+                var state = Path.Combine(dir, "items.json");
+                var used = File.Exists(state) ? File.GetLastWriteTimeUtc(state) : Directory.GetLastWriteTimeUtc(dir);
+                if (DateTime.UtcNow - used > TimeSpan.FromDays(60))
+                    Directory.Delete(dir, recursive: true);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

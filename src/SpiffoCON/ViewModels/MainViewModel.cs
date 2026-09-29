@@ -58,7 +58,6 @@ public sealed partial class MainViewModel : ObservableObject
         SftpEnabled = _profile.SftpEnabled;
         SftpCustomHost = _profile.SftpCustomHost;
         SftpHost = _profile.SftpHost;
-        _loadingProfile = false;
         SftpPort = _profile.SftpPort;
         SftpUser = _profile.SftpUser;
         SftpSamePassword = _profile.SftpSamePassword;
@@ -66,6 +65,7 @@ public sealed partial class MainViewModel : ObservableObject
         _book.SessionPasswords.TryGetValue(_profile.Id, out var typed);
         RconPassword = ProfileStore.Unprotect(_profile.RconPassword) is { Length: > 0 } rcon ? rcon : typed.Rcon ?? "";
         SftpPassword = ProfileStore.Unprotect(_profile.SftpPassword) is { Length: > 0 } sftp ? sftp : typed.Sftp ?? "";
+        _loadingProfile = false;
 
         _rcon.ConnectionLost += (_, error) => Application.Current?.Dispatcher.BeginInvoke(() =>
         {
@@ -127,16 +127,30 @@ public sealed partial class MainViewModel : ObservableObject
     internal string SftpHostName => (SftpCustomHost && !string.IsNullOrWhiteSpace(SftpHost) ? SftpHost : Host).Trim();
 
     /// <summary>SFTP settings when SFTP is enabled and filled in, else null.</summary>
-    internal SftpSettings? CurrentSftpSettings(bool trustSavedKey = true)
+    /// <param name="trustKey">The key to require instead of the saved one (a change the user accepted).</param>
+    internal SftpSettings? CurrentSftpSettings(string? trustKey = null)
     {
         var password = SftpSamePassword ? RconPassword : SftpPassword;
         if (!SftpEnabled || SftpHostName.Length == 0 || string.IsNullOrWhiteSpace(SftpUser) || password.Length == 0)
             return null;
-        // a saved host key only counts for the host it came from
-        var keyHost = _profile.SftpHostKeyFor ?? _profile.Host;
-        var key = trustSavedKey && keyHost.Equals(SftpHostName, StringComparison.OrdinalIgnoreCase) ? _profile.SftpHostKey : null;
-        return new SftpSettings(SftpHostName, SftpPort, SftpUser.Trim(), password, key);
+        var host = SftpHostName;
+        var dispatcher = Application.Current?.Dispatcher;
+        return new SftpSettings(host, SftpPort, SftpUser.Trim(), password, trustKey ?? SavedHostKey(host))
+        {
+            // whichever feature connects first to a host with no saved key, that key is kept
+            OnFirstKey = fingerprint => dispatcher?.BeginInvoke(() =>
+            {
+                if (_shutDown || SavedHostKey(host) is not null)
+                    return;
+                RememberSftpHostKey(host, fingerprint);
+                SaveProfile();
+            }),
+        };
     }
+
+    /// <summary>A saved host key only counts for the host it came from.</summary>
+    string? SavedHostKey(string host) =>
+        (_profile.SftpHostKeyFor ?? _profile.Host).Equals(host, StringComparison.OrdinalIgnoreCase) ? _profile.SftpHostKey : null;
 
     /// <summary>
     /// Runs the SFTP probe and keeps the host key it saw: the first SFTP use (whichever tab it
@@ -147,17 +161,18 @@ public sealed partial class MainViewModel : ObservableObject
         var probe = await SftpProbe.RunAsync(sftp, ct);
         if (!_shutDown)
         {
-            RememberSftpHostKey(probe.HostKeyFingerprint);
+            RememberSftpHostKey(sftp.Host, probe.HostKeyFingerprint);
+            _profile.SftpFoldersHost = FoldersKey(sftp);
             SaveProfile();
         }
         return probe;
     }
 
     /// <summary>Saves the SSH host key just seen, for the current SFTP host.</summary>
-    internal void RememberSftpHostKey(string fingerprint)
+    internal void RememberSftpHostKey(string host, string fingerprint)
     {
         _profile.SftpHostKey = fingerprint;
-        _profile.SftpHostKeyFor = SftpHostName;
+        _profile.SftpHostKeyFor = host;
     }
 
     bool _loadingProfile;
@@ -165,15 +180,32 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnHostChanged(string value) => SftpTargetChanged();
     partial void OnSftpHostChanged(string value) => SftpTargetChanged();
     partial void OnSftpCustomHostChanged(bool value) => SftpTargetChanged();
+    partial void OnSftpPortChanged(int value) => SftpTargetChanged();
+    partial void OnSftpUserChanged(string value) => SftpTargetChanged();
 
-    /// <summary>Folders found on one SFTP host mean nothing on another: forget them.</summary>
+    /// <summary>Which account on which host the remembered folders were found with.</summary>
+    static string FoldersKey(SftpSettings sftp) => $"{sftp.Host}|{sftp.Port}|{sftp.User}";
+
+    /// <summary>Turning "remember" off takes the saved passwords out of the file at once.</summary>
+    partial void OnRememberPasswordsChanged(bool value)
+    {
+        if (!_loadingProfile && _profile is not null)
+            SaveProfile();
+    }
+
+    /// <summary>
+    /// Folders found on one SFTP host, port or account mean nothing on another (on the same host,
+    /// another server may live under another user): forget them.
+    /// </summary>
     void SftpTargetChanged()
     {
         if (_loadingProfile || _profile is null)
             return;
-        var target = SftpHostName;
+        var target = $"{SftpHostName}|{SftpPort}|{SftpUser.Trim()}";
         var known = _profile.SftpFoldersHost ?? _profile.Host;
-        if (known.Equals(target, StringComparison.OrdinalIgnoreCase))
+        // before 0.9.6 only the host was recorded
+        if (known.Equals(target, StringComparison.OrdinalIgnoreCase)
+            || (!known.Contains('|') && known.Equals(SftpHostName, StringComparison.OrdinalIgnoreCase)))
             return;
         _profile.SftpWorkshopFolder = null;
         _profile.SftpLogsFolder = null;
@@ -195,7 +227,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (value is null || value == _profile)
                 return;
-            if (!CanEditConnection)
+            if (!CanEditConnection || !ConfirmLeaving("Switch to another server"))
             {
                 OnPropertyChanged();
                 return;
@@ -218,6 +250,8 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void AddServer()
     {
+        if (!ConfirmLeaving("Switch to a new server"))
+            return;
         SaveProfile();
         var server = new ServerProfile { Name = UniqueName("New server") };
         Servers.Add(server);
@@ -227,6 +261,8 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void DuplicateServer()
     {
+        if (!ConfirmLeaving("Switch to the copy"))
+            return;
         SaveProfile();
         var copy = _profile.Duplicate(UniqueName(_profile.DisplayName + " (copy)"));
         _book.SessionPasswords[copy.Id] = (RconPassword, SftpPassword);
@@ -237,6 +273,8 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void DeleteServer()
     {
+        if (!ConfirmLeaving("Leave this server"))
+            return;
         if (Confirm?.Invoke($"Remove \"{_profile.DisplayName}\" from the server list?\n\n"
                 + "Its settings and saved passwords are deleted. The server itself is not touched.") != true)
             return;
@@ -254,6 +292,31 @@ public sealed partial class MainViewModel : ObservableObject
         for (int n = 2; Servers.Any(s => s.DisplayName.Equals(candidate, StringComparison.CurrentCultureIgnoreCase)); n++)
             candidate = $"{name} {n}";
         return candidate;
+    }
+
+    // ---- work that would be lost ----
+
+    /// <summary>What disconnecting, switching or closing now would drop (empty: nothing).</summary>
+    internal List<string> PendingWork()
+    {
+        var pending = new List<string>();
+        if (Options.ChangedCount > 0)
+            pending.Add($"{Options.ChangedCount} server option change(s) not applied");
+        if (Sandbox.ChangedCount > 0)
+            pending.Add($"{Sandbox.ChangedCount} sandbox change(s) not saved");
+        if (Maintenance.IsCountingDown)
+            pending.Add("the restart countdown (it is called off and the players are told)");
+        if (Events.RainTimerRunning)
+            pending.Add("the rain timer (the rain won't stop by itself)");
+        return pending;
+    }
+
+    /// <summary>Asks before <paramref name="action"/> drops pending work; true when there is none or the user agrees.</summary>
+    internal bool ConfirmLeaving(string action)
+    {
+        var pending = PendingWork();
+        return pending.Count == 0
+            || Confirm?.Invoke($"{action} now? This drops:\n\n" + string.Join("\n", pending.Select(p => "• " + p))) == true;
     }
 
     // ---- notifications ----
@@ -386,6 +449,11 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task DisconnectAsync()
     {
+        if (!ConfirmLeaving("Disconnect"))
+            return;
+        // the players were warned: tell them it is off before the connection goes
+        if (Maintenance.IsCountingDown)
+            await Maintenance.CancelRestartCommand.ExecuteAsync(null);
         await _rcon.DisconnectAsync();
         _knownPlayers = null;
         IsSessionActive = false;
@@ -441,6 +509,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             var reply = await _rcon.ExecuteAsync(command);
+            _lastQuietFailure = null;
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
             // quit's own reply comes before the server goes away: it is not a return
             if (_connectionLost && command != "quit")
@@ -451,6 +520,8 @@ public sealed partial class MainViewModel : ObservableObject
                 if (_expectingShutdown)
                 {
                     _expectingShutdown = false;
+                    // the list after the restart is a new baseline, whatever was polled while it went down
+                    _knownPlayers = null;
                     ServerBack?.Invoke(this, EventArgs.Empty);
                 }
             }
@@ -464,7 +535,11 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (RconException ex)
         {
-            Log(ex is RconTimeoutException ? ConsoleKind.Warning : ConsoleKind.Error, (quiet ? command + ": " : "") + ex.Message);
+            // a background poll failing the same way every 30 s (server down for hours) is logged once
+            var line = (quiet ? command + ": " : "") + ex.Message;
+            if (!quiet || line != _lastQuietFailure)
+                Log(ex is RconTimeoutException ? ConsoleKind.Warning : ConsoleKind.Error, line);
+            _lastQuietFailure = quiet ? line : null;
             // after our own quit a failing command means it is down, even if no drop was seen
             if (_expectingShutdown && command != "quit")
                 _connectionLost = true;
@@ -493,14 +568,31 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Raised when the server answers again after a shutdown SpiffoCON asked for.</summary>
     public event EventHandler? ServerBack;
 
+    bool _refreshingPlayers;
+    string? _lastQuietFailure;
+
     internal async Task RefreshPlayersAsync(bool quiet = false)
     {
         if (!IsSessionActive)
             return;
-        var reply = await RunAsync("players", quiet: quiet);
+        // background refreshes (players tab, restart wait) don't pile up in the command queue
+        if (quiet && _refreshingPlayers)
+            return;
+        _refreshingPlayers = true;
+        string? reply;
+        try
+        {
+            reply = await RunAsync("players", quiet: quiet);
+        }
+        finally
+        {
+            _refreshingPlayers = false;
+        }
         if (reply is null)
             return;
-        var names = PlayerCommands.ParsePlayers(reply).Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+        // one row per name, in a stable order also for names equal but for case
+        var names = PlayerCommands.ParsePlayers(reply).Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.CurrentCultureIgnoreCase).ThenBy(n => n, StringComparer.Ordinal).ToList();
         NotifyJoins(names);
         SetOnlinePlayers(names);
     }
@@ -521,6 +613,9 @@ public sealed partial class MainViewModel : ObservableObject
         for (int i = 0; i < sortedNames.Count; i++)
             if (i >= OnlinePlayers.Count || OnlinePlayers[i] != sortedNames[i])
                 OnlinePlayers.Insert(i, sortedNames[i]);
+        // rows left over (a name listed twice before) go, so the list is exactly the new one
+        while (OnlinePlayers.Count > sortedNames.Count)
+            OnlinePlayers.RemoveAt(OnlinePlayers.Count - 1);
         OnlinePlayersChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -555,8 +650,8 @@ public sealed partial class MainViewModel : ObservableObject
         var folder = probe.WorkshopFolders.OrderByDescending(w => w.ItemCount).FirstOrDefault()?.Path;
         if (_shutDown)
             return folder;
-        RememberSftpHostKey(probe.HostKeyFingerprint);
-        _profile.SftpFoldersHost = sftp.Host;
+        RememberSftpHostKey(sftp.Host, probe.HostKeyFingerprint);
+        _profile.SftpFoldersHost = FoldersKey(sftp);
         _profile.SftpWorkshopFolder = folder;
         SaveProfile();
         return folder;
@@ -657,11 +752,12 @@ public sealed partial class MainViewModel : ObservableObject
                     SftpReport = ex.Message;
                     return;
                 }
-                result = await SftpProbe.RunAsync(CurrentSftpSettings(trustSavedKey: false)!);
+                // exactly the key the user just saw and accepted, not whatever comes next
+                result = await SftpProbe.RunAsync(CurrentSftpSettings(trustKey: ex.Actual)!);
             }
 
-            RememberSftpHostKey(result.HostKeyFingerprint);
-            _profile.SftpFoldersHost = settings.Host;
+            RememberSftpHostKey(settings.Host, result.HostKeyFingerprint);
+            _profile.SftpFoldersHost = FoldersKey(settings);
             _profile.SftpWorkshopFolder = result.WorkshopFolders.OrderByDescending(w => w.ItemCount).FirstOrDefault()?.Path;
             SaveProfile();
             SftpReport = FormatReport(result);
@@ -749,6 +845,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         SaveProfile();
         _shutDown = true;
+        Catalog.Close();
         Players.Close();
         Logs.Close();
         Bridge.Close();

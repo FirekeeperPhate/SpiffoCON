@@ -93,6 +93,9 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
                 if (packet is null || packet.Value.Id != id)
                     break;
                 reply.Append(packet.Value.Body);
+                // a real reply is a few KB; a server that keeps streaming must not fill the memory
+                if (reply.Length > _options.MaxReplyChars)
+                    throw new RconException($"The reply is over {_options.MaxReplyChars / 1_000_000} million characters: stopped reading it.");
             }
             return reply.ToString();
         }

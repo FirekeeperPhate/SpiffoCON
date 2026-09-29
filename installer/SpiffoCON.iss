@@ -86,8 +86,12 @@ begin
     hand (say D:\Tools) may hold other programs' files }
   if (WizardForm.PrevAppDir = '') or
      (CompareText(AddBackslash(WizardForm.PrevAppDir), App) <> 0) or
-     not FileExists(App + '{#AppExe}') or
-     (CompareText(ExtractFileName(RemoveBackslash(App)), 'SpiffoCON') <> 0) then
+     not FileExists(App + '{#AppExe}') then
+    Exit;
+  { The bridge mod's own folder is always ours: no old mod files may be uploaded again }
+  DelTree(App + 'bridge\SpiffoCONBridge', True, True, True);
+  { Loose files only in a folder named for SpiffoCON }
+  if CompareText(ExtractFileName(RemoveBackslash(App)), 'SpiffoCON') <> 0 then
     Exit;
   if FindFirst(App + '*', FindRec) then
   begin
@@ -106,7 +110,6 @@ begin
       FindClose(FindRec);
     end;
   end;
-  DelTree(App + 'bridge', True, True, True);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

@@ -209,6 +209,7 @@ public sealed partial class KitsViewModel : ObservableObject
         }
 
         var lines = new List<string>();
+        bool stopped = false;
         foreach (var target in players)
         {
             int given = 0;
@@ -216,12 +217,23 @@ public sealed partial class KitsViewModel : ObservableObject
             foreach (var item in kit.Items.ToList())
             {
                 var reply = await _main.RunAsync(PlayerCommands.AddItem(target, item.FullType, item.Count));
-                if (reply is not null && PlayerCommands.InterpretAddItem(reply, target) != CommandOutcome.Failed)
+                if (reply is null)
+                {
+                    // the server did not answer: the rest must not trickle in later, one timeout each
+                    stopped = true;
+                    break;
+                }
+                if (PlayerCommands.InterpretAddItem(reply, target) != CommandOutcome.Failed)
                     given++;
                 else
                     failures.Add($"{item.Name}: {reply?.Trim() ?? "see the console"}");
             }
             lines.Add($"{target}: {given} of {kit.Items.Count} items given." + (failures.Count > 0 ? " " + string.Join("; ", failures) : ""));
+            if (stopped)
+            {
+                lines.Add("Stopped: the server did not answer (see the console); the rest was not given.");
+                break;
+            }
         }
         Result = $"\"{kit.Name}\" at {DateTime.Now:HH:mm:ss}\n" + string.Join("\n", lines);
     }

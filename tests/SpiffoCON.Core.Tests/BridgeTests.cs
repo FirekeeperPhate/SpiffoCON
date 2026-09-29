@@ -15,7 +15,8 @@ public sealed class BridgeTests : IDisposable
     }
 
     /// <summary>Answers like bridge/SpiffoCONBridge/.../SpiffoCONBridge.lua does.</summary>
-    void RunFakeBridge(Func<string, string[], string> reply)
+    /// <param name="v2">Behave like bridge v2: no END needed, and the END line answered as a request.</param>
+    void RunFakeBridge(Func<string, string[], string> reply, bool v2 = false)
     {
         _ = Task.Run(async () =>
         {
@@ -29,19 +30,36 @@ public sealed class BridgeTests : IDisposable
                 string[] lines;
                 try { lines = File.ReadAllLines(path); } catch (IOException) { continue; }
                 // like bridge v3: a batch counts once its END line is there, and END is not a request
-                if (lines.Length == 0 || !long.TryParse(lines[0]["SEQ ".Length..], out var seq) || seq == last || !lines.Contains($"END {seq}"))
+                if (lines.Length == 0 || !long.TryParse(lines[0]["SEQ ".Length..], out var seq) || seq == last || (!v2 && !lines.Contains($"END {seq}")))
                     continue;
                 last = seq;
                 var output = new List<string> { $"SEQ {seq}" };
-                foreach (var line in lines.Skip(1).Where(l => l.Length > 0 && l != $"END {seq}"))
+                foreach (var line in lines.Skip(1).Where(l => l.Length > 0 && (v2 || l != $"END {seq}")))
                 {
                     var parts = line.Split('\t');
-                    output.Add(reply(parts[1], parts[2..]).Replace("$ID", parts[0]));
+                    // v2 reads "END n" as a request with no action
+                    output.Add(parts.Length < 2
+                        ? $$"""{"id":"{{parts[0]}}","ok":false,"error":"unknown action nil"}"""
+                        : reply(parts[1], parts[2..]).Replace("$ID", parts[0]));
                 }
                 output.Add($"END {seq}");
                 File.WriteAllText(Path.Combine(_dir, BridgeClient.OutFile), string.Join("\n", output) + "\n");
             }
         });
+    }
+
+    [Fact]
+    public async Task A_v2_bridge_still_answers_the_snapshot()
+    {
+        // 0.9.5 regression: v2 answered the END line as one more (failed) request
+        RunFakeBridge((action, args) => action switch
+        {
+            "world" => """{"id":"$ID","ok":true,"data":{"hour":12}}""",
+            _ => """{"id":"$ID","ok":true,"data":[]}""",
+        }, v2: true);
+        var client = new BridgeClient(new LocalBridgeFiles(_dir)) { PollInterval = TimeSpan.FromMilliseconds(50) };
+        var snapshot = await client.SnapshotAsync();
+        Assert.Empty(snapshot.Players);
     }
 
     [Fact]

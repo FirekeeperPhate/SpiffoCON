@@ -61,7 +61,7 @@ public sealed partial class BridgeViewModel : ObservableObject
 
     void UpdateTimer()
     {
-        if (AutoRefresh && IsConnected)
+        if (AutoRefresh && IsConnected && !_closed)
             _timer.Start();
         else
             _timer.Stop();
@@ -93,9 +93,10 @@ public sealed partial class BridgeViewModel : ObservableObject
     [RelayCommand]
     private void CopyServerSettings()
     {
-        var text = $"Mods: {BridgeMod.ModId}" + (WorkshopId is null ? "" : $"\nWorkshopItems: {WorkshopId}");
+        var text = $"Mods={BridgeMod.ModId}" + (WorkshopId is null ? "" : $"\nWorkshopItems={WorkshopId}");
         SafeClipboard.SetText(text);
-        StatusText = "Copied: add them to the server's mod list (Mods= and WorkshopItems=) and restart it.";
+        StatusText = "Copied: add each to the end of the server's Mods= and WorkshopItems= lists (after a ';', "
+            + "or in the host panel's mod fields; the Options tab edits them too), then restart the server.";
     }
 
     [RelayCommand]
@@ -114,6 +115,8 @@ public sealed partial class BridgeViewModel : ObservableObject
             try
             {
                 var probe = await _main.ProbeAsync(sftp);
+                // from now on the key this probe saw is required
+                sftp = _main.CurrentSftpSettings() ?? sftp;
                 // Zomboid/Logs is found by the probe; the bridge's folder is its sibling Zomboid/Lua
                 var logs = probe.LogFolders.OrderBy(p => p.Contains("/Zomboid/", StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(p => p.Length).FirstOrDefault();
                 if (logs is null)
@@ -143,7 +146,14 @@ public sealed partial class BridgeViewModel : ObservableObject
 
     async Task ConnectAsync(IBridgeFiles files)
     {
+        if (_closed)
+        {
+            files.Dispose();
+            return;
+        }
         _client?.Files.Dispose();
+        _failures = 0;
+        _retryAt = default;
         _client = new BridgeClient(files);
         Source = files.Description;
         StatusText = "Asking the bridge...";
@@ -170,12 +180,14 @@ public sealed partial class BridgeViewModel : ObservableObject
     [RelayCommand]
     private async Task RefreshAsync()
     {
-        if (_client is null || _busy)
+        if (_client is null || _busy || _closed || DateTime.UtcNow < _retryAt)
             return;
         _busy = true;
         try
         {
-            var snapshot = await _client.SnapshotAsync();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var snapshot = await _client.SnapshotAsync(timeout.Token);
+            _failures = 0;
             var w = snapshot.World;
             WorldText = $"{w.Year}-{w.Month:00}-{w.Day:00} {w.Hour:00}:{w.Minute:00} in game · {w.Temperature:0.#} °C"
                 + (w.Rain > 0 ? $" · rain {w.Rain:P0}" : "") + (w.Fog > 0 ? $" · fog {w.Fog:P0}" : "")
@@ -194,15 +206,29 @@ public sealed partial class BridgeViewModel : ObservableObject
                 Vehicles.Add(v);
             StatusText = $"Updated at {DateTime.Now:HH:mm:ss}" + (AutoRefresh ? " · every 15 s" : "");
         }
+        catch (Exception ex) when (ex is Renci.SshNet.Common.SshAuthenticationException or SftpHostKeyMismatchException)
+        {
+            // retrying a rejected password every 15 s can get the PC banned by the host
+            _timer.Stop();
+            IsConnected = false;
+            StatusText = $"Stopped: {ex.Message} Fix it on the left, then Find on server again.";
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            StatusText = ex.Message;
+            // a host that is down is not asked every 15 s
+            _failures++;
+            var wait = TimeSpan.FromSeconds(Math.Min(300, 15 * Math.Pow(2, _failures - 1)));
+            _retryAt = DateTime.UtcNow + wait;
+            StatusText = ex.Message + (_failures > 1 ? $" (trying again in {wait.TotalSeconds:0} s)" : "");
         }
         finally
         {
             _busy = false;
         }
     }
+
+    int _failures;
+    DateTime _retryAt;
 
     int _inventoryLoad;
 
@@ -280,15 +306,19 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
         if (_main.Confirm?.Invoke(confirm) != true)
             return;
+        string result;
         try
         {
-            StatusText = await action(_client);
+            result = await action(_client);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            StatusText = "Failed: " + ex.Message;
+            result = "Failed: " + ex.Message;
         }
+        _retryAt = default;
         await RefreshAsync();
+        // the action's outcome, not the refresh's "Updated at", is what the user needs to see
+        StatusText = result;
         if (reloadInventory && SelectedPlayer is { } p)
             await LoadInventoryAsync(p.Username);
     }
@@ -338,8 +368,11 @@ public sealed partial class BridgeViewModel : ObservableObject
         $"Remove {v.Script} #{id} from the world for good?" + (v.Driver is { } d ? $"\n\n{d} is driving it." : ""),
         async c => { await c.RemoveVehicleAsync(id, v.Script); return $"{v.Script} #{id} removed."; });
 
+    bool _closed;
+
     public void Close()
     {
+        _closed = true;
         _timer.Stop();
         _client?.Files.Dispose();
     }

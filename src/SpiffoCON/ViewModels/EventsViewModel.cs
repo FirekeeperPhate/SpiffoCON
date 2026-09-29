@@ -238,6 +238,13 @@ public sealed partial class EventsViewModel : ObservableObject
             if (IsHorde)
                 label = $"Horde of {horde} on {player}";
             await RunAsync(EventCommands.Build(e, player, horde), label);
+            if (_unanswered)
+            {
+                // the server did not answer: the other players are skipped, not tried one timeout each
+                if (players.Count > 1)
+                    Add("Stopped: the server did not answer; the other players were skipped.", failed: true);
+                break;
+            }
         }
     }
 
@@ -247,6 +254,9 @@ public sealed partial class EventsViewModel : ObservableObject
     // ----
 
     /// <summary>Runs one command and logs the outcome; true when the server confirmed it.</summary>
+    /// <summary>The last command got no reply at all (not sent, timed out, connection down).</summary>
+    bool _unanswered;
+
     async Task<bool> RunAsync(string command, string label)
     {
         if (!_main.IsSessionActive)
@@ -255,6 +265,7 @@ public sealed partial class EventsViewModel : ObservableObject
             return false;
         }
         var reply = await _main.RunAsync(command);
+        _unanswered = reply is null;
         if (reply is null)
         {
             Add($"{label}: failed, see the console.", failed: true);

@@ -85,7 +85,9 @@ public sealed partial class Translations
         }
     }
 
-    // one entry per line: a value missing its closing quote must not swallow the next entries
-    [GeneratedRegex("([A-Za-z0-9_.\\-]+)[ \\t]*=[ \\t]*\"((?:[^\"\\\\\\r\\n]|\\\\.)*)\"")]
+    // one entry per line: a value missing its closing quote must not swallow the next entries;
+    // the key is anchored after the line's indentation (or a comma), so a long run of name
+    // characters without '=' costs linear time, not quadratic
+    [GeneratedRegex("(?:^|,)[ \\t]*([A-Za-z0-9_.\\-]+)[ \\t]*=[ \\t]*\"((?:[^\"\\\\\\r\\n]|\\\\.)*)\"", RegexOptions.Multiline)]
     private static partial Regex LegacyEntry();
 }

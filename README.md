@@ -46,7 +46,8 @@ Windows, .NET 10, WPF.
   shared by all your servers, given in one go to a player or to every online player.
 - Maintenance tab:
   - Mod updates: the server's installed copies (its `appworkshop_108600.acf`, over SFTP)
-    against Steam, mod by mod: newer on Steam, not installed yet, up to date, or not public.
+    against Steam, mod by mod: newer on Steam, not installed yet, up to date, or not public;
+    each row opens its Workshop page in the browser.
   - Restart with a countdown: warnings in chat as the time runs out (message and color
     editable, `{time}` filled in), then `save` and `quit`; starting the server again is up to
     the host. SpiffoCON tells you when it answers again.

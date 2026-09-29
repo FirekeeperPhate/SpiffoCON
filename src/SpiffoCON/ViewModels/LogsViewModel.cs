@@ -96,7 +96,7 @@ public sealed partial class LogsViewModel : ObservableObject
 
     void UpdateTimer()
     {
-        if (Follow && _tail is not null)
+        if (Follow && _tail is not null && !_closed)
             _timer.Start();
         else
             _timer.Stop();
@@ -125,12 +125,15 @@ public sealed partial class LogsViewModel : ObservableObject
             return;
         }
         var path = _main.Profile.SftpLogsFolder;
+        bool remembered = path is not null;
         if (path is null)
         {
             StatusText = "Looking for the Logs folder over SFTP...";
             try
             {
                 var probe = await _main.ProbeAsync(sftp);
+                // from now on the key this probe saw is required
+                sftp = _main.CurrentSftpSettings() ?? sftp;
                 path = probe.LogFolders.OrderBy(p => p.Contains("/Zomboid/", StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(p => p.Length).FirstOrDefault();
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -146,7 +149,13 @@ public sealed partial class LogsViewModel : ObservableObject
             _main.Profile.SftpLogsFolder = path;
             _main.SaveProfile();
         }
-        await OpenAsync(new SftpLogFolder(sftp, path));
+        if (!await OpenAsync(new SftpLogFolder(sftp, path)) && remembered && !_closed
+            && _openError is Renci.SshNet.Common.SftpPathNotFoundException)
+        {
+            // the folder remembered from last time is gone or wrong: look for it again once
+            _main.Profile.SftpLogsFolder = null;
+            await FindOnServerAsync();
+        }
     }
 
     [RelayCommand]
@@ -156,12 +165,19 @@ public sealed partial class LogsViewModel : ObservableObject
             await OpenAsync(new LocalLogFolder(path));
     }
 
-    async Task OpenAsync(ILogFolder folder)
+    /// <summary>Opens a Logs folder and follows its newest log; false when it can't be read.</summary>
+    async Task<bool> OpenAsync(ILogFolder folder)
     {
         StatusText = "Reading " + folder.Description + "...";
         try
         {
             var files = await folder.ListAsync();
+            if (_closed)
+            {
+                // the server was switched meanwhile: this folder is not for anyone any more
+                folder.Dispose();
+                return false;
+            }
             _folder?.Dispose();
             _folder = folder;
             Source = folder.Description;
@@ -172,17 +188,20 @@ public sealed partial class LogsViewModel : ObservableObject
             if (Types.Count == 0)
             {
                 StatusText = "No log files in this folder.";
-                return;
+                return true;
             }
             _settingType = true;
             SelectedType = Types.FirstOrDefault(t => t.Equals(keep, StringComparison.OrdinalIgnoreCase)) ?? Types[0];
             _settingType = false;
             await StartTailAsync(SelectedType);
+            return true;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             folder.Dispose();
+            _openError = ex;
             StatusText = "Could not read the logs: " + ex.Message;
+            return false;
         }
     }
 
@@ -228,27 +247,43 @@ public sealed partial class LogsViewModel : ObservableObject
 
     async Task PollAsync()
     {
-        if (_tail is null || _polling)
+        if (_tail is null || _polling || DateTime.UtcNow < _retryAt)
             return;
         _polling = true;
         var tail = _tail;
         try
         {
-            var lines = await tail.PollAsync();
+            using var timeout = new CancellationTokenSource(PollTimeout);
+            var lines = await tail.PollAsync(timeout.Token);
+            _failures = 0;
             // the type changed meanwhile: these lines are not for the list (the new one is read below)
             if (ReferenceEquals(tail, _tail))
             {
                 Show(tail, lines);
                 // new kinds of log appear as the server writes them (admin, pvp...): look every 30 s
                 if (_folder is not null && (++_pollCount % 6 == 0 || lines.Any(l => l.Kind == LogLineKind.Marker)))
-                    UpdateTypes(await _folder.ListAsync());
+                    UpdateTypes(await _folder.ListAsync(timeout.Token));
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // a poll of a log (or folder) that was replaced meanwhile failing is not news
-            if (ReferenceEquals(tail, _tail))
-                StatusText = $"Reading the log failed ({ex.Message}); retrying every {_timer.Interval.TotalSeconds:0} s.";
+            if (!ReferenceEquals(tail, _tail))
+            {
+            }
+            else if (ex is Renci.SshNet.Common.SshAuthenticationException or SftpHostKeyMismatchException)
+            {
+                // retrying a rejected password every few seconds can get the PC banned by the host
+                _timer.Stop();
+                StatusText = $"Stopped following: {ex.Message} Fix it on the left, then Find on server again.";
+            }
+            else
+            {
+                _failures++;
+                var wait = TimeSpan.FromSeconds(Math.Min(300, 5 * Math.Pow(2, _failures - 1)));
+                _retryAt = DateTime.UtcNow + wait;
+                StatusText = $"Reading the log failed ({ex.Message}); trying again in {wait.TotalSeconds:0} s.";
+            }
         }
         finally
         {
@@ -259,9 +294,6 @@ public sealed partial class LogsViewModel : ObservableObject
             await PollAsync();
     }
 
-    /// <summary>Chat older than this is not worth a notification (it was held back, not news).</summary>
-    static readonly TimeSpan RecentChat = TimeSpan.FromMinutes(2);
-
     void Show(LogTail tail, IReadOnlyList<LogLine> lines)
     {
         foreach (var line in lines)
@@ -270,7 +302,8 @@ public sealed partial class LogsViewModel : ObservableObject
         // following was paused or the connection was down
         if (!tail.LastPollWasBacklog)
         {
-            var recent = lines.Where(l => l.Kind == LogLineKind.Chat && (l.Time is not { } t || DateTime.Now - t < RecentChat)).ToList();
+            // (not by the lines' times: the server's clock or time zone may differ from this PC's)
+            var recent = lines.Where(l => l.Kind == LogLineKind.Chat).ToList();
             if (recent.Count > 0)
                 ChatReceived?.Invoke(this, recent);
         }
@@ -308,8 +341,19 @@ public sealed partial class LogsViewModel : ObservableObject
         }
     }
 
+    bool _closed;
+    Exception? _openError;
+
+    // failures in a row, and when to try again: a host that is down is not asked every 5 s
+    int _failures;
+    DateTime _retryAt;
+
+    /// <summary>One poll may take this long before it is given up (a dead link must not freeze following).</summary>
+    static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(60);
+
     public void Close()
     {
+        _closed = true;
         _timer.Stop();
         _folder?.Dispose();
     }

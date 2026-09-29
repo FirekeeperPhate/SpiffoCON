@@ -36,7 +36,20 @@ public sealed class LocalBridgeFiles(string folder) : IBridgeFiles
     {
         var path = Path.Combine(folder, name);
         await File.WriteAllTextAsync(path + ".tmp", text, new UTF8Encoding(false), ct).ConfigureAwait(false);
-        File.Move(path + ".tmp", path, overwrite: true);
+        // the game (a local server) may be reading the file this very moment: Windows then refuses
+        // the replace for a few milliseconds
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(path + ".tmp", path, overwrite: true);
+                return;
+            }
+            catch (Exception ex) when (attempt < 10 && ex is IOException or UnauthorizedAccessException)
+            {
+                await Task.Delay(50, ct).ConfigureAwait(false);
+            }
+        }
     }
 
     public void Dispose() { }
@@ -45,8 +58,10 @@ public sealed class LocalBridgeFiles(string folder) : IBridgeFiles
 public sealed class SftpBridgeFiles(SftpSettings settings, string remoteFolder) : IBridgeFiles
 {
     Renci.SshNet.SftpClient? _client;
+    SftpSettings _settings = settings;
+    bool _disposed;
 
-    public string Description => $"SFTP {settings.Host}: {remoteFolder}";
+    public string Description => $"SFTP {_settings.Host}: {remoteFolder}";
 
     string Remote(string name) => remoteFolder.TrimEnd('/') + "/" + name;
 
@@ -58,7 +73,15 @@ public sealed class SftpBridgeFiles(SftpSettings settings, string remoteFolder) 
         // not find a disposed client (IsConnected throws then) and never try again
         _client?.Dispose();
         _client = null;
-        var (client, _) = await SftpProbe.ConnectAsync(settings, ct).ConfigureAwait(false);
+        var (client, fingerprint) = await SftpProbe.ConnectAsync(_settings, ct).ConfigureAwait(false);
+        if (_disposed)
+        {
+            // closed while connecting: this session must not stay open
+            client.Dispose();
+            throw new ObjectDisposedException(GetType().Name);
+        }
+        // reconnections insist on the key seen now
+        _settings = _settings.Pinned(fingerprint);
         _client = client;
         return client;
     }
@@ -99,7 +122,11 @@ public sealed class SftpBridgeFiles(SftpSettings settings, string remoteFolder) 
         }
     }
 
-    public void Dispose() => _client?.Dispose();
+    public void Dispose()
+    {
+        _disposed = true;
+        _client?.Dispose();
+    }
 }
 
 public sealed class BridgeException(string message) : Exception(message);
@@ -150,7 +177,7 @@ public sealed partial class BridgeClient(IBridgeFiles files)
                 await Task.Delay(PollInterval, ct).ConfigureAwait(false);
                 var text = await Files.ReadAsync(OutFile, ct).ConfigureAwait(false);
                 if (text is not null && TryParse(text, seq, out var replies))
-                    return replies;
+                    return InRequestOrder(replies, requests.Count);
             }
             // an empty batch replaces the unanswered one: a paused server must not run it much later,
             // after the user was told it failed (and maybe tried again)
@@ -183,6 +210,21 @@ public sealed partial class BridgeClient(IBridgeFiles files)
 
     [System.Text.RegularExpressions.GeneratedRegex(@"""id""\s*:\s*""?([^"",}]+)")]
     private static partial System.Text.RegularExpressions.Regex ReplyId();
+
+    /// <summary>
+    /// One reply per request, matched by id: bridge v2 answers the END line of a v3 request file as
+    /// an extra (failed) request, which must not count.
+    /// </summary>
+    static IReadOnlyList<BridgeReply> InRequestOrder(IReadOnlyList<BridgeReply> replies, int count)
+    {
+        var result = new List<BridgeReply>(count);
+        for (int i = 1; i <= count; i++)
+        {
+            var id = i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            result.Add(replies.FirstOrDefault(r => r.Id == id) ?? new BridgeReply(id, false, default, "The bridge sent no reply to this request."));
+        }
+        return result;
+    }
 
     static bool TryParse(string text, long seq, out IReadOnlyList<BridgeReply> replies)
     {

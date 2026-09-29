@@ -91,8 +91,10 @@ public sealed class LocalLogFolder(string path) : ILogFolder
 public sealed class SftpLogFolder(SftpSettings settings, string remotePath) : ILogFolder
 {
     SftpClient? _client;
+    SftpSettings _settings = settings;
+    bool _disposed;
 
-    public string Description => $"SFTP {settings.Host}: {remotePath}";
+    public string Description => $"SFTP {_settings.Host}: {remotePath}";
 
     async Task<SftpClient> ClientAsync(CancellationToken ct)
     {
@@ -102,7 +104,15 @@ public sealed class SftpLogFolder(SftpSettings settings, string remotePath) : IL
         // not find a disposed client (IsConnected throws then) and never try again
         _client?.Dispose();
         _client = null;
-        var (client, _) = await SftpProbe.ConnectAsync(settings, ct).ConfigureAwait(false);
+        var (client, fingerprint) = await SftpProbe.ConnectAsync(_settings, ct).ConfigureAwait(false);
+        if (_disposed)
+        {
+            // closed while connecting: this session must not stay open
+            client.Dispose();
+            throw new ObjectDisposedException(GetType().Name);
+        }
+        // reconnections insist on the key seen now
+        _settings = _settings.Pinned(fingerprint);
         _client = client;
         return client;
     }
@@ -134,5 +144,9 @@ public sealed class SftpLogFolder(SftpSettings settings, string remotePath) : IL
         return buffer.ToArray();
     }
 
-    public void Dispose() => _client?.Dispose();
+    public void Dispose()
+    {
+        _disposed = true;
+        _client?.Dispose();
+    }
 }

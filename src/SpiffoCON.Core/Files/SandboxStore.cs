@@ -147,6 +147,9 @@ public static class SandboxFiles
     }
 
     /// <summary>Keeps a copy of the text before it is replaced; returns the backup's path.</summary>
+    /// <summary>Backups kept per server.</summary>
+    public const int KeptBackups = 20;
+
     public static string Backup(string backupFolder, string label, string text)
     {
         foreach (var c in Path.GetInvalidFileNameChars())
@@ -154,6 +157,11 @@ public static class SandboxFiles
         Directory.CreateDirectory(backupFolder);
         var path = Path.Combine(backupFolder, $"{label}_{DateTime.Now:yyyyMMdd-HHmmss}.lua");
         File.WriteAllText(path, text, new UTF8Encoding(false));
+        // the newest ones are enough; the names sort by time
+        foreach (var old in Directory.EnumerateFiles(backupFolder, label + "_????????-??????.lua").Order(StringComparer.Ordinal).SkipLast(KeptBackups).ToList())
+        {
+            try { File.Delete(old); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
         return path;
     }
 }

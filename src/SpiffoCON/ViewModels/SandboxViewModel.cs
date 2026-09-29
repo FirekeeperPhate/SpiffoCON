@@ -106,7 +106,8 @@ public sealed partial class SandboxViewModel : ObservableObject
         try
         {
             var probe = await _main.ProbeAsync(sftp);
-            _main.RememberSftpHostKey(probe.HostKeyFingerprint);
+            // from now on the key this probe saw is required
+            sftp = _main.CurrentSftpSettings() ?? sftp;
             ServerFiles.Clear();
             foreach (var ini in probe.ServerConfigs)
                 ServerFiles.Add(SandboxFiles.ForServerConfig(ini));

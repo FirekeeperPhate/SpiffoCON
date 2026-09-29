@@ -27,8 +27,28 @@ public sealed partial class OptionItem : ObservableObject
     private string serverValue;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsChanged), nameof(BoolValue), nameof(EnumIndex), nameof(Error))]
+    [NotifyPropertyChangedFor(nameof(IsChanged), nameof(BoolValue), nameof(EnumIndex), nameof(Error), nameof(ListText), nameof(ListCount))]
     private string editText;
+
+    /// <summary>Server options holding a ';'-separated list, long enough to want one entry per line.</summary>
+    static readonly HashSet<string> ListOptions = new(StringComparer.OrdinalIgnoreCase) { "Mods", "WorkshopItems", "Map" };
+
+    public bool IsList => Info.Title is null && ListOptions.Contains(Info.Name);
+
+    /// <summary>The list editor is open (under the option, full width).</summary>
+    [ObservableProperty] private bool isExpanded;
+
+    /// <summary>The list one entry per line; the order is kept (for Mods it is the load order).</summary>
+    public string ListText
+    {
+        get => string.Join(Environment.NewLine, Entries(EditText));
+        set => EditText = string.Join(";", value.ReplaceLineEndings("\n").Split('\n').SelectMany(Entries));
+    }
+
+    public int ListCount => Entries(EditText).Count();
+
+    static IEnumerable<string> Entries(string text) =>
+        text.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     public string Name => Info.Name;
     public string? Description => Info.Description;
@@ -367,7 +387,7 @@ public sealed partial class OptionsViewModel : ObservableObject
     [RelayCommand]
     private async Task ReloadFromFileAsync()
     {
-        if (!_main.IsSessionActive || _main.Confirm?.Invoke("Reload the options from the server's .ini file (reloadoptions)? Use it after editing the file by hand.") != true)
+        if (!_main.IsSessionActive || _main.Confirm?.Invoke("Reload the options from the server's .ini file (reloadoptions)? Use it after editing the file by hand." + (ChangedCount > 0 ? $"\n\nYour {ChangedCount} change(s) not applied yet are dropped." : "")) != true)
             return;
         await _main.RunAsync("reloadoptions");
         var reply = await _main.RunAsync("showoptions", logReply: false);

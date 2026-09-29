@@ -3,7 +3,17 @@ using Renci.SshNet.Common;
 
 namespace SpiffoCON.Core.Files;
 
-public sealed record SftpSettings(string Host, int Port, string User, string Password, string? TrustedHostKey);
+public sealed record SftpSettings(string Host, int Port, string User, string Password, string? TrustedHostKey)
+{
+    /// <summary>
+    /// Called (on a background thread) with the key of a host that had none saved, so the first key
+    /// seen is kept whichever feature connects first.
+    /// </summary>
+    public Action<string>? OnFirstKey { get; init; }
+
+    /// <summary>These settings, requiring the given key from now on (reconnections of a long-lived client).</summary>
+    public SftpSettings Pinned(string fingerprint) => TrustedHostKey is null ? this with { TrustedHostKey = fingerprint } : this;
+}
 
 public sealed record WorkshopFolder(string Path, int ItemCount);
 
@@ -20,7 +30,7 @@ public sealed record SftpProbeResult(
 
 /// <summary>The server's SSH host key differs from the one saved at the first connection.</summary>
 public sealed class SftpHostKeyMismatchException(string expected, string actual)
-    : Exception($"The server's SSH key changed (saved {expected}, now {actual}). If the host did not tell you about a change, do not trust it.")
+    : Exception($"The server's SSH key changed (saved {expected}, now {actual}). If the host did not tell you about a change, do not trust it; if it did, accept the new key with Test SFTP (left panel).")
 {
     public string Actual { get; } = actual;
 }
@@ -51,7 +61,12 @@ public static class SftpProbe
             Timeout = TimeSpan.FromSeconds(10),
         };
         // keep-alives make a silently dead link fail instead of hanging a copy forever
-        var client = new SftpClient(info) { KeepAliveInterval = TimeSpan.FromSeconds(15) };
+        var client = new SftpClient(info)
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(15),
+            // the synchronous calls (rename) must not wait forever on a dead link either
+            OperationTimeout = TimeSpan.FromSeconds(30),
+        };
         client.HostKeyReceived += (_, e) =>
         {
             fingerprint = e.HostKeyName + " SHA256:" + e.FingerPrintSHA256;
@@ -61,6 +76,8 @@ public static class SftpProbe
         try
         {
             await client.ConnectAsync(ct).ConfigureAwait(false);
+            if (settings.TrustedHostKey is null && fingerprint.Length > 0)
+                settings.OnFirstKey?.Invoke(fingerprint);
             return (client, fingerprint);
         }
         catch (SshConnectionException) when (settings.TrustedHostKey is not null && fingerprint.Length > 0 && fingerprint != settings.TrustedHostKey)
