@@ -10,7 +10,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>SpiffoCON</RootNamespace>
     <AssemblyName>SpiffoCON</AssemblyName>
-    <Version>0.10.1</Version>
+    <Version>0.10.2</Version>
     <ApplicationIcon>Assets\spiffocon.ico</ApplicationIcon>
     <Product>SpiffoCON</Product>
     <Authors>Phate</Authors>
