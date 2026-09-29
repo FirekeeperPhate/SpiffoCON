@@ -63,6 +63,23 @@ public sealed class BridgeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_failing_part_of_the_snapshot_does_not_hide_the_rest()
+    {
+        // bridge v3 on B42: getVehicles() is a Set, so "vehicles" fails once a car is loaded
+        RunFakeBridge((action, args) => action switch
+        {
+            "world" => """{"id":"$ID","ok":true,"data":{"hour":12}}""",
+            "players" => """{"id":"$ID","ok":true,"data":[{"username":"rj"}]}""",
+            _ => """{"id":"$ID","ok":false,"error":"Object tried to call nil in vehicles"}""",
+        });
+        var client = new BridgeClient(new LocalBridgeFiles(_dir)) { PollInterval = TimeSpan.FromMilliseconds(50) };
+        var snapshot = await client.SnapshotAsync();
+        Assert.Equal("rj", Assert.Single(snapshot.Players).Username);
+        Assert.Empty(snapshot.Vehicles);
+        Assert.Contains("vehicles: Object tried to call nil", snapshot.Problem);
+    }
+
+    [Fact]
     public async Task Typed_calls_parse_the_bridge_replies()
     {
         RunFakeBridge((action, args) => action switch

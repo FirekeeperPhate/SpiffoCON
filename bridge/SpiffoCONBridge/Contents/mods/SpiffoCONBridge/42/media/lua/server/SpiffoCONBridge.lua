@@ -9,7 +9,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 3
+local VERSION = 4
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -164,9 +164,18 @@ local function inventory(username)
 	return result
 end
 
+-- B42's IsoCell.getVehicles() is a java.util.Set (B41: an ArrayList), which has no get(i):
+-- copied into an ArrayList, the list type the game's own Lua builds with ArrayList.new()
+local function loadedVehicles()
+	local vehicles = getCell():getVehicles()
+	local list = ArrayList.new()
+	list:addAll(vehicles)
+	return list
+end
+
 local function vehicles()
 	local result = array()
-	local list = getCell():getVehicles()
+	local list = loadedVehicles()
 	for i = 0, list:size() - 1 do
 		local v = list:get(i)
 		-- no error for the usual empty car (an error costs a Java exception each time)

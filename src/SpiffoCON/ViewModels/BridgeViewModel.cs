@@ -204,7 +204,8 @@ public sealed partial class BridgeViewModel : ObservableObject
             Vehicles.Clear();
             foreach (var v in snapshot.Vehicles.OrderBy(v => v.Script))
                 Vehicles.Add(v);
-            StatusText = $"Updated at {DateTime.Now:HH:mm:ss}" + (AutoRefresh ? " · every 15 s" : "");
+            StatusText = $"Updated at {DateTime.Now:HH:mm:ss}" + (AutoRefresh ? " · every 15 s" : "")
+                + (snapshot.Problem is { } problem ? $" · not available: {problem}" + (BridgeVersion < 4 && problem.Contains("vehicles") ? " (fixed in bridge v4: upload it to the Workshop)" : "") : "");
         }
         catch (Exception ex) when (ex is Renci.SshNet.Common.SshAuthenticationException or SftpHostKeyMismatchException)
         {

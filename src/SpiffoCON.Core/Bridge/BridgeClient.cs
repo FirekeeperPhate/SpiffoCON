@@ -313,19 +313,29 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default)
     {
         var replies = await SendAsync([("world", []), ("players", []), ("vehicles", [])], ct).ConfigureAwait(false);
-        foreach (var r in replies.Where(r => !r.Ok))
-            throw new BridgeException(r.Error ?? "The bridge reported an error.");
+        // one part failing (bridge v3 on B42 can't list vehicles) must not hide the others
+        if (replies.All(r => !r.Ok))
+            throw new BridgeException(replies[0].Error ?? "The bridge reported an error.");
+        var problems = new[] { "world", "players", "vehicles" }.Zip(replies)
+            .Where(p => !p.Second.Ok).Select(p => $"{p.First}: {p.Second.Error}").ToList();
         return new BridgeSnapshot(
-            replies[0].Data.Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld(),
-            Deserialize(replies[1].Data, BridgeJson.Default.ListBridgePlayer),
-            Deserialize(replies[2].Data, BridgeJson.Default.ListBridgeVehicle));
+            replies[0].Ok ? replies[0].Data.Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld() : new BridgeWorld(),
+            replies[1].Ok ? Deserialize(replies[1].Data, BridgeJson.Default.ListBridgePlayer) : [],
+            replies[2].Ok ? Deserialize(replies[2].Data, BridgeJson.Default.ListBridgeVehicle) : [])
+        {
+            Problem = problems.Count == 0 ? null : string.Join("; ", problems),
+        };
     }
 
     static List<T> Deserialize<T>(JsonElement data, System.Text.Json.Serialization.Metadata.JsonTypeInfo<List<T>> info) =>
         data.ValueKind == JsonValueKind.Array ? data.Deserialize(info) ?? [] : [];
 }
 
-public sealed record BridgeSnapshot(BridgeWorld World, IReadOnlyList<BridgePlayer> Players, IReadOnlyList<BridgeVehicle> Vehicles);
+public sealed record BridgeSnapshot(BridgeWorld World, IReadOnlyList<BridgePlayer> Players, IReadOnlyList<BridgeVehicle> Vehicles)
+{
+    /// <summary>The parts the bridge could not give (the rest of the snapshot is still valid).</summary>
+    public string? Problem { get; init; }
+}
 
 public sealed record BridgePlayer
 {
