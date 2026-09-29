@@ -169,11 +169,11 @@
                               DisplayMemberPath="DisplayName" HorizontalAlignment="Stretch" Margin="0,6,0,0"
                               ToolTip="Saved servers (disconnect to switch)" />
                     <UniformGrid Columns="3" Margin="0,6,0,0">
-                        <Button Content="New" Command="{Binding AddServerCommand}" HorizontalAlignment="Stretch" Margin="0,0,3,0"
+                        <Button Content="New" Command="{Binding AddServerCommand}" HorizontalAlignment="Stretch" Padding="4,5,4,6" Margin="0,0,3,0"
                                 ToolTip="Add an empty server to the list" />
-                        <Button Content="Duplicate" Command="{Binding DuplicateServerCommand}" HorizontalAlignment="Stretch" Margin="3,0"
+                        <Button Content="Duplicate" Command="{Binding DuplicateServerCommand}" HorizontalAlignment="Stretch" Padding="4,5,4,6" Margin="3,0"
                                 ToolTip="Copy this server's settings into a new entry (e.g. another server on the same host)" />
-                        <Button Content="Delete" Command="{Binding DeleteServerCommand}" HorizontalAlignment="Stretch" Margin="3,0,0,0"
+                        <Button Content="Delete" Command="{Binding DeleteServerCommand}" HorizontalAlignment="Stretch" Padding="4,5,4,6" Margin="3,0,0,0"
                                 ToolTip="Remove this server from the list" />
                     </UniformGrid>
                     <TextBlock Text="Name" Style="{StaticResource FieldLabel}" />
@@ -376,12 +376,12 @@
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="50" />
+                                                    <ColumnDefinition Width="64" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBox Text="{Binding CoordX, UpdateSourceTrigger=PropertyChanged}" ToolTip="x" />
-                                                <TextBox Grid.Column="1" Text="{Binding CoordY, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0" ToolTip="y" />
-                                                <TextBox Grid.Column="2" Text="{Binding CoordZ, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0" ToolTip="floor (0 = ground)" />
+                                                <TextBox Text="{Binding CoordX, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" ToolTip="x" />
+                                                <TextBox Grid.Column="1" Text="{Binding CoordY, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="6,0,0,0" ToolTip="y" />
+                                                <TextBox Grid.Column="2" Text="{Binding CoordZ, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" MinWidth="0" Margin="6,0,0,0" ToolTip="floor (0 = ground)" />
                                                 <Button Grid.Column="3" Content="Go" Command="{Binding TeleportToCoordinatesCommand}" Margin="8,0,0,0" MinWidth="64" />
                                             </Grid>
                                         </StackPanel>
@@ -424,11 +424,11 @@
                                             <Grid Margin="0,8,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="80" />
+                                                    <ColumnDefinition Width="96" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <ComboBox ItemsSource="{Binding Perks}" SelectedItem="{Binding SelectedPerk}" DisplayMemberPath="Name" />
-                                                <TextBox Grid.Column="1" Text="{Binding XpAmount, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0" ToolTip="XP to add" />
+                                                <TextBox Grid.Column="1" Text="{Binding XpAmount, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="6,0,0,0" ToolTip="XP to add" />
                                                 <Button Grid.Column="2" Content="Add XP" Command="{Binding AddXpCommand}" Margin="8,0,0,0" />
                                             </Grid>
                                             <CheckBox Content="Apply the server's XP multiplier" IsChecked="{Binding UseMultiplier}" Margin="0,8,0,0" />
@@ -466,7 +466,7 @@
                                 </DockPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <CheckBox Content="Stop it after" IsChecked="{Binding RainStopsAfter}" VerticalAlignment="Center" />
-                                    <TextBox Text="{Binding RainMinutes, UpdateSourceTrigger=PropertyChanged}" Width="64" Margin="8,0" IsEnabled="{Binding RainStopsAfter}" />
+                                    <TextBox Text="{Binding RainMinutes, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0" IsEnabled="{Binding RainStopsAfter}" />
                                     <TextBlock Text="minutes" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="The server has no rain duration: SpiffoCON sends stoprain when the time is up, so it must stay open and connected."
@@ -487,7 +487,7 @@
                                 <TextBlock Text="Thunderstorm" Style="{StaticResource SectionTitle}" />
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <TextBlock Text="Lasts" VerticalAlignment="Center" />
-                                    <TextBox Text="{Binding StormHours, UpdateSourceTrigger=PropertyChanged}" Width="64" Margin="8,0" />
+                                    <TextBox Text="{Binding StormHours, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0" />
                                     <TextBlock Text="game hours" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="Game time: how long that is in real time depends on the server's day length."
@@ -518,7 +518,7 @@
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0"
                                             Visibility="{Binding IsHorde, Converter={StaticResource BoolToVisibility}}">
                                     <TextBlock Text="Zombies" VerticalAlignment="Center" />
-                                    <TextBox Text="{Binding HordeSize, UpdateSourceTrigger=PropertyChanged}" Width="64" Margin="8,0" />
+                                    <TextBox Text="{Binding HordeSize, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0" />
                                     <TextBlock Text="per player (max 500)" Opacity="0.6" VerticalAlignment="Center" />
                                 </StackPanel>
                             </StackPanel>
@@ -885,12 +885,13 @@
                                     IsEnabled="{Binding HasKit}" />
                         </UniformGrid>
                         <TextBlock DockPanel.Dock="Top" Text="Kits" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
-                        <ListBox ItemsSource="{Binding Kits}" SelectedItem="{Binding SelectedKit}" HorizontalContentAlignment="Stretch">
+                        <ListBox ItemsSource="{Binding Kits}" SelectedItem="{Binding SelectedKit}" HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:KitView}">
                                     <DockPanel>
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" Opacity="0.5" FontSize="12" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" Opacity="0.5" FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
                                     </DockPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -917,7 +918,7 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="Item" Width="180">
+                                    <GridViewColumn Header="Item" Width="170">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel>
@@ -928,21 +929,21 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="ID" Width="170">
+                                    <GridViewColumn Header="ID" Width="160">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock Text="{Binding FullType}" FontFamily="{StaticResource MonoFont}" FontSize="12" Opacity="0.8" />
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="Qty" Width="74">
+                                    <GridViewColumn Header="Qty" Width="92">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBox Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}" Width="60" />
+                                                <TextBox Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" />
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Width="50">
+                                    <GridViewColumn Width="46">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Button Content="&#xE711;" FontFamily="{StaticResource IconFont}" ToolTip="Remove from the kit"
