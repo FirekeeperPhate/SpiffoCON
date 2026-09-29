@@ -226,7 +226,7 @@
         </ScrollViewer>
 
         <!-- Work area -->
-        <TabControl Grid.Column="1" Margin="0,8,12,8" x:Name="Tabs">
+        <TabControl Grid.Column="1" Margin="0,8,12,8" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
             <TabItem Header="Console">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
@@ -1339,6 +1339,139 @@
                     </Expander>
 
                     <TextBlock Grid.Row="4" Text="{Binding StatusText}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Map" x:Name="MapTab" DataContext="{Binding Map}">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="230" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- toolbar -->
+                    <WrapPanel Grid.ColumnSpan="3" Margin="0,0,0,8">
+                        <Button Content="&#xE9A6;" FontFamily="{StaticResource IconFont}" Command="{Binding FitCommand}" ToolTip="Show the whole map"
+                                IsEnabled="{Binding HasMap}" VerticalAlignment="Center" />
+                        <CheckBox Content="Satellite" IsChecked="{Binding Satellite}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                  ToolTip="The game's top-down image of the world instead of the map" />
+                        <CheckBox Content="Vehicles" IsChecked="{Binding ShowVehicles}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                  ToolTip="Vehicles in the loaded areas (blue; green when someone drives)" />
+                        <CheckBox Content="Follow the selected player" IsChecked="{Binding Follow}" Margin="12,0,0,0" VerticalAlignment="Center" />
+                        <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
+                        <Button Content="Download from server" Command="{Binding DownloadCommand}" Margin="0,0,8,0" VerticalAlignment="Center"
+                                Visibility="{Binding CanDownload, Converter={StaticResource BoolToVisibility}}"
+                                ToolTip="Copy the game's map files from the server over SFTP (about 17 MB, once for all servers)" />
+                        <Button Content="Download satellite view" Command="{Binding DownloadSatelliteCommand}" Margin="0,0,8,0" VerticalAlignment="Center"
+                                Visibility="{Binding CanDownloadSatellite, Converter={StaticResource BoolToVisibility}}"
+                                ToolTip="Copy the game's pyramid.zip from the server over SFTP (about 50 MB, once)" />
+                        <Button Content="Game folder…" Command="{Binding ChooseFolderCommand}" VerticalAlignment="Center"
+                                ToolTip="Read the map from a Project Zomboid (or dedicated server) install on this PC" />
+                        <ProgressBar Width="80" Height="4" Margin="12,0,0,0" IsIndeterminate="True" VerticalAlignment="Center"
+                                     Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+                    </WrapPanel>
+
+                    <!-- the map -->
+                    <Border Grid.Row="1" CornerRadius="6" ClipToBounds="True" Background="#18808080">
+                        <Grid>
+                            <controls:WorldMapView x:Name="MapView" Scene="{Binding Scene}" Players="{Binding Bridge.Players}" Vehicles="{Binding Bridge.Vehicles}"
+                                                   ShowVehicles="{Binding ShowVehicles}" Satellite="{Binding Satellite}" SelectedPlayer="{Binding SelectedPlayer}"
+                                                   PointerText="{Binding PointerText}" ContextSquare="{Binding ContextSquare}">
+                                <controls:WorldMapView.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="{Binding TeleportHereText}" Command="{Binding TeleportHereCommand}" />
+                                        <MenuItem Header="Copy these coordinates" Command="{Binding CopySquareCommand}" />
+                                    </ContextMenu>
+                                </controls:WorldMapView.ContextMenu>
+                            </controls:WorldMapView>
+                            <!-- no map yet -->
+                            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="460" Opacity="0.8"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding HasMap, Converter={StaticResource InverseBoolToVisibility}}" />
+                            <!-- positions need the bridge -->
+                            <Border Background="#E0202020" CornerRadius="6" Padding="12,8" Margin="10" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                    Visibility="{Binding BridgeHint, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Player positions come from the SpiffoCON Bridge." VerticalAlignment="Center" />
+                                    <Button Content="Connect the bridge" Command="{Binding Bridge.FindOnServerCommand}" Margin="10,0,0,0"
+                                            ToolTip="The same as Find on server in the Bridge tab" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- players and legend -->
+                    <DockPanel Grid.Row="1" Grid.Column="2">
+                        <TextBlock DockPanel.Dock="Top" Text="Players" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                            <TextBlock Text="Buildings" Style="{StaticResource SectionTitle}" Margin="0,0,0,4" />
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <Border Width="12" Height="12" CornerRadius="2" Background="#D29E69" BorderBrush="#60808080" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Houses" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <Border Width="12" Height="12" CornerRadius="2" Background="#B8CD54" BorderBrush="#60808080" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Shops and offices" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <Border Width="12" Height="12" CornerRadius="2" Background="#F5E13C" BorderBrush="#60808080" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Restaurants, bars, fun" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <Border Width="12" Height="12" CornerRadius="2" Background="#8B75EB" BorderBrush="#60808080" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Police, fire, schools, churches" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <Border Width="12" Height="12" CornerRadius="2" Background="#E58097" BorderBrush="#60808080" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Medical" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <Border Width="12" Height="12" CornerRadius="2" Background="#7FCEE1" BorderBrush="#60808080" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Hotels" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <Border Width="12" Height="12" CornerRadius="2" Background="#383635" BorderBrush="#60808080" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Industrial" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock Text="Wheel: zoom · drag: move · click a player to select · right-click: teleport here"
+                                       Opacity="0.6" FontSize="11.5" TextWrapping="Wrap" Margin="0,8,0,0" />
+                        </StackPanel>
+                        <ListBox ItemsSource="{Binding Bridge.Players}" SelectedValuePath="Username" SelectedValue="{Binding SelectedPlayer}"
+                                 HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Username}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock FontSize="11.5" Opacity="0.6">
+                                            <TextBlock.Text>
+                                                <MultiBinding StringFormat="{}{0}, {1} · floor {2}" FallbackValue="no position" TargetNullValue="no position">
+                                                    <Binding Path="X" />
+                                                    <Binding Path="Y" />
+                                                    <Binding Path="Z" />
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+
+                    <!-- status -->
+                    <DockPanel Grid.Row="2" Grid.ColumnSpan="3" Margin="0,6,0,0">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding PointerText}" FontFamily="{StaticResource MonoFont}" FontSize="12" MinWidth="120" VerticalAlignment="Center" />
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding PlayersText}" Opacity="0.7" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Text="{Binding StatusText}" Opacity="0.7" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="12,0,0,0"
+                                   ToolTip="{Binding StatusText}" Visibility="{Binding HasMap, Converter={StaticResource BoolToVisibility}}" />
+                    </DockPanel>
                 </Grid>
             </TabItem>
 

@@ -96,6 +96,7 @@ public sealed partial class MainViewModel : ObservableObject
         Logs = new LogsViewModel(this);
         Logs.ChatReceived += (_, lines) => OnChat(lines);
         Bridge = new BridgeViewModel(this);
+        Map = new MapViewModel(this);
         Accounts = new AccountsViewModel(this);
         Events = new EventsViewModel(this);
         Maintenance = new MaintenanceViewModel(this);
@@ -111,6 +112,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     public BridgeViewModel Bridge { get; }
 
+    public MapViewModel Map { get; }
+
     public LogsViewModel Logs { get; }
 
     public SandboxViewModel Sandbox { get; }
@@ -122,6 +125,17 @@ public sealed partial class MainViewModel : ObservableObject
     public PlayersViewModel Players { get; }
 
     internal ServerProfile Profile => _profile;
+
+    /// <summary>The game folder chosen for the Map tab, shared by all servers.</summary>
+    internal string? MapFolder
+    {
+        get => _book.MapFolder;
+        set
+        {
+            _book.MapFolder = value;
+            SaveProfile();
+        }
+    }
 
     /// <summary>The SFTP address: the server's host, unless another one is set.</summary>
     internal string SftpHostName => (SftpCustomHost && !string.IsNullOrWhiteSpace(SftpHost) ? SftpHost : Host).Trim();
@@ -848,6 +862,7 @@ public sealed partial class MainViewModel : ObservableObject
         Catalog.Close();
         Players.Close();
         Logs.Close();
+        Map.Close();
         Bridge.Close();
         Events.Close();
         Maintenance.Close();

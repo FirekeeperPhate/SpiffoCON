@@ -116,6 +116,15 @@ public partial class MainWindow : Window
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose the server's Zomboid\\Lua folder" };
             return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
         };
+        _vm.Map.PickFolder = () =>
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose your Project Zomboid (or dedicated server) folder" };
+            return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+        };
+        _vm.Map.CenterRequested += (x, y) => MapView.CenterOn(x, y, minScale: 0.5);
+        _vm.Map.FitRequested += () => MapView.Fit();
+        if (Tabs.SelectedItem == MapTab)
+            _vm.Map.Activate();
         _vm.Logs.LinesAdded += (_, _) => Dispatcher.BeginInvoke(() =>
         {
             if (LogList.Items.Count > 0)
@@ -155,6 +164,13 @@ public partial class MainWindow : Window
     void SftpPasswordBox_PasswordChanged(object sender, RoutedEventArgs e) => _vm.SftpPassword = SftpPasswordBox.Password;
 
     void TestSftp_Click(object sender, RoutedEventArgs e) => Tabs.SelectedItem = FilesTab;
+
+    // the map is read the first time its tab is shown (lists and combo boxes inside raise this event too)
+    void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.OriginalSource == Tabs && Tabs.SelectedItem == MapTab)
+            _vm.Map.Activate();
+    }
 
     void ConsoleInput_PreviewKeyDown(object sender, KeyEventArgs e)
     {

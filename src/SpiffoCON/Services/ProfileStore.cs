@@ -124,6 +124,9 @@ public sealed class ServerBook
 
     public NotificationSettings Notifications { get; set; } = new();
 
+    /// <summary>A game folder chosen for the Map tab (the same on every server).</summary>
+    public string? MapFolder { get; set; }
+
     /// <summary>Passwords typed in this session, by server id, also when they are not remembered on disk.</summary>
     [JsonIgnore]
     public Dictionary<string, (string? Rcon, string? Sftp)> SessionPasswords { get; } = [];

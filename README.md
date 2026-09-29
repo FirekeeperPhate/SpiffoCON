@@ -86,6 +86,14 @@ Windows, .NET 10, WPF.
   remove items (not worn or attached ones; bridge v3 removes them from the container they
   are listed under), repair, refuel or remove a vehicle, all asked for confirmation. The bridge runs while the server runs a game:
   an empty server with `PauseEmpty=true` is paused and the bridge waits.
+- Map tab: the game's world map (drawn like the in-game map from the game's own
+  `worldmap.xml` and forest images, with building types in color and place names, or the
+  game's top-down satellite view) with the players and vehicles the bridge reports, updated at
+  each bridge refresh (every 15 s). Wheel zooms, dragging moves, clicking a player selects them
+  (and can follow them); right-click teleports the selected player there or copies the
+  coordinates. The map files are read from a Project Zomboid or dedicated server install on
+  this PC, or copied once from the server over SFTP (about 17 MB, 50 MB more for the satellite
+  view) into `%LOCALAPPDATA%\SpiffoCON`. Vanilla map only: maps added by mods are not drawn.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.
