@@ -1359,11 +1359,20 @@
                     <WrapPanel Grid.ColumnSpan="3" Margin="0,0,0,8">
                         <Button Content="&#xE9A6;" FontFamily="{StaticResource IconFont}" Command="{Binding FitCommand}" ToolTip="Show the whole map"
                                 IsEnabled="{Binding HasMap}" VerticalAlignment="Center" />
-                        <CheckBox Content="Satellite" IsChecked="{Binding Satellite}" Margin="12,0,0,0" VerticalAlignment="Center"
+                        <Button Content="&#xE72C;" FontFamily="{StaticResource IconFont}" Command="{Binding ReloadCommand}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                ToolTip="Read the server's Map= again and copy its mod maps again (after a map mod update)" />
+                        <CheckBox Content="Satellite" IsChecked="{Binding Satellite}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="The game's top-down image of the world instead of the map" />
-                        <CheckBox Content="Vehicles" IsChecked="{Binding ShowVehicles}" Margin="12,0,0,0" VerticalAlignment="Center"
+                        <CheckBox Content="Vehicles" IsChecked="{Binding ShowVehicles}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="Vehicles in the loaded areas (blue; green when someone drives)" />
-                        <CheckBox Content="Follow the selected player" IsChecked="{Binding Follow}" Margin="12,0,0,0" VerticalAlignment="Center" />
+                        <CheckBox Content="Follow the selected player" IsChecked="{Binding Follow}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center" />
+                        <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
+                        <TextBlock Text="Right-click zombies" VerticalAlignment="Center" />
+                        <TextBox Text="{Binding HordeCount, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
+                                 ToolTip="How many zombies Spawn zombies here creates (1-500)" />
+                        <TextBlock Text="radius" VerticalAlignment="Center" Margin="8,0,0,0" />
+                        <TextBox Text="{Binding HordeRadius, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
+                                 ToolTip="Squares around the clicked spot where zombies are placed or removed (1-50)" />
                         <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
                         <Button Content="Download from server" Command="{Binding DownloadCommand}" Margin="0,0,8,0" VerticalAlignment="Center"
                                 Visibility="{Binding CanDownload, Converter={StaticResource BoolToVisibility}}"
@@ -1387,6 +1396,9 @@
                                     <ContextMenu>
                                         <MenuItem Header="{Binding TeleportHereText}" Command="{Binding TeleportHereCommand}" />
                                         <MenuItem Header="Copy these coordinates" Command="{Binding CopySquareCommand}" />
+                                        <Separator />
+                                        <MenuItem Header="{Binding SpawnHordeText}" Command="{Binding SpawnHordeCommand}" />
+                                        <MenuItem Header="{Binding RemoveZombiesText}" Command="{Binding RemoveZombiesCommand}" />
                                     </ContextMenu>
                                 </controls:WorldMapView.ContextMenu>
                             </controls:WorldMapView>

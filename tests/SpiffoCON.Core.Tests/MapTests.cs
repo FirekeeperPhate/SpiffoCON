@@ -115,6 +115,78 @@ public sealed class MapTests : IDisposable
         Assert.False(await MapFiles.DownloadAsync(new LocalRemoteFileSystem(counters), Path.Combine(_dir, "empty"), local, false, null, default));
     }
 
+    static string Cell(int x, int y, string property, string value) =>
+        $"""<cell x="{x}" y="{y}"><feature><geometry type="Polygon"><coordinates><point x="0" y="0"/><point x="9" y="0"/><point x="9" y="9"/></coordinates></geometry><properties><property name="{property}" value="{value}"/></properties></feature></cell>""";
+
+    string MapFolder(string name, string worldmap, string? forest = null)
+    {
+        var folder = Directory.CreateDirectory(Path.Combine(_dir, name)).FullName;
+        File.WriteAllText(Path.Combine(folder, "worldmap.xml"), $"<world>{worldmap}</world>");
+        if (forest is not null)
+            File.WriteAllText(Path.Combine(folder, "worldmap-forest.xml"), $"<world>{forest}</world>");
+        return folder;
+    }
+
+    [Fact]
+    public void The_first_map_folder_with_data_in_a_cell_draws_it()
+    {
+        // the mod redraws cell 1,1 and adds 5,5 (only forest there); the base game has 1,1 and 2,2
+        var mod = MapFolder("mod", Cell(1, 1, "building", "Medical"), Cell(5, 5, "natural", "forest"));
+        var vanilla = MapFolder("vanilla", Cell(1, 1, "building", "Industrial") + Cell(2, 2, "water", "river"),
+            Cell(2, 2, "natural", "forest"));
+        var map = WorldMap.LoadLayered([new MapSource("Mod", mod, IsMod: true), new MapSource("Muldraugh, KY", vanilla, IsMod: false)]);
+
+        // the base game's forest comes from its images, not its (big) worldmap-forest.xml
+        Assert.Equal(
+            [(MapLayer.Forest, 5, 5), (MapLayer.Water, 2, 2), (MapLayer.BuildingMedical, 1, 1)],
+            map.Features.Select(f => (f.Layer, f.CellX, f.CellY)).Order());
+        Assert.Equal([(1, 1), (5, 5)], map.ModCells.Order());
+        Assert.Equal((300, 300, 1800, 1800), map.Bounds);
+    }
+
+    [Fact]
+    public void A_mod_map_is_found_in_its_version_folder_before_common()
+    {
+        var item = Path.Combine(_dir, "workshop", "123", "mods", "Town");
+        foreach (var media in new[] { "42", "common" })
+        {
+            var folder = Directory.CreateDirectory(Path.Combine(item, media, "media", "maps", "My Town")).FullName;
+            File.WriteAllText(Path.Combine(folder, "worldmap.xml"), media);
+        }
+        var workshop = Path.Combine(_dir, "workshop");
+        var found = ModMaps.FindLocal([Path.Combine(_dir, "none"), workshop], [], "My Town");
+        Assert.Equal(Path.GetFullPath(Path.Combine(item, "42", "media", "maps", "My Town")), found);
+        Assert.Null(ModMaps.FindLocal([workshop], ["999"], "My Town"));
+        Assert.Null(ModMaps.FindLocal([workshop], [], "Other Town"));
+    }
+
+    [Fact]
+    public async Task Mod_maps_are_copied_from_the_server_workshop()
+    {
+        var workshop = Path.Combine(_dir, "server", "content").Replace('\\', '/');
+        var folder = Directory.CreateDirectory(Path.Combine(workshop, "456", "mods", "Big Map", "common", "media", "maps", "Big Town")).FullName;
+        File.WriteAllText(Path.Combine(folder, "worldmap.xml"), "<world/>");
+        File.WriteAllText(Path.Combine(folder, "worldmap-annotations.lua"), "");
+        File.WriteAllText(Path.Combine(folder, "town_1_1.lotheader"), "not needed");
+        Directory.CreateDirectory(Path.Combine(workshop, "789", "mods", "Other"));
+
+        var counters = new LocalRemoteFileSystem.Counters();
+        var cache = Path.Combine(_dir, "cache");
+        var found = await ModMaps.DownloadAsync(new LocalRemoteFileSystem(counters), workshop, ["789", "456"], ["Big Town", "Nowhere"], cache, null, default);
+        var local = Assert.Single(found).Value;
+        Assert.Equal(ModMaps.CacheFolder(cache, "Big Town"), local);
+        Assert.Equal(["worldmap-annotations.lua", "worldmap.xml"], Directory.GetFiles(local).Select(Path.GetFileName).Order());
+        Assert.Equal(2, counters.Downloads);
+        Assert.Equal(local, ModMaps.FromCache(cache, "Big Town"));
+    }
+
+    [Fact]
+    public void Map_folders_keep_their_commas()
+    {
+        var options = SpiffoCON.Core.Commands.ServerOptions.Parse("* Map=Daisy County;Muldraugh, KY\n* Mods=a;b");
+        Assert.Equal(["Daisy County", "Muldraugh, KY"], options.Maps);
+    }
+
     [Fact]
     public void Pyramid_tiles_are_read_by_level_and_position()
     {

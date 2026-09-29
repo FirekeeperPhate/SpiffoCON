@@ -63,10 +63,24 @@ public static class EventCommands
         _ => throw new ArgumentException("Unknown event " + e.Id, nameof(e)),
     };
 
+    /// <summary>Squares around the spot where createhorde2 places the zombies (and removezombies clears).</summary>
+    public const int MaxRadius = 50;
+
+    /// <summary>
+    /// createhorde2: zombies around a square. The server accepts only squares of a loaded area (near a player)
+    /// and answers "invalid location" elsewhere; it caps the count at 500 too.
+    /// </summary>
+    public static string HordeAt(int x, int y, int z, int count, int radius) =>
+        string.Create(CultureInfo.InvariantCulture, $"createhorde2 -x {x} -y {y} -z {z} -count {Math.Clamp(count, 1, MaxHorde)} -radius {Math.Clamp(radius, 1, MaxRadius)}");
+
+    /// <summary>removezombies: the zombies within a radius of a square ("Zombies removed.", also when there were none).</summary>
+    public static string RemoveZombiesAt(int x, int y, int z, int radius) =>
+        string.Create(CultureInfo.InvariantCulture, $"removezombies -x {x} -y {y} -z {z} -radius {Math.Clamp(radius, 1, MaxRadius)}");
+
     static readonly string[] SuccessPhrases =
     [
         "Rain started", "Thunderstorm started", "Rain stopped", "Weather stopped",
-        "Lightning triggered", "Thunder triggered", "Chopper launched", "Chopper activated", "Chopper deactivated", "Gunshot fired", "Horde spawned",
+        "Lightning triggered", "Thunder triggered", "Chopper launched", "Chopper activated", "Chopper deactivated", "Gunshot fired", "Horde spawned", "Zombies removed",
     ];
 
     static readonly string[] ErrorPhrases =

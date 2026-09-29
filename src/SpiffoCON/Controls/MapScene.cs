@@ -22,6 +22,9 @@ public sealed class MapScene : IDisposable
     public MapPyramid? Forest { get; init; }
     public MapPyramid? Satellite { get; init; }
 
+    /// <summary>The cells drawn from mods (null: none).</summary>
+    public Geometry? ModCells { get; init; }
+
     /// <summary>The game's colors for each layer (ISMapDefinitions.lua, initDefaultStyleV1).</summary>
     public static readonly IReadOnlyDictionary<MapLayer, Brush> Fills = new Dictionary<MapLayer, Brush>
     {
@@ -51,9 +54,10 @@ public sealed class MapScene : IDisposable
         return brush;
     }
 
-    public static MapScene Build(MapFiles files)
+    /// <summary>The map folders in the server's Map= order; <paramref name="vanilla"/> gives the base game's forest and satellite images.</summary>
+    public static MapScene Build(MapFiles? vanilla, IReadOnlyList<MapSource> sources)
     {
-        var map = WorldMap.Load(files.WorldMap, files.AnnotationsLua, files.LabelsJson);
+        var map = WorldMap.LoadLayered(sources);
         var byBlock = map.Features
             .Where(f => f.Rings.Count > 0)
             .GroupBy(f => ((int)Math.Floor(f.Rings[0][0] / BlockSize), (int)Math.Floor(f.Rings[0][1] / BlockSize)));
@@ -91,8 +95,8 @@ public sealed class MapScene : IDisposable
         MapPyramid? forest = null, satellite = null;
         try
         {
-            forest = MapPyramid.Open(files.Forest);
-            satellite = files.HasSatellite ? MapPyramid.Open(files.Satellite) : null;
+            forest = vanilla is null ? null : MapPyramid.Open(vanilla.Forest);
+            satellite = vanilla is { HasSatellite: true } ? MapPyramid.Open(vanilla.Satellite) : null;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
         {
@@ -105,7 +109,28 @@ public sealed class MapScene : IDisposable
             Labels = map.Labels,
             Forest = forest,
             Satellite = satellite,
+            ModCells = ModCellsGeometry(map.ModCells),
         };
+    }
+
+    // one shape for all the cells a mod draws: the base game's images are covered there
+    static Geometry? ModCellsGeometry(IReadOnlyCollection<(int X, int Y)> cells)
+    {
+        if (cells.Count == 0)
+            return null;
+        // neighbours overlap by half a square, filled as one (no hairline where they meet)
+        var geometry = new StreamGeometry { FillRule = FillRule.Nonzero };
+        using (var ctx = geometry.Open())
+        {
+            foreach (var (x, y) in cells)
+            {
+                double x0 = x * WorldMap.CellSize - 0.25, y0 = y * WorldMap.CellSize - 0.25, size = WorldMap.CellSize + 0.5;
+                ctx.BeginFigure(new Point(x0, y0), isFilled: true, isClosed: true);
+                ctx.PolyLineTo([new Point(x0 + size, y0), new Point(x0 + size, y0 + size), new Point(x0, y0 + size)], isStroked: false, isSmoothJoin: false);
+            }
+        }
+        geometry.Freeze();
+        return geometry;
     }
 
     public void Dispose()

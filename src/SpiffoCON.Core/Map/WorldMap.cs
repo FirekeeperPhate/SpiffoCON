@@ -25,10 +25,13 @@ public enum MapLayer
 }
 
 /// <summary>One polygon (outer ring and holes) or line, in world squares.</summary>
-public sealed record MapFeature(MapLayer Layer, bool IsLine, IReadOnlyList<float[]> Rings, float Width = 0);
+public sealed record MapFeature(MapLayer Layer, bool IsLine, IReadOnlyList<float[]> Rings, float Width = 0, int CellX = 0, int CellY = 0);
 
 /// <summary>A place name from worldmap-annotations.lua: <c>Town</c> for towns, <c>Place</c> for the rest.</summary>
 public sealed record MapLabel(string Text, float X, float Y, bool Town);
+
+/// <summary>A folder of map data (media/maps/&lt;name&gt;) of the base game or of a mod.</summary>
+public sealed record MapSource(string Name, string Folder, bool IsMod, string? LabelsJson = null);
 
 /// <summary>
 /// The game's world map data: <c>worldmap.xml</c> (cells of 300 squares, each with its polygons and lines),
@@ -44,6 +47,49 @@ public sealed partial class WorldMap
 
     /// <summary>The squares covered by cells, [MinX, MinY, MaxX, MaxY).</summary>
     public (int MinX, int MinY, int MaxX, int MaxY) Bounds { get; private set; }
+
+    /// <summary>Cells drawn from a mod's data, over the base game's forest and satellite images.</summary>
+    public HashSet<(int X, int Y)> ModCells { get; } = [];
+
+    int _cellX, _cellY;
+
+    /// <summary>
+    /// Several map folders in the server's Map= order, merged the game's way (MapUtils.initDirectoryMapData):
+    /// the first folder with features in a cell draws that cell, later folders are ignored there. Mods
+    /// bring their worldmap-forest.xml too; the base game's forest comes from its image pyramid.
+    /// </summary>
+    public static WorldMap LoadLayered(IEnumerable<MapSource> sources)
+    {
+        var map = new WorldMap();
+        var claimed = new HashSet<(int, int)>();
+        foreach (var source in sources)
+        {
+            var part = new WorldMap();
+            foreach (var file in source.IsMod ? ["worldmap-forest.xml", "worldmap.xml"] : new[] { "worldmap.xml" })
+            {
+                var path = Path.Combine(source.Folder, file);
+                if (!File.Exists(path))
+                    continue;
+                using var stream = File.OpenRead(path);
+                part.ReadXml(stream);
+            }
+            var cells = part.Features.Select(f => (f.CellX, f.CellY)).ToHashSet();
+            cells.ExceptWith(claimed);
+            map.Features.AddRange(part.Features.Where(f => cells.Contains((f.CellX, f.CellY))));
+            if (source.IsMod)
+                map.ModCells.UnionWith(cells);
+            claimed.UnionWith(cells);
+
+            var annotations = Path.Combine(source.Folder, "worldmap-annotations.lua");
+            if (File.Exists(annotations))
+                map.ReadAnnotations(File.ReadAllText(annotations),
+                    source.LabelsJson is not null && File.Exists(source.LabelsJson) ? ReadLabelTexts(File.ReadAllText(source.LabelsJson)) : null);
+        }
+        if (claimed.Count > 0)
+            map.Bounds = (claimed.Min(c => c.Item1) * CellSize, claimed.Min(c => c.Item2) * CellSize,
+                (claimed.Max(c => c.Item1) + 1) * CellSize, (claimed.Max(c => c.Item2) + 1) * CellSize);
+        return map;
+    }
 
     public static WorldMap Load(string worldmapXml, string? annotationsLua = null, string? labelsJson = null)
     {
@@ -73,6 +119,7 @@ public sealed partial class WorldMap
                     case "cell":
                         cellX = Int(xml.GetAttribute("x"));
                         cellY = Int(xml.GetAttribute("y"));
+                        (_cellX, _cellY) = (cellX, cellY);
                         minX = Math.Min(minX, cellX);
                         minY = Math.Min(minY, cellY);
                         maxX = Math.Max(maxX, cellX);
@@ -124,7 +171,7 @@ public sealed partial class WorldMap
         if (LayerOf(properties) is not { } layer)
             return;
         float width = properties.TryGetValue("width", out var w) && float.TryParse(w, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 0;
-        Features.Add(new MapFeature(layer, line, rings.Where(r => r.Length >= 4).ToList(), width));
+        Features.Add(new MapFeature(layer, line, rings.Where(r => r.Length >= 4).ToList(), width, _cellX, _cellY));
     }
 
     static MapLayer? LayerOf(Dictionary<string, string> p)

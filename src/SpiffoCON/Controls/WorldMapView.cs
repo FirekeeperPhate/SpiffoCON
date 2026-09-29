@@ -297,11 +297,24 @@ public sealed class WorldMapView : FrameworkElement
         var view = new Rect(ToWorld(new Point(0, 0)), ToWorld(new Point(ActualWidth, ActualHeight)));
         dc.PushTransform(new MatrixTransform(_scale, 0, 0, _scale, -_origin.X * _scale, -_origin.Y * _scale));
         if (satellite)
+        {
             DrawTiles(dc, scene.Satellite!, forest: false, view);
+            // the base game's image has nothing of the mods: they are drawn as a map there
+            if (scene.ModCells is { } modCells)
+            {
+                dc.DrawGeometry(MapScene.Paper, null, modCells);
+                dc.PushClip(modCells);
+                DrawVectors(dc, scene, view);
+                dc.Pop();
+            }
+        }
         else
         {
             if (scene.Forest is { } forest)
                 DrawTiles(dc, forest, forest: true, view);
+            // cells a mod redraws: the base game's forest there is not theirs
+            if (scene.ModCells is { } modCells)
+                dc.DrawGeometry(MapScene.Paper, null, modCells);
             DrawVectors(dc, scene, view);
         }
         dc.Pop();
@@ -344,7 +357,9 @@ public sealed class WorldMapView : FrameworkElement
                 continue;
             var fill = MapScene.Fills[layer];
             bool road = layer is MapLayer.RoadPrimary or MapLayer.RoadSecondary or MapLayer.RoadTertiary or MapLayer.RoadTrail or MapLayer.Railway;
-            var outline = road && _scale < 1 ? Frozen(new Pen(fill, pixel * (layer is MapLayer.RoadPrimary or MapLayer.RoadSecondary ? 1.5 : 1))) : null;
+            // roads: visible when zoomed out; forest and water: no hairline where a cell's polygon meets the next one
+            var outline = road && _scale < 1 ? Frozen(new Pen(fill, pixel * (layer is MapLayer.RoadPrimary or MapLayer.RoadSecondary ? 1.5 : 1)))
+                : layer is MapLayer.Forest or MapLayer.Water && _scale >= 0.3 ? Frozen(new Pen(fill, pixel)) : null;
             var linePen = Frozen(new Pen(fill, Math.Max(2, pixel * 1.5)) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round });
             foreach (var block in visible)
             {

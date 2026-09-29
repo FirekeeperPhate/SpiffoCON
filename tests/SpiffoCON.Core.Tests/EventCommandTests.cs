@@ -68,9 +68,20 @@ public class EventCommandTests
     [InlineData("User \"nobody\" not found", CommandOutcome.Failed)]
     [InlineData("Pass a username", CommandOutcome.Failed)]
     [InlineData("Specify a player to create the horde near to.", CommandOutcome.Failed)]
+    // createhorde2 and removezombies on a real B42 server (no player near: the area is not loaded)
+    [InlineData("invalid location", CommandOutcome.Failed)]
+    [InlineData("Zombies removed.", CommandOutcome.Success)]
     [InlineData("Inizia a piovere sul server. Usa /startrain \"intensità\"", CommandOutcome.Unconfirmed)]
     public void Interprets_replies(string reply, CommandOutcome expected)
     {
         Assert.Equal(expected, EventCommands.Interpret(reply));
+    }
+
+    [Fact]
+    public void Zombies_are_placed_and_removed_at_a_square()
+    {
+        Assert.Equal("createhorde2 -x 10640 -y 9560 -z 0 -count 500 -radius 5", EventCommands.HordeAt(10640, 9560, 0, 900, 5));
+        Assert.Equal("createhorde2 -x 1 -y 2 -z 0 -count 1 -radius 1", EventCommands.HordeAt(1, 2, 0, 0, 0));
+        Assert.Equal("removezombies -x 10640 -y 9560 -z 0 -radius 50", EventCommands.RemoveZombiesAt(10640, 9560, 0, 80));
     }
 }

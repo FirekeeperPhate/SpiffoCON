@@ -90,10 +90,16 @@ Windows, .NET 10, WPF.
   `worldmap.xml` and forest images, with building types in color and place names, or the
   game's top-down satellite view) with the players and vehicles the bridge reports, updated at
   each bridge refresh (every 15 s). Wheel zooms, dragging moves, clicking a player selects them
-  (and can follow them); right-click teleports the selected player there or copies the
-  coordinates. The map files are read from a Project Zomboid or dedicated server install on
+  (and can follow them); right-click teleports the selected player there, copies the
+  coordinates, spawns a horde there (`createhorde2`, number and radius set in the toolbar) or
+  removes the zombies around (`removezombies`). The server places zombies only where the map is
+  loaded, that is near a player, and says "invalid location" elsewhere. The map files are read from a Project Zomboid or dedicated server install on
   this PC, or copied once from the server over SFTP (about 17 MB, 50 MB more for the satellite
-  view) into `%LOCALAPPDATA%\SpiffoCON`. Vanilla map only: maps added by mods are not drawn.
+  view) into `%LOCALAPPDATA%\SpiffoCON`. Maps added by mods (the server's `Map=`) are drawn too,
+  merged the game's way (the first map in `Map=` with data in a cell draws that cell); their
+  map files come from the workshop folders on this PC (Steam, SpiffoCON's SteamCMD) or are
+  copied from the server over SFTP (only `worldmap.xml`, `worldmap-forest.xml` and the place
+  names: a few hundred KB). Mods without a `worldmap.xml` show nothing, as in the game.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards.

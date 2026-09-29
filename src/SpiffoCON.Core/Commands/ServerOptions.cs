@@ -37,6 +37,9 @@ public sealed class ServerOptions
 
     public IReadOnlyList<string> WorkshopItems => SplitList(this["WorkshopItems"]).Where(id => id.All(char.IsAsciiDigit)).Distinct().ToList();
 
+    /// <summary>Map folders in priority order (Map=, separated by ";" only: "Muldraugh, KY" has a comma).</summary>
+    public IReadOnlyList<string> Maps => (this["Map"] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
     static IEnumerable<string> SplitList(string? value) =>
         (value ?? "").Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
