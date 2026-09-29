@@ -269,6 +269,9 @@ public sealed class WorldMapView : FrameworkElement
         p.Username + (p.Dead == true ? " (dead)" : p.Health is { } h ? $" (health {h})" : "")
         + (p.Vehicle is { Length: > 0 } car ? $", in {car}" : "") + (p.Z is { } z and not 0 ? $", floor {z}" : "");
 
+    /// <summary>The player whose marker is at a point of the view (for the right-click menu).</summary>
+    public string? PlayerNameAt(Point screen) => PlayerAt(screen)?.Username;
+
     BridgePlayer? PlayerAt(Point screen) =>
         Players?.OfType<BridgePlayer>()
             .Where(p => p.X is not null && p.Y is not null)

@@ -123,6 +123,11 @@ public partial class MainWindow : Window
         };
         _vm.Map.CenterRequested += (x, y) => MapView.CenterOn(x, y, minScale: 0.5);
         _vm.Map.FitRequested += () => MapView.Fit();
+        _vm.TabRequested += header =>
+        {
+            if (Tabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Header as string == header) is { } tab)
+                Tabs.SelectedItem = tab;
+        };
         if (Tabs.SelectedItem == MapTab)
             _vm.Map.Activate();
         _vm.Logs.LinesAdded += (_, _) => Dispatcher.BeginInvoke(() =>
@@ -164,6 +169,16 @@ public partial class MainWindow : Window
     void SftpPasswordBox_PasswordChanged(object sender, RoutedEventArgs e) => _vm.SftpPassword = SftpPasswordBox.Password;
 
     void TestSftp_Click(object sender, RoutedEventArgs e) => Tabs.SelectedItem = FilesTab;
+
+    // right-click on a player's marker: the player menu instead of the map's own
+    void MapView_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (MapView.PlayerNameAt(Mouse.GetPosition(MapView)) is { } player)
+        {
+            e.Handled = true;
+            Controls.PlayerMenu.Open(_vm, player, MapView);
+        }
+    }
 
     // the map is read the first time its tab is shown (lists and combo boxes inside raise this event too)
     void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)

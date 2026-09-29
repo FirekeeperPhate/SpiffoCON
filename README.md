@@ -100,9 +100,15 @@ Windows, .NET 10, WPF.
   map files come from the workshop folders on this PC (Steam, SpiffoCON's SteamCMD) or are
   copied from the server over SFTP (only `worldmap.xml`, `worldmap-forest.xml` and the place
   names: a few hundred KB). Mods without a `worldmap.xml` show nothing, as in the game.
+- Player menu: right-click a player wherever players are listed (Players, Map list and markers,
+  Bridge, Accounts, chat lines in Logs): show in the Players tab, on the map or their inventory,
+  teleport to another player or bring one here, give a kit, lightning / thunder / horde, full heal
+  (bridge), god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the
+  name. Each reply shows in the status bar.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
-  connection and checked afterwards.
+  connection and checked afterwards. With SFTP on, connecting also connects the bridge and
+  follows the logs (a box in the SFTP settings turns it off).
 - Server list: save several servers (name, RCON, SFTP and the folders found on each), add,
   duplicate or delete them, and switch while disconnected; every tab starts clean for the
   new server. The list lives in `%APPDATA%\SpiffoCON\servers.json` (the single

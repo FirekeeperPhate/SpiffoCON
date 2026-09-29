@@ -40,6 +40,9 @@ public sealed class ServerProfile : INotifyPropertyChanged
 
     public bool SftpEnabled { get; set; }
 
+    /// <summary>On connect, also connect the bridge and follow the logs over SFTP.</summary>
+    public bool AutoConnectFiles { get; set; } = true;
+
     /// <summary>Some hosts serve SFTP from another address than the game server.</summary>
     public bool SftpCustomHost { get; set; }
 

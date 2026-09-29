@@ -219,6 +219,8 @@
                         <TextBlock Text="SFTP password" Style="{StaticResource FieldLabel}" />
                         <PasswordBox x:Name="SftpPasswordBox" PasswordChanged="SftpPasswordBox_PasswordChanged" />
                     </StackPanel>
+                    <CheckBox Content="Connect the bridge and the logs too" IsChecked="{Binding AutoConnectFiles}" Margin="0,8,0,0"
+                              ToolTip="When RCON connects: Find on server in the Bridge tab, then in the Logs tab" />
                     <Button Content="Test SFTP" Command="{Binding TestSftpCommand}" HorizontalAlignment="Stretch" Margin="0,12,0,0"
                             Click="TestSftp_Click" />
                 </StackPanel>
@@ -301,7 +303,7 @@
                             <TextBlock Text="{Binding OnlineCount}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
                         </DockPanel>
                         <CheckBox DockPanel.Dock="Bottom" Content="Refresh every 30 s" IsChecked="{Binding AutoRefresh}" Margin="0,6,0,0" />
-                        <ListBox ItemsSource="{Binding OnlinePlayers}" SelectedItem="{Binding SelectedOnline}" />
+                        <ListBox ItemsSource="{Binding OnlinePlayers}" SelectedItem="{Binding SelectedOnline}" controls:PlayerMenu.Enabled="True" />
                     </DockPanel>
 
                     <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
@@ -599,7 +601,7 @@
                             <ColumnDefinition Width="330" />
                         </Grid.ColumnDefinitions>
                         <ListView ItemsSource="{Binding View}" SelectedItem="{Binding Selected}" ItemContainerStyle="{StaticResource GridRow}"
-                                  IsSynchronizedWithCurrentItem="False">
+                                  IsSynchronizedWithCurrentItem="False" controls:PlayerMenu.Enabled="True">
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="Account" Width="140" DisplayMemberBinding="{Binding Username}" />
@@ -1118,7 +1120,7 @@
                                 Margin="6,0,0,0" ToolTip="Clear the list (the log file is not touched)" />
                     </Grid>
 
-                    <ListBox Grid.Row="2" x:Name="LogList" ItemsSource="{Binding View}" FontSize="13" IsSynchronizedWithCurrentItem="False"
+                    <ListBox Grid.Row="2" x:Name="LogList" ItemsSource="{Binding View}" controls:PlayerMenu.Enabled="True" FontSize="13" IsSynchronizedWithCurrentItem="False"
                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemContainerStyle>
@@ -1228,7 +1230,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="420" />
                         </Grid.ColumnDefinitions>
-                        <ListView ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" ItemContainerStyle="{StaticResource GridRow}">
+                        <ListView ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" ItemContainerStyle="{StaticResource GridRow}" controls:PlayerMenu.Enabled="True">
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="Player" Width="150" DisplayMemberBinding="{Binding Username}" />
@@ -1389,7 +1391,7 @@
                     <!-- the map -->
                     <Border Grid.Row="1" CornerRadius="6" ClipToBounds="True" Background="#18808080">
                         <Grid>
-                            <controls:WorldMapView x:Name="MapView" Scene="{Binding Scene}" Players="{Binding Bridge.Players}" Vehicles="{Binding Bridge.Vehicles}"
+                            <controls:WorldMapView x:Name="MapView" ContextMenuOpening="MapView_ContextMenuOpening" Scene="{Binding Scene}" Players="{Binding Bridge.Players}" Vehicles="{Binding Bridge.Vehicles}"
                                                    ShowVehicles="{Binding ShowVehicles}" Satellite="{Binding Satellite}" SelectedPlayer="{Binding SelectedPlayer}"
                                                    PointerText="{Binding PointerText}" ContextSquare="{Binding ContextSquare}">
                                 <controls:WorldMapView.ContextMenu>
@@ -1456,7 +1458,7 @@
                             <TextBlock Text="Wheel: zoom · drag: move · click a player to select · right-click: teleport here"
                                        Opacity="0.6" FontSize="11.5" TextWrapping="Wrap" Margin="0,8,0,0" />
                         </StackPanel>
-                        <ListBox ItemsSource="{Binding Bridge.Players}" SelectedValuePath="Username" SelectedValue="{Binding SelectedPlayer}"
+                        <ListBox ItemsSource="{Binding Bridge.Players}" SelectedValuePath="Username" SelectedValue="{Binding SelectedPlayer}" controls:PlayerMenu.Enabled="True"
                                  HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>

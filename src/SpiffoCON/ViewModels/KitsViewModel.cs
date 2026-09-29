@@ -207,7 +207,12 @@ public sealed partial class KitsViewModel : ObservableObject
         {
             players = [chosen];
         }
+        Result = await GiveKitAsync(kit, players);
+    }
 
+    /// <summary>Gives each item of a kit to each player; the summary of what was given. Also used by the player menu.</summary>
+    internal async Task<string> GiveKitAsync(KitView kit, IReadOnlyList<string> players)
+    {
         var lines = new List<string>();
         bool stopped = false;
         foreach (var target in players)
@@ -235,7 +240,7 @@ public sealed partial class KitsViewModel : ObservableObject
                 break;
             }
         }
-        Result = $"\"{kit.Name}\" at {DateTime.Now:HH:mm:ss}\n" + string.Join("\n", lines);
+        return $"\"{kit.Name}\" at {DateTime.Now:HH:mm:ss}\n" + string.Join("\n", lines);
     }
 
     internal void Save()

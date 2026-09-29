@@ -56,6 +56,7 @@ public sealed partial class MainViewModel : ObservableObject
         RconPort = _profile.RconPort;
         RememberPasswords = _profile.RememberPasswords;
         SftpEnabled = _profile.SftpEnabled;
+        AutoConnectFiles = _profile.AutoConnectFiles;
         SftpCustomHost = _profile.SftpCustomHost;
         SftpHost = _profile.SftpHost;
         SftpPort = _profile.SftpPort;
@@ -100,6 +101,7 @@ public sealed partial class MainViewModel : ObservableObject
         Accounts = new AccountsViewModel(this);
         Events = new EventsViewModel(this);
         Maintenance = new MaintenanceViewModel(this);
+        PlayerActions = new PlayerActions(this);
     }
 
     public KitsViewModel Kits { get; }
@@ -113,6 +115,14 @@ public sealed partial class MainViewModel : ObservableObject
     public BridgeViewModel Bridge { get; }
 
     public MapViewModel Map { get; }
+
+    /// <summary>The right-click menu on a player, in any tab.</summary>
+    public PlayerActions PlayerActions { get; }
+
+    /// <summary>Asks the window to show a tab (by its header).</summary>
+    public event Action<string>? TabRequested;
+
+    internal void ShowTab(string header) => TabRequested?.Invoke(header);
 
     public LogsViewModel Logs { get; }
 
@@ -448,6 +458,8 @@ public sealed partial class MainViewModel : ObservableObject
             await RefreshPlayersAsync();
             await Options.RefreshCommand.ExecuteAsync(null);
             SaveProfile();
+            if (AutoConnectFiles && CurrentSftpSettings() is not null)
+                _ = ConnectFilesAsync();
         }
         catch (RconException ex)
         {
@@ -458,6 +470,27 @@ public sealed partial class MainViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// After connecting: the bridge and the logs over SFTP, one after the other (both may probe the
+    /// server's folders the first time). Each tab shows its own outcome; the status bar sums them up.
+    /// </summary>
+    async Task ConnectFilesAsync()
+    {
+        var connected = StatusText;
+        if (!Bridge.IsConnected)
+            await Bridge.FindOnServerCommand.ExecuteAsync(null);
+        if (_shutDown || !IsSessionActive)
+            return;
+        if (!Logs.IsOpen)
+            await Logs.FindOnServerCommand.ExecuteAsync(null);
+        if (_shutDown || !IsSessionActive)
+            return;
+        // not over a newer message (a command's reply, a lost connection)
+        if (StatusText == connected)
+            StatusText = connected + (Bridge.IsConnected ? " · bridge connected" : " · no bridge (see the Bridge tab)")
+                + (Logs.IsOpen ? " · following the logs" : " · logs not found (see the Logs tab)");
     }
 
     [RelayCommand]
@@ -728,6 +761,7 @@ public sealed partial class MainViewModel : ObservableObject
     // ---- SFTP ----
 
     [ObservableProperty] private bool sftpEnabled;
+    [ObservableProperty] private bool autoConnectFiles = true;
     [ObservableProperty] private int sftpPort;
     [ObservableProperty] private string sftpUser = "";
     [ObservableProperty] private bool sftpSamePassword;
@@ -833,6 +867,7 @@ public sealed partial class MainViewModel : ObservableObject
         _profile.RememberPasswords = RememberPasswords;
         _profile.RconPassword = RememberPasswords ? ProfileStore.Protect(RconPassword) : null;
         _profile.SftpEnabled = SftpEnabled;
+        _profile.AutoConnectFiles = AutoConnectFiles;
         _profile.SftpCustomHost = SftpCustomHost;
         _profile.SftpHost = SftpHost.Trim();
         _profile.SftpPort = SftpPort;

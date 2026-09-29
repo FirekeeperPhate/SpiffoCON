@@ -1,0 +1,152 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using SpiffoCON.Core.Bridge;
+using SpiffoCON.Core.Files;
+using SpiffoCON.ViewModels;
+
+namespace SpiffoCON.Controls;
+
+/// <summary>
+/// The right-click menu on a player, the same in every list that shows players:
+/// <c>controls:PlayerMenu.Enabled="True"</c> on the list. Items can be player names, bridge players,
+/// accounts or chat lines. Built when it opens, so it follows who is online, the kits and the bridge.
+/// </summary>
+public static class PlayerMenu
+{
+    public static readonly DependencyProperty EnabledProperty = DependencyProperty.RegisterAttached(
+        "Enabled", typeof(bool), typeof(PlayerMenu), new PropertyMetadata(false, OnEnabledChanged));
+
+    public static bool GetEnabled(DependencyObject d) => (bool)d.GetValue(EnabledProperty);
+
+    public static void SetEnabled(DependencyObject d, bool value) => d.SetValue(EnabledProperty, value);
+
+    static void OnEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not ItemsControl list)
+            return;
+        list.ContextMenuOpening -= OnOpening;
+        if ((bool)e.NewValue)
+        {
+            // an (empty) menu makes WPF raise ContextMenuOpening; it is filled there
+            list.ContextMenu ??= new ContextMenu();
+            list.ContextMenuOpening += OnOpening;
+        }
+    }
+
+    static void OnOpening(object sender, ContextMenuEventArgs e)
+    {
+        var list = (ItemsControl)sender;
+        var container = e.OriginalSource is DependencyObject source ? ItemsControl.ContainerFromElement(list, source) : null;
+        var item = container is null ? null : list.ItemContainerGenerator.ItemFromContainer(container);
+        if (NameOf(item) is not { } name || Window.GetWindow(list)?.DataContext is not MainViewModel vm || list.ContextMenu is not { } menu)
+        {
+            // not on a player: no menu
+            e.Handled = true;
+            return;
+        }
+        Fill(menu, vm.PlayerActions, name);
+    }
+
+    /// <summary>The player of a list item, if it is one.</summary>
+    public static string? NameOf(object? item) => item switch
+    {
+        string s when s.Length > 0 => s,
+        BridgePlayer p => p.Username,
+        AccountRow a => a.Username,
+        LogLineItem { Kind: LogLineKind.Chat, Line.Author: { Length: > 0 } author } => author,
+        _ => null,
+    };
+
+    /// <summary>Opens the menu for a player at the pointer (the map's markers).</summary>
+    public static void Open(MainViewModel vm, string player, UIElement target)
+    {
+        var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.MousePoint };
+        Fill(menu, vm.PlayerActions, player);
+        menu.IsOpen = true;
+    }
+
+    static void Fill(ContextMenu menu, PlayerActions actions, string player)
+    {
+        menu.Items.Clear();
+        bool connected = actions.IsConnected;
+        bool online = connected && actions.IsOnline(player);
+        var bridge = actions.BridgeInfo(player);
+
+        menu.Items.Add(new MenuItem
+        {
+            Header = player + (!connected ? " (not connected)" : online ? "" : " (offline)"),
+            IsEnabled = false,
+            FontWeight = FontWeights.SemiBold,
+        });
+        Add(menu.Items, "Show in the Players tab", () => actions.ShowInPlayersTab(player));
+        Add(menu.Items, "Show on the map", () => actions.ShowOnMap(player), bridge?.X is not null,
+            bridge is null ? "Needs the bridge (Bridge tab)" : null);
+        Add(menu.Items, "Inventory (Bridge tab)", () => actions.ShowInventory(player), bridge is not null,
+            bridge is null ? "Needs the bridge (Bridge tab)" : null);
+        menu.Items.Add(new Separator());
+
+        var others = actions.OthersOnline(player);
+        Sub(menu.Items, "Teleport to", online && others.Count > 0, others.Select(o => ((object)o, (Func<Task>)(() => actions.TeleportAsync(player, o)))));
+        Sub(menu.Items, "Bring here", online && others.Count > 0, others.Select(o => ((object)o, (Func<Task>)(() => actions.TeleportAsync(o, player)))));
+        Sub(menu.Items, "Give kit", online && actions.Kits.Count > 0,
+            actions.Kits.Select(k => ((object)$"{k.Name} ({k.Summary})", (Func<Task>)(() => actions.GiveKitAsync(player, k)))));
+        Sub(menu.Items, "Event", online, actions.PlayerEvents.Select(ev =>
+            ((object)(ev.Id == "horde" ? $"{ev.Name} ({actions.HordeSize} zombies)" : ev.Name), (Func<Task>)(() => actions.EventAsync(player, ev)))));
+        Add(menu.Items, "Heal completely…", () => actions.HealAsync(player), online && actions.CanHeal(player),
+            actions.CanHeal(player) ? null : "Needs bridge v2 (Bridge tab)");
+        menu.Items.Add(new Separator());
+
+        Sub(menu.Items, "Powers", online,
+        [
+            ("God mode on", () => actions.GodModeAsync(player, true)),
+            ("God mode off", () => actions.GodModeAsync(player, false)),
+            ("Invisible on", () => actions.InvisibleAsync(player, true)),
+            ("Invisible off", () => actions.InvisibleAsync(player, false)),
+            ("No clip on", () => actions.NoClipAsync(player, true)),
+            ("No clip off", () => actions.NoClipAsync(player, false)),
+        ]);
+        Sub(menu.Items, "Access level", connected, actions.AccessLevels.Select(l => ((object)l, (Func<Task>)(() => actions.SetAccessLevelAsync(player, l)))));
+        Sub(menu.Items, "Voice chat", online,
+        [
+            ("Mute", () => actions.VoiceAsync(player, true)),
+            ("Unmute", () => actions.VoiceAsync(player, false)),
+        ]);
+        menu.Items.Add(new Separator());
+        Add(menu.Items, "Kick…", () => actions.KickAsync(player), online);
+        Add(menu.Items, "Ban…", () => actions.BanAsync(player), connected);
+        Add(menu.Items, "Unban…", () => actions.UnbanAsync(player), connected);
+        menu.Items.Add(new Separator());
+        Add(menu.Items, "Copy name", () => actions.CopyName(player));
+    }
+
+    static void Add(ItemCollection items, string header, Action action, bool enabled = true, string? tip = null)
+    {
+        var item = new MenuItem { Header = header, IsEnabled = enabled, ToolTip = tip };
+        ToolTipService.SetShowOnDisabled(item, true);
+        item.Click += (_, _) => action();
+        items.Add(item);
+    }
+
+    static void Add(ItemCollection items, string header, Func<Task> action, bool enabled = true, string? tip = null)
+    {
+        var item = new MenuItem { Header = header, IsEnabled = enabled, ToolTip = tip };
+        ToolTipService.SetShowOnDisabled(item, true);
+        item.Click += async (_, _) => await action();
+        items.Add(item);
+    }
+
+    static void Sub(ItemCollection items, string header, bool enabled, IEnumerable<(object Header, Func<Task> Action)> children)
+    {
+        var parent = new MenuItem { Header = header, IsEnabled = enabled };
+        foreach (var (childHeader, action) in children)
+        {
+            var child = new MenuItem { Header = childHeader };
+            child.Click += async (_, _) => await action();
+            parent.Items.Add(child);
+        }
+        if (parent.Items.Count == 0)
+            parent.IsEnabled = false;
+        items.Add(parent);
+    }
+}
