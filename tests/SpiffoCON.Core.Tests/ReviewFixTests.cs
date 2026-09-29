@@ -107,6 +107,13 @@ public sealed class ReviewFixTests : IDisposable
     }
 
     [Fact]
+    public void Broadcasts_in_the_log_read_as_players_see_them()
+    {
+        var line = LogTail.Parse("[29-09-26 10:03:30.200][info] Server alert message: '<RGB:1,0.6,0>Restart at 20:00 <LINE> <RGB:0.3,0.9,0.3>Be ready' sent..");
+        Assert.Equal((LogLineKind.Alert, "Restart at 20:00 / Be ready"), (line.Kind, line.Text));
+    }
+
+    [Fact]
     public void A_name_inside_an_error_phrase_does_not_hide_it()
     {
         // a player called "User" and the reply "No such user"

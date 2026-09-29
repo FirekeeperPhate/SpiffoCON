@@ -3,6 +3,10 @@
 Remote admin console for Project Zomboid (Build 42) dedicated servers, over RCON.
 Windows, .NET 10, WPF.
 
+![SpiffoCON: console, players, events, catalog, kits, options, sandbox, logs, accounts, bridge, broadcast and maintenance tabs](docs/SpiffoCON-demo.gif)
+
+*The tabs against a B42 test server (players, chat, bridge data and mod updates are sample data).*
+
 ## Features
 
 - RCON client written for PZ: replies matched by request id (a late reply is never shown

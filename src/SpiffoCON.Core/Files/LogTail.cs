@@ -136,7 +136,7 @@ public sealed partial class LogTail(ILogFolder folder, string type)
             return new LogLine(time, level, chat.Groups["text"].Value, LogLineKind.Chat, chat.Groups["chat"].Value.Trim(), chat.Groups["author"].Value);
         var alert = ServerAlert().Match(rest);
         if (alert.Success)
-            return new LogLine(time, level, alert.Groups["text"].Value, LogLineKind.Alert);
+            return new LogLine(time, level, PlainMessage(alert.Groups["text"].Value), LogLineKind.Alert);
         return new LogLine(time, level, rest, LogLineKind.Server);
     }
 
@@ -145,6 +145,13 @@ public sealed partial class LogTail(ILogFolder folder, string type)
 
     [GeneratedRegex(@"^Got message:ChatMessage\{chat=(?<chat>[^,]*), author='(?<author>.*?)', text='(?<text>.*)'\}\.?$")]
     private static partial Regex ChatMessage();
+
+    /// <summary>A broadcast as players read it: color tags dropped, &lt;LINE&gt; as a separator.</summary>
+    static string PlainMessage(string markup) =>
+        ColorTag().Replace(markup, "").Replace(" <LINE> ", " / ").Replace("<LINE>", " / ").Trim();
+
+    [GeneratedRegex(@"<RGB:[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex ColorTag();
 
     [GeneratedRegex(@"^Server alert message: '(?<text>.*)' sent\.*$")]
     private static partial Regex ServerAlert();
