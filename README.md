@@ -3,9 +3,21 @@
 Remote admin console for Project Zomboid (Build 42) dedicated servers, over RCON.
 Windows, .NET 10, WPF.
 
-![SpiffoCON: console, players, events, catalog, kits, options, sandbox, logs, accounts, bridge, broadcast and maintenance tabs](docs/SpiffoCON-demo.gif)
+![SpiffoCON: console, players, events and weather, map, catalog, kits, options, sandbox, logs, accounts, bridge, broadcast and maintenance tabs, with the online players sidebar](docs/SpiffoCON-demo.gif)
 
-*The tabs against a B42 test server (players, chat, bridge data and mod updates are sample data).*
+*The tabs against a B42 test server (players, positions, chat, inventory and mod updates are sample data).*
+
+## Getting started
+
+1. Download the installer from [Releases](../../releases): **Full** includes the .NET runtime,
+   **Light** needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64).
+2. On the left, enter the server's host, RCON port and RCON password (the server's `RCONPort` and
+   `RCONPassword` options; your host's panel shows them), then **Connect**.
+3. Optional, for logs, accounts, sandbox settings, mod files, the map and the bridge: tick
+   **Use SFTP** and enter the SFTP user and password your host gives you.
+4. Optional, for player positions, inventories, vehicles, heal and weather: add the
+   [SpiffoCON Bridge](#the-bridge-mod) mod to the server. You don't have to publish anything: use
+   the Workshop item below.
 
 ## Features
 
@@ -89,18 +101,19 @@ Windows, .NET 10, WPF.
   `spiffocon_out.txt`). Bridge v2 adds admin actions, each done the way the game's own
   server code does it (with its client sync) and written to the admin log: full heal,
   remove items (not worn or attached ones; bridge v3 removes them from the container they
-  are listed under), repair, refuel or remove a vehicle, all asked for confirmation. Bridge v5 sets the
-  weather (Events tab). The bridge runs while the server runs a game:
-  an empty server with `PauseEmpty=true` is paused and the bridge waits.
+  are listed under), repair, refuel or remove a vehicle, all asked for confirmation. Bridge v5
+  sets the weather (Events tab). The bridge runs while the server runs a game: an empty server
+  with `PauseEmpty=true` is paused and the bridge waits.
 - Map tab: the game's world map (drawn like the in-game map from the game's own
   `worldmap.xml` and forest images, with building types in color and place names, or the
   game's top-down satellite view) with the players and vehicles the bridge reports, updated at
   each bridge refresh (every 15 s). Wheel zooms, dragging moves, clicking a player (on the map,
-  or in the sidebar while the Map tab is open) selects and can follow them; right-click teleports the selected player there, copies the
-  coordinates, spawns a horde there (`createhorde2`, number and radius set in the toolbar) or
-  removes the zombies around (`removezombies`). The server places zombies only where the map is
-  loaded, that is near a player, and says "invalid location" elsewhere. The map files are read from a Project Zomboid or dedicated server install on
-  this PC, or copied once from the server over SFTP (about 17 MB, 50 MB more for the satellite
+  or in the sidebar while the Map tab is open) selects and can follow them; right-click teleports
+  the selected player there, copies the coordinates, spawns a horde there (`createhorde2`, number
+  and radius set in the toolbar) or removes the zombies around (`removezombies`). The server
+  places zombies only where the map is loaded, that is near a player, and says "invalid
+  location" elsewhere. The map files are read from a Project Zomboid or dedicated server install
+  on this PC, or copied once from the server over SFTP (about 17 MB, 50 MB more for the satellite
   view) into `%LOCALAPPDATA%\SpiffoCON`. Maps added by mods (the server's `Map=`) are drawn too,
   merged the game's way (the first map in `Map=` with data in a cell draws that cell); their
   map files come from the workshop folders on this PC (Steam, SpiffoCON's SteamCMD) or are
@@ -108,11 +121,11 @@ Windows, .NET 10, WPF.
   names: a few hundred KB). Mods without a `worldmap.xml` show nothing, as in the game.
 - Online players sidebar on the right, always in view (refreshed every 30 s), with each player's
   position when the bridge is connected; double-click opens the player in the Players tab.
-- Player menu: right-click a player wherever players are listed (the sidebar, Players, Map list
-  and markers, Bridge, Accounts, chat lines in Logs): show in the Players tab, on the map or their inventory,
-  teleport to another player or bring one here, give a kit, lightning / thunder / horde, full heal
-  (bridge), god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the
-  name. Each reply shows in the status bar.
+- Player menu: right-click a player wherever players are listed (the sidebar, Players, map
+  markers, Bridge, Accounts, chat lines in Logs): show in the Players tab, on the map or their
+  inventory, teleport to another player or bring one here, give a kit, lightning / thunder /
+  horde, full heal (bridge), god mode, invisible, no clip, access level, voice mute, kick, ban,
+  unban, copy the name. Each reply shows in the status bar.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards. With SFTP on, connecting also connects the bridge,
@@ -143,23 +156,41 @@ server (`steamcmd +login anonymous +app_update 380870 +quit`) and run:
 dotnet run tools/MakeVanillaSnapshot.cs -- "<dedicated server folder>"
 ```
 
-## Publishing the bridge mod
+## The bridge mod
 
-The mod is on the Workshop, unlisted:
-[SpiffoCON Bridge](https://steamcommunity.com/sharedfiles/filedetails/?id=3809683986)
-(Workshop id `3809683986`; `bridge/SpiffoCONBridge/workshop.txt` keeps the id so new uploads
-update the same item). Unlisted items don't show in searches, nor in hosts' mod browsers: add
-`SpiffoCONBridge` to `Mods=` and `3809683986` to `WorkshopItems=` by hand. To upload an update:
+### Using it
+
+The bridge is published on the Steam Workshop:
+[SpiffoCON Bridge](https://steamcommunity.com/sharedfiles/filedetails/?id=3809683986), Workshop id
+`3809683986`, mod id `SpiffoCONBridge`. Any server can use it; nothing needs to be uploaded.
+The item is unlisted, so it doesn't show in searches nor in hosts' mod browsers: add it by hand.
+
+1. On the server, add `SpiffoCONBridge` to `Mods=` and `3809683986` to `WorkshopItems=` (the
+   Bridge tab's **Copy server settings** puts both on the clipboard; the Options tab edits these
+   lists), then restart the server so it downloads the mod.
+2. In SpiffoCON, with SFTP set, the bridge connects by itself when you connect (or press **Find
+   on server** in the Bridge tab).
+
+It runs on the server only: players don't need it, and it does nothing on their game. It acts only
+on requests SpiffoCON writes into the server's `Zomboid/Lua` folder, so only someone who can
+already write the server's files can use it. SpiffoCON checks the bridge version and greys out
+what an older bridge can't do.
+
+### Publishing it (maintainer)
+
+`bridge/SpiffoCONBridge/workshop.txt` keeps the Workshop id, so new uploads update the same item.
+To upload an update:
 
 1. In SpiffoCON's Bridge tab press **Prepare Workshop upload**: it copies
-   `bridge/SpiffoCONBridge` to `%USERPROFILE%\Zomboid\Workshop\SpiffoCONBridge` (keeping
-   the `id=` line the game writes into `workshop.txt` after the first upload).
+   `bridge/SpiffoCONBridge` to `%USERPROFILE%\Zomboid\Workshop\SpiffoCONBridge`.
 2. Start Project Zomboid, open **Workshop** from the main menu, pick SpiffoCON Bridge and
    upload it (`workshop.txt` sets it unlisted).
-3. On the server add `SpiffoCONBridge` to `Mods=` and the Workshop id to `WorkshopItems=`
-   (**Copy server settings** puts both on the clipboard), then restart the server.
+3. Servers get the new version at their next restart.
 
-`tools/MakeBridgeImages.cs` redraws `preview.png` and `poster.png`.
+A fork that wants its own Workshop item removes the `id=` line from `workshop.txt` (Steam refuses
+an upload to someone else's item; the game writes the new id there after the first upload) and
+changes `BridgeMod.PublishedWorkshopId` in `src/SpiffoCON.Core/Bridge/BridgeMod.cs`, which
+**Copy server settings** uses. `tools/MakeBridgeImages.cs` redraws `preview.png` and `poster.png`.
 
 ## Installers
 
@@ -177,5 +208,10 @@ be chosen); Light and Full replace each other. User data (`%APPDATA%\SpiffoCON`,
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Project Zomboid and its art belong to The Indie Stone: SpiffoCON
-ships none of it (base-game icons are read from your own game install).
+MIT, see [LICENSE](LICENSE). Project Zomboid, its art and its text belong to The Indie Stone;
+SpiffoCON is not affiliated with them. SpiffoCON ships none of the game's art: item icons are read
+from your own game install, and the map from the game's files on your PC or on your server. It
+does ship three text files made from the game's files by the tools in `tools/`, so it works
+without a game install: the base-game item list of the Catalog (item ids, names, categories;
+`src/SpiffoCON.Core/Data/vanilla-catalog.json.gz`) and the server and sandbox options with their
+defaults, ranges and descriptions (`server-options.json`, `sandbox-options.json`).

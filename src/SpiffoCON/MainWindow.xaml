@@ -237,6 +237,13 @@
 
         <!-- Work area -->
         <TabControl Grid.Column="2" Margin="0,8,0,8" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
+            <TabControl.Resources>
+                <!-- the Fluent tab border already has 6 px each side: a little less keeps the 14 tabs on one row
+                     with the connection panel open, at the default window size -->
+                <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
+                    <Setter Property="Padding" Value="-3,0" />
+                </Style>
+            </TabControl.Resources>
             <TabItem Header="Console">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
