@@ -70,8 +70,16 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; Started by SpiffoCON's own update (silent, /UPDATE=1): open it again when done, as the user (not elevated)
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: IsAppUpdate
 
 [Code]
+{ SpiffoCON runs its own update silently with /UPDATE=1, and is opened again afterwards }
+function IsAppUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:UPDATE|0}') = '1';
+end;
+
 { Switching edition (Full <-> Light) or upgrading: remove the previous program files so no stale
   runtime or library DLLs are left behind, and the bridge folder so no old mod files stay in it.
   The user's data is not in the program folder (profile in %APPDATA%\SpiffoCON, caches and

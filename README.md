@@ -1,7 +1,14 @@
 # SpiffoCON
 
+[![Latest release](https://img.shields.io/github/v/release/MarcoTrombetta/SpiffoCON)](https://github.com/MarcoTrombetta/SpiffoCON/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/MarcoTrombetta/SpiffoCON/total)](https://github.com/MarcoTrombetta/SpiffoCON/releases)
+[![License: MIT](https://img.shields.io/github/license/MarcoTrombetta/SpiffoCON)](LICENSE)
+
 Remote admin console for Project Zomboid (Build 42) dedicated servers, over RCON.
 Windows, .NET 10, WPF.
+
+**[Download the latest version](https://github.com/MarcoTrombetta/SpiffoCON/releases/latest)**
+(then SpiffoCON updates itself: see [Updates](#updates)).
 
 ![SpiffoCON: console, players, events and weather, map, catalog, kits, options, sandbox, logs, accounts, bridge, broadcast and maintenance tabs, with the online players sidebar](docs/SpiffoCON-demo.gif)
 
@@ -9,8 +16,10 @@ Windows, .NET 10, WPF.
 
 ## Getting started
 
-1. Download the installer from [Releases](../../releases): **Full** includes the .NET runtime,
-   **Light** needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64).
+1. Download the installer from the
+   [latest release](https://github.com/MarcoTrombetta/SpiffoCON/releases/latest): **Full**
+   includes the .NET runtime, **Light** needs the
+   [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64).
 2. On the left, enter the server's host, RCON port and RCON password (the server's `RCONPort` and
    `RCONPassword` options; your host's panel shows them), then **Connect**.
 3. Optional, for logs, accounts, sandbox settings, mod files, the map and the bridge: tick
@@ -18,6 +27,16 @@ Windows, .NET 10, WPF.
 4. Optional, for player positions, inventories, vehicles, heal and weather: add the
    [SpiffoCON Bridge](#the-bridge-mod) mod to the server. You don't have to publish anything: use
    the Workshop item below.
+
+## Updates
+
+Once a day SpiffoCON asks GitHub for the latest release (only its version number is sent). When
+there is a newer one it shows what is new, with **Install and restart** (the installer of the same
+edition, Full or Light, is downloaded, checked against GitHub's SHA-256, and run quietly; servers,
+passwords and settings are kept, and SpiffoCON opens again), **Skip this version** or **Later**.
+The Maintenance tab turns the daily check off and has **Check now**. A copy that wasn't installed by
+the installer (a build, a copied folder) doesn't check by itself, and opens the releases page
+instead.
 
 ## Features
 

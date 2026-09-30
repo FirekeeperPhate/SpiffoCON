@@ -191,6 +191,34 @@ public sealed partial class MainViewModel : ObservableObject
 
     internal ServerProfile Profile => _profile;
 
+    // ---- SpiffoCON updates (the window does the checking: it shows the dialog) ----
+
+    public string AppVersionText => $"You have SpiffoCON {AppInstall.Version}.";
+
+    /// <summary>Look for a new release once a day, shared by all servers.</summary>
+    public bool CheckForUpdates
+    {
+        get => _book.CheckForUpdates;
+        set
+        {
+            if (_book.CheckForUpdates == value)
+                return;
+            _book.CheckForUpdates = value;
+            SaveProfile();
+            OnPropertyChanged();
+        }
+    }
+
+    internal ServerBook Book => _book;
+
+    [ObservableProperty] private string updateStatus = "";
+
+    /// <summary>Asks the window to look for an update now (true: say so when there is none).</summary>
+    public event Action<bool>? UpdateCheckRequested;
+
+    [RelayCommand]
+    private void CheckForUpdatesNow() => UpdateCheckRequested?.Invoke(true);
+
     /// <summary>The game folder chosen for the Map tab, shared by all servers.</summary>
     internal string? MapFolder
     {

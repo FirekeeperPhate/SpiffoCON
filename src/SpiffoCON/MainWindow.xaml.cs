@@ -29,6 +29,13 @@ public partial class MainWindow : Window
             if (ProfileStore.LoadProblem is { } problem)
                 MessageBox.Show(this, problem, "SpiffoCON", MessageBoxButton.OK, MessageBoxImage.Warning);
         };
+        // the installer of the last update has done its job; a new version is looked for a little after start-up
+        _ = Task.Run(() => SpiffoCON.Core.Updates.UpdateCheck.CleanUpDownloads(AppInstall.Version));
+        Loaded += async (_, _) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            await CheckForUpdatesAsync(interactive: false);
+        };
     }
 
     /// <summary>
@@ -125,6 +132,7 @@ public partial class MainWindow : Window
         _vm.Map.CenterRequested += (x, y) => MapView.CenterOn(x, y, minScale: 0.5);
         _vm.Map.FitRequested += () => MapView.Fit();
         _vm.Map.PropertyChanged += OnMapChanged;
+        _vm.UpdateCheckRequested += interactive => _ = CheckForUpdatesAsync(interactive);
         _vm.TabRequested += header =>
         {
             if (Tabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Header as string == header) is { } tab)
@@ -325,7 +333,8 @@ public partial class MainWindow : Window
             _closeAfterSwitch = true;
             return;
         }
-        if (!_vm.ConfirmLeaving("Close SpiffoCON"))
+        // closed by the update's installer: the user already said the work in progress could go
+        if (!_updating && !_vm.ConfirmLeaving("Close SpiffoCON"))
             return;
         // let the RCON connection close cleanly, then close for real
         _closing = true;

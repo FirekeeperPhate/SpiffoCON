@@ -130,6 +130,14 @@ public sealed class ServerBook
     /// <summary>A game folder chosen for the Map tab (the same on every server).</summary>
     public string? MapFolder { get; set; }
 
+    /// <summary>Look for a new SpiffoCON release once a day.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    public DateTime LastUpdateCheck { get; set; }
+
+    /// <summary>A version the user chose to skip: the daily check doesn't offer it again.</summary>
+    public string? SkippedVersion { get; set; }
+
     /// <summary>Passwords typed in this session, by server id, also when they are not remembered on disk.</summary>
     [JsonIgnore]
     public Dictionary<string, (string? Rcon, string? Sftp)> SessionPasswords { get; } = [];
