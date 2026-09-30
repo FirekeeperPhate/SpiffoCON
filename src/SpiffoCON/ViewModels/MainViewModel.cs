@@ -211,13 +211,29 @@ public sealed partial class MainViewModel : ObservableObject
 
     internal ServerBook Book => _book;
 
+    /// <summary>The status bar's corner: always there, whichever tab is open.</summary>
+    public string AppVersionShort => $"SpiffoCON {AppInstall.Version}";
+
     [ObservableProperty] private string updateStatus = "";
+
+    /// <summary>A newer version the last check found (null: none, or not checked yet).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateLinkText))]
+    private string? availableVersion;
+
+    public string UpdateLinkText => AvailableVersion is { } version ? $"SpiffoCON {version} is available" : "Check for updates";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesNowCommand))]
+    private bool isCheckingForUpdates;
 
     /// <summary>Asks the window to look for an update now (true: say so when there is none).</summary>
     public event Action<bool>? UpdateCheckRequested;
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanCheckForUpdatesNow))]
     private void CheckForUpdatesNow() => UpdateCheckRequested?.Invoke(true);
+
+    private bool CanCheckForUpdatesNow() => !IsCheckingForUpdates;
 
     /// <summary>The game folder chosen for the Map tab, shared by all servers.</summary>
     internal string? MapFolder

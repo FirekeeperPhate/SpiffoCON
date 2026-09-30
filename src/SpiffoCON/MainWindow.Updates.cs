@@ -26,6 +26,7 @@ public partial class MainWindow
                 || DateTime.UtcNow - book.LastUpdateCheck < TimeSpan.FromDays(1))))
             return;
         _checkingUpdates = true;
+        _vm.IsCheckingForUpdates = interactive;
         try
         {
             if (interactive)
@@ -59,12 +60,20 @@ public partial class MainWindow
             _vm.UpdateStatus = release is null
                 ? "Could not reach GitHub (no internet connection?): " + UpdateCheck.ReleasesPage
                 : newer ? $"SpiffoCON {release.Version} is available." : $"You have the latest version ({current}).";
+            if (release is not null)
+                _vm.AvailableVersion = newer ? release.Version.ToString() : null;
+            _vm.IsCheckingForUpdates = false;
             if (newer)
                 await OfferUpdateAsync(release!, installer);
+            else if (!_closing)
+                // asked for: an answer where the user is, whichever tab is open
+                MessageBox.Show(this, _vm.UpdateStatus, "SpiffoCON", MessageBoxButton.OK,
+                    release is null ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         finally
         {
             _checkingUpdates = false;
+            _vm.IsCheckingForUpdates = false;
         }
     }
 

@@ -34,7 +34,8 @@ Once a day SpiffoCON asks GitHub for the latest release (only its version number
 there is a newer one it shows what is new, with **Install and restart** (the installer of the same
 edition, Full or Light, is downloaded, checked against GitHub's SHA-256, and run quietly; servers,
 passwords and settings are kept, and SpiffoCON opens again), **Skip this version** or **Later**.
-The Maintenance tab turns the daily check off and has **Check now**. A copy that wasn't installed by
+**Check for updates**, in the status bar's corner, looks right away from any tab; the Maintenance
+tab turns the daily check off. A copy that wasn't installed by
 the installer (a build, a copied folder) doesn't check by itself, and opens the releases page
 instead.
 

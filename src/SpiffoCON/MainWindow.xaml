@@ -1761,7 +1761,29 @@
         </DockPanel>
 
         <Border Grid.Row="1" Grid.ColumnSpan="4" Padding="16,6" Background="#20808080">
-            <TextBlock Text="{Binding StatusText}" />
+            <DockPanel>
+                <!-- SpiffoCON's own updates, from any tab -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="16,0,0,0">
+                    <TextBlock Text="{Binding AppVersionShort, StringFormat='{}{0} · '}" Opacity="0.6" />
+                    <TextBlock>
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding AvailableVersion}" Value="{x:Null}">
+                                        <Setter Property="FontWeight" Value="Normal" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                        <Hyperlink Command="{Binding CheckForUpdatesNowCommand}"
+                                   ToolTip="Asks GitHub for the latest release (only SpiffoCON's version is sent)">
+                            <Run Text="{Binding UpdateLinkText, Mode=OneWay}" />
+                        </Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+                <TextBlock Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
         </Border>
     </Grid>
 </Window>
