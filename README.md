@@ -1,13 +1,13 @@
 # SpiffoCON
 
-[![Latest release](https://img.shields.io/github/v/release/MarcoTrombetta/SpiffoCON)](https://github.com/MarcoTrombetta/SpiffoCON/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/MarcoTrombetta/SpiffoCON/total)](https://github.com/MarcoTrombetta/SpiffoCON/releases)
-[![License: MIT](https://img.shields.io/github/license/MarcoTrombetta/SpiffoCON)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/FirekeeperPhate/SpiffoCON)](https://github.com/FirekeeperPhate/SpiffoCON/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/FirekeeperPhate/SpiffoCON/total)](https://github.com/FirekeeperPhate/SpiffoCON/releases)
+[![License: MIT](https://img.shields.io/github/license/FirekeeperPhate/SpiffoCON)](LICENSE)
 
 Remote admin console for Project Zomboid (Build 42) dedicated servers, over RCON.
 Windows, .NET 10, WPF.
 
-**[Download the latest version](https://github.com/MarcoTrombetta/SpiffoCON/releases/latest)**
+**[Download the latest version](https://github.com/FirekeeperPhate/SpiffoCON/releases/latest)**
 (then SpiffoCON updates itself: see [Updates](#updates)).
 
 ![SpiffoCON: console, players, events and weather, map, catalog, kits, options, sandbox, logs, accounts, bridge, broadcast and maintenance tabs, with the online players sidebar](docs/SpiffoCON-demo.gif)
@@ -17,7 +17,7 @@ Windows, .NET 10, WPF.
 ## Getting started
 
 1. Download the installer from the
-   [latest release](https://github.com/MarcoTrombetta/SpiffoCON/releases/latest): **Full**
+   [latest release](https://github.com/FirekeeperPhate/SpiffoCON/releases/latest): **Full**
    includes the .NET runtime, **Light** needs the
    [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64).
 2. On the left, enter the server's host, RCON port and RCON password (the server's `RCONPort` and

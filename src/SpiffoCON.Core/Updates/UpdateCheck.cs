@@ -30,7 +30,7 @@ public sealed record ReleaseInfo(Version Version, string Notes, IReadOnlyList<Re
 /// </summary>
 public static class UpdateCheck
 {
-    public const string Repository = "MarcoTrombetta/SpiffoCON";
+    public const string Repository = "FirekeeperPhate/SpiffoCON";
     public const string ReleasesPage = $"https://github.com/{Repository}/releases/latest";
 
     static readonly string DownloadFolder = Path.Combine(Path.GetTempPath(), "SpiffoCON-update");
