@@ -88,12 +88,20 @@ public partial class MainWindow
                 _vm.SaveProfile();
                 try
                 {
-                    // the installer closes SpiffoCON when it installs and opens it again afterwards; while it
-                    // waits for an administrator prompt SpiffoCON stays open, so a declined prompt can be told
-                    using var setup = UpdateCheck.StartInstaller(path, AppInstall.Kind);
+                    // the installer says when it installs, and SpiffoCON closes then (by itself: closed by Restart
+                    // Manager instead, WPF crashes on its way out); while the installer waits for an administrator
+                    // prompt SpiffoCON stays open, so a declined prompt can be told. It is opened again afterwards.
+                    using var ready = new EventWaitHandle(false, EventResetMode.ManualReset, UpdateCheck.ReadyEventName(Environment.ProcessId));
+                    using var setup = UpdateCheck.StartInstaller(path, AppInstall.Kind, Environment.ProcessId);
                     _updating = true;
                     _vm.UpdateStatus = "Installing the update: SpiffoCON closes and opens again when it is done...";
-                    await setup.WaitForExitAsync();
+                    var exited = setup.WaitForExitAsync();
+                    if (await Task.WhenAny(exited, SignaledAsync(ready)) != exited)
+                    {
+                        Close();
+                        return;
+                    }
+                    ready.Set(); // ends the wait
                     _updating = false;
                     if (_closing)
                         return;
@@ -113,5 +121,13 @@ public partial class MainWindow
                 }
                 return;
         }
+    }
+
+    static Task SignaledAsync(WaitHandle handle)
+    {
+        var signaled = new TaskCompletionSource();
+        var wait = ThreadPool.RegisterWaitForSingleObject(handle, (_, _) => signaled.TrySetResult(), null, Timeout.Infinite, executeOnlyOnce: true);
+        signaled.Task.ContinueWith(_ => wait.Unregister(null), TaskScheduler.Default);
+        return signaled.Task;
     }
 }

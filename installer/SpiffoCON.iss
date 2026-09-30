@@ -49,6 +49,8 @@ WizardStyle=modern dynamic
 Compression=lzma2/ultra64
 SolidCompression=yes
 CloseApplications=yes
+; SpiffoCON's own update opens it again ([Run], IsAppUpdate): Restart Manager must not start a second one
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -118,6 +120,55 @@ begin
       FindClose(FindRec);
     end;
   end;
+end;
+
+const
+  EVENT_MODIFY_STATE = $0002;
+  SYNCHRONIZE = $00100000;
+
+function OpenEvent(DesiredAccess: DWORD; InheritHandle: BOOL; Name: String): THandle;
+  external 'OpenEventW@kernel32.dll stdcall';
+function SetEvent(Event: THandle): BOOL;
+  external 'SetEvent@kernel32.dll stdcall';
+function OpenProcess(DesiredAccess: DWORD; InheritHandle: BOOL; ProcessId: DWORD): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Milliseconds: DWORD): DWORD;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+{ Started by SpiffoCON's update with /WAITPID=<its process>: now past the administrator prompt, ask it
+  to close (the event UpdateCheck.ReadyEventName names) and wait until it is gone, before Restart Manager
+  looks for it: closed by Restart Manager, WPF crashes on its way out. Still open after a minute, Restart
+  Manager closes it after all. }
+procedure CloseUpdatedApp;
+var
+  Pid: Integer;
+  Handle: THandle;
+begin
+  Pid := StrToIntDef(ExpandConstant('{param:WAITPID|0}'), 0);
+  if Pid <= 0 then
+    Exit;
+  Handle := OpenEvent(EVENT_MODIFY_STATE, False, 'SpiffoCON-update-' + IntToStr(Pid));
+  if Handle = 0 then
+  begin
+    Log('SpiffoCON is not waiting for this update: ' + IntToStr(Pid));
+    Exit;
+  end;
+  SetEvent(Handle);
+  CloseHandle(Handle);
+  Handle := OpenProcess(SYNCHRONIZE, False, Pid);
+  if Handle <> 0 then
+  begin
+    Log('Waiting for SpiffoCON to close: ' + IntToStr(WaitForSingleObject(Handle, 60000)));
+    CloseHandle(Handle);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  CloseUpdatedApp;
+  Result := '';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

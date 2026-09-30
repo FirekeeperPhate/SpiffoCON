@@ -179,16 +179,23 @@ public static class UpdateCheck
     }
 
     /// <summary>
-    /// Runs the installer quietly, for the same users as the installed copy, and asks it to open SpiffoCON again
-    /// when done. SpiffoCON stays open meanwhile: the installer closes it only once it really installs, so if the
-    /// administrator prompt is declined, SpiffoCON is still there to say so.
+    /// The event SpiffoCON waits on while its installer runs: the installer sets it once it really installs
+    /// (past the administrator prompt), and SpiffoCON then closes by itself. SpiffoCON.iss builds the same name.
     /// </summary>
-    public static Process StartInstaller(string installer, InstallKind install) =>
+    public static string ReadyEventName(int process) => $"SpiffoCON-update-{process}";
+
+    /// <summary>
+    /// Runs the installer quietly, for the same users as the installed copy, and asks it to open SpiffoCON again
+    /// when done. SpiffoCON stays open meanwhile: the installer asks it to close (<see cref="ReadyEventName"/>) only
+    /// once it really installs, so if the administrator prompt is declined, SpiffoCON is still there to say so.
+    /// </summary>
+    /// <param name="waitForProcess">This process: the installer waits for it to be gone before it replaces any file.</param>
+    public static Process StartInstaller(string installer, InstallKind install, int waitForProcess) =>
         Process.Start(new ProcessStartInfo(installer)
         {
             UseShellExecute = true,
             Arguments = "/SILENT /SP- /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPDATE=1 "
-                + (install == InstallKind.AllUsers ? "/ALLUSERS" : "/CURRENTUSER"),
+                + $"/WAITPID={waitForProcess} " + (install == InstallKind.AllUsers ? "/ALLUSERS" : "/CURRENTUSER"),
         }) ?? throw new InvalidOperationException("The installer did not start.");
 
     public static void OpenReleasesPage()
