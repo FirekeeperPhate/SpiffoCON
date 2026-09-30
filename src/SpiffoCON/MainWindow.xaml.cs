@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SetUpLogScrolling();
         Attach(new MainViewModel(_book));
         Loaded += (_, _) =>
         {
@@ -123,6 +124,7 @@ public partial class MainWindow : Window
         };
         _vm.Map.CenterRequested += (x, y) => MapView.CenterOn(x, y, minScale: 0.5);
         _vm.Map.FitRequested += () => MapView.Fit();
+        _vm.Map.PropertyChanged += OnMapChanged;
         _vm.TabRequested += header =>
         {
             if (Tabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Header as string == header) is { } tab)
@@ -130,11 +132,6 @@ public partial class MainWindow : Window
         };
         if (Tabs.SelectedItem == MapTab)
             _vm.Map.Activate();
-        _vm.Logs.LinesAdded += (_, _) => Dispatcher.BeginInvoke(() =>
-        {
-            if (LogList.Items.Count > 0)
-                LogList.ScrollIntoView(LogList.Items[^1]);
-        }, DispatcherPriority.Background);
 
         RconPasswordBox.Password = _vm.RconPassword;
         SftpPasswordBox.Password = _vm.SftpPassword;
@@ -146,6 +143,51 @@ public partial class MainWindow : Window
             if (e.NewItems is { Count: > 0 })
                 Dispatcher.BeginInvoke(ScrollConsoleToEnd, DispatcherPriority.Background);
         };
+    }
+
+    /// <summary>Whether the log list shows its last line: new lines keep it there, unless the user scrolled up to read.</summary>
+    bool _logAtEnd = true;
+
+    /// <summary>
+    /// The Logs tab list stays on its last line: when new lines come in while it is there, and every time
+    /// the tab is shown again (a hidden list can't scroll, so it would come back where it was left).
+    /// </summary>
+    void SetUpLogScrolling()
+    {
+        LogList.Loaded += (_, _) =>
+        {
+            _logAtEnd = true;
+            Dispatcher.BeginInvoke(ScrollLogToEnd, DispatcherPriority.Loaded);
+        };
+        LogList.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler((_, e) =>
+        {
+            if (e.OriginalSource is not ScrollViewer viewer)
+                return;
+            if (e.ExtentHeightChange == 0 && e.ViewportHeightChange == 0)
+                // the user scrolled: follow the end only from the end
+                _logAtEnd = viewer.VerticalOffset >= viewer.ScrollableHeight - 1;
+            else if (_logAtEnd)
+                viewer.ScrollToEnd();
+        }));
+    }
+
+    void ScrollLogToEnd()
+    {
+        if (LogList.Items.Count > 0)
+            LogList.ScrollIntoView(LogList.Items[^1]);
+        if (FindScrollViewer(LogList) is { } viewer)
+            viewer.ScrollToEnd();
+    }
+
+    static ScrollViewer? FindScrollViewer(DependencyObject root)
+    {
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if ((child as ScrollViewer ?? FindScrollViewer(child)) is { } found)
+                return found;
+        }
+        return null;
     }
 
     void ScrollConsoleToEnd()
@@ -169,6 +211,30 @@ public partial class MainWindow : Window
     void SftpPasswordBox_PasswordChanged(object sender, RoutedEventArgs e) => _vm.SftpPassword = SftpPasswordBox.Password;
 
     void TestSftp_Click(object sender, RoutedEventArgs e) => Tabs.SelectedItem = FilesTab;
+
+    // double-click in the online sidebar: that player in the Players tab
+    void OnlineSidebar_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (OnlineSidebar.SelectedItem is SidebarPlayer player)
+            _vm.PlayerActions.ShowInPlayersTab(player.Username);
+    }
+
+    // with the Map tab open, a click on a player (also the one already selected) shows and follows them there
+    void OnlineSidebar_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (Tabs.SelectedItem != MapTab || e.OriginalSource is not DependencyObject source
+            || ItemsControl.ContainerFromElement(OnlineSidebar, source) is not ListBoxItem { DataContext: SidebarPlayer player })
+            return;
+        _vm.Map.SelectedPlayer = player.Username;
+        _vm.Map.Follow = true;
+    }
+
+    // a player picked on the map is the one selected in the sidebar too
+    void OnMapChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MapViewModel.SelectedPlayer) && sender is MapViewModel map)
+            OnlineSidebar.SelectedItem = _vm.SidebarPlayers.FirstOrDefault(p => p.Username.Equals(map.SelectedPlayer, StringComparison.OrdinalIgnoreCase));
+    }
 
     // right-click on a player's marker: the player menu instead of the map's own
     void MapView_ContextMenuOpening(object sender, ContextMenuEventArgs e)

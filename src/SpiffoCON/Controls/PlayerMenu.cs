@@ -53,6 +53,7 @@ public static class PlayerMenu
     {
         string s when s.Length > 0 => s,
         BridgePlayer p => p.Username,
+        SidebarPlayer s => s.Username,
         AccountRow a => a.Username,
         LogLineItem { Kind: LogLineKind.Chat, Line.Author: { Length: > 0 } author } => author,
         _ => null,

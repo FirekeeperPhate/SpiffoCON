@@ -102,6 +102,13 @@ public sealed partial class MainViewModel : ObservableObject
         Events = new EventsViewModel(this);
         Maintenance = new MaintenanceViewModel(this);
         PlayerActions = new PlayerActions(this);
+        OnlinePlayers.CollectionChanged += (_, _) => QueueSidebarUpdate();
+        Bridge.Players.CollectionChanged += (_, _) => QueueSidebarUpdate();
+        Bridge.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(BridgeViewModel.IsConnected))
+                QueueSidebarUpdate();
+        };
     }
 
     public KitsViewModel Kits { get; }
@@ -118,6 +125,54 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>The right-click menu on a player, in any tab.</summary>
     public PlayerActions PlayerActions { get; }
+
+    /// <summary>The online players of the window's sidebar, with the bridge's positions when it is connected.</summary>
+    public ObservableCollection<SidebarPlayer> SidebarPlayers { get; } = [];
+
+    bool _sidebarQueued;
+
+    // the online list and the bridge both clear and refill: update once, after them
+    void QueueSidebarUpdate()
+    {
+        if (_sidebarQueued)
+            return;
+        _sidebarQueued = true;
+        Application.Current?.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
+        {
+            _sidebarQueued = false;
+            UpdateSidebar();
+        });
+    }
+
+    /// <summary>In place (the rows keep their selection): the online players in order, each with its bridge detail.</summary>
+    void UpdateSidebar()
+    {
+        var bridge = Bridge.IsConnected
+            ? Bridge.Players.GroupBy(p => p.Username, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase)
+            : [];
+        var names = OnlinePlayers.ToList();
+        for (int i = SidebarPlayers.Count - 1; i >= 0; i--)
+            if (!names.Contains(SidebarPlayers[i].Username))
+                SidebarPlayers.RemoveAt(i);
+        for (int i = 0; i < names.Count; i++)
+        {
+            var row = SidebarPlayers.FirstOrDefault(r => r.Username == names[i]);
+            if (row is null)
+                SidebarPlayers.Insert(i, row = new SidebarPlayer(names[i]));
+            else if (SidebarPlayers.IndexOf(row) != i)
+                SidebarPlayers.Move(SidebarPlayers.IndexOf(row), i);
+            row.Detail = bridge.TryGetValue(names[i], out var p) ? Describe(p) : null;
+        }
+    }
+
+    static string? Describe(Core.Bridge.BridgePlayer p)
+    {
+        if (p.Dead == true)
+            return "dead";
+        if (p.X is not { } x || p.Y is not { } y)
+            return null;
+        return $"{x}, {y}" + (p.Z is { } z and not 0 ? $" · floor {z}" : "") + (p.Vehicle is { Length: > 0 } ? " · in a vehicle" : "");
+    }
 
     /// <summary>Asks the window to show a tab (by its header).</summary>
     public event Action<string>? TabRequested;
@@ -423,8 +478,23 @@ public sealed partial class MainViewModel : ObservableObject
     public string RconPassword { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanEditConnection))]
+    [NotifyPropertyChangedFor(nameof(CanEditConnection), nameof(ShowConnectionPanel))]
     private bool isSessionActive;
+
+    /// <summary>Hidden by the user, or by itself once connected; it is always shown while not connected.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowConnectionPanel), nameof(ConnectionPanelGlyph), nameof(ConnectionPanelTip))]
+    private bool connectionPanelHidden;
+
+    public bool ShowConnectionPanel => !IsSessionActive || !ConnectionPanelHidden;
+
+    /// <summary>Segoe Fluent Icons: chevron left to hide, right to show.</summary>
+    public string ConnectionPanelGlyph => ((char)(ConnectionPanelHidden ? 0xE76C : 0xE76B)).ToString();
+
+    public string ConnectionPanelTip => ConnectionPanelHidden ? "Show the connection panel" : "Hide the connection panel (more room for the tabs)";
+
+    [RelayCommand]
+    private void ToggleConnectionPanel() => ConnectionPanelHidden = !ConnectionPanelHidden;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEditConnection))]
@@ -453,6 +523,8 @@ public sealed partial class MainViewModel : ObservableObject
             _knownPlayers = null;
             _connectionLost = _expectingShutdown = false;
             IsSessionActive = true;
+            // connected: the tabs get the room (the panel comes back on disconnect, or with its button)
+            ConnectionPanelHidden = true;
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
             Log(ConsoleKind.Info, StatusText);
             await RefreshPlayersAsync();

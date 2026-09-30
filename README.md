@@ -54,7 +54,8 @@ Windows, .NET 10, WPF.
     each row opens its Workshop page in the browser.
   - Restart with a countdown: warnings in chat as the time runs out (message and color
     editable, `{time}` filled in), then `save` and `quit`; starting the server again is up to
-    the host. SpiffoCON tells you when it answers again.
+    the host. SpiffoCON tells you when it answers again. **Restart now** skips the countdown: one
+    line in chat if anyone is online, then `save` and `quit` (asks first).
   - Desktop notifications (tray icon): players joining and leaving, chat messages containing
     chosen words (from the Logs tab while it follows the chat log), connection lost and back;
     by default only while SpiffoCON is in the background.
@@ -89,8 +90,8 @@ Windows, .NET 10, WPF.
 - Map tab: the game's world map (drawn like the in-game map from the game's own
   `worldmap.xml` and forest images, with building types in color and place names, or the
   game's top-down satellite view) with the players and vehicles the bridge reports, updated at
-  each bridge refresh (every 15 s). Wheel zooms, dragging moves, clicking a player selects them
-  (and can follow them); right-click teleports the selected player there, copies the
+  each bridge refresh (every 15 s). Wheel zooms, dragging moves, clicking a player (on the map,
+  or in the sidebar while the Map tab is open) selects and can follow them; right-click teleports the selected player there, copies the
   coordinates, spawns a horde there (`createhorde2`, number and radius set in the toolbar) or
   removes the zombies around (`removezombies`). The server places zombies only where the map is
   loaded, that is near a player, and says "invalid location" elsewhere. The map files are read from a Project Zomboid or dedicated server install on
@@ -100,8 +101,10 @@ Windows, .NET 10, WPF.
   map files come from the workshop folders on this PC (Steam, SpiffoCON's SteamCMD) or are
   copied from the server over SFTP (only `worldmap.xml`, `worldmap-forest.xml` and the place
   names: a few hundred KB). Mods without a `worldmap.xml` show nothing, as in the game.
-- Player menu: right-click a player wherever players are listed (Players, Map list and markers,
-  Bridge, Accounts, chat lines in Logs): show in the Players tab, on the map or their inventory,
+- Online players sidebar on the right, always in view (refreshed every 30 s), with each player's
+  position when the bridge is connected; double-click opens the player in the Players tab.
+- Player menu: right-click a player wherever players are listed (the sidebar, Players, Map list
+  and markers, Bridge, Accounts, chat lines in Logs): show in the Players tab, on the map or their inventory,
   teleport to another player or bring one here, give a kit, lightning / thunder / horde, full heal
   (bridge), god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the
   name. Each reply shows in the status bar.
@@ -109,6 +112,8 @@ Windows, .NET 10, WPF.
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards. With SFTP on, connecting also connects the bridge and
   follows the logs (a box in the SFTP settings turns it off).
+- The connection panel hides by itself once connected (the arrow at the top left brings it back
+  or hides it again) and is always shown while not connected.
 - Server list: save several servers (name, RCON, SFTP and the folders found on each), add,
   duplicate or delete them, and switch while disconnected; every tab starts clean for the
   new server. The list lives in `%APPDATA%\SpiffoCON\servers.json` (the single

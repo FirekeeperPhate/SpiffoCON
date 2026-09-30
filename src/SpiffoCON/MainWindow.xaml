@@ -156,12 +156,15 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="290" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <!-- Connection panel -->
-        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="16,12,12,12">
+        <!-- Connection panel: always there while not connected; hidden by itself once connected -->
+        <ScrollViewer Grid.Column="0" Width="290" VerticalScrollBarVisibility="Auto" Padding="16,12,12,12"
+                      Visibility="{Binding ShowConnectionPanel, Converter={StaticResource BoolToVisibility}}">
             <StackPanel>
                 <TextBlock Text="Server" Style="{StaticResource SectionTitle}" />
                 <StackPanel IsEnabled="{Binding CanEditConnection}" KeyDown="ConnectionFields_KeyDown">
@@ -227,8 +230,13 @@
             </StackPanel>
         </ScrollViewer>
 
+        <!-- hide / show the connection panel (only while connected) -->
+        <Button Grid.Column="1" Content="{Binding ConnectionPanelGlyph}" FontFamily="{StaticResource IconFont}" Command="{Binding ToggleConnectionPanelCommand}"
+                ToolTip="{Binding ConnectionPanelTip}" VerticalAlignment="Top" Margin="4,12,8,0" Padding="6,8" MinWidth="0"
+                Visibility="{Binding IsSessionActive, Converter={StaticResource BoolToVisibility}}" />
+
         <!-- Work area -->
-        <TabControl Grid.Column="1" Margin="0,8,12,8" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
+        <TabControl Grid.Column="2" Margin="0,8,0,8" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
             <TabItem Header="Console">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
@@ -1351,12 +1359,6 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="10" />
-                        <ColumnDefinition Width="230" />
-                    </Grid.ColumnDefinitions>
-
                     <!-- toolbar -->
                     <WrapPanel Grid.ColumnSpan="3" Margin="0,0,0,8">
                         <Button Content="&#xE9A6;" FontFamily="{StaticResource IconFont}" Command="{Binding FitCommand}" ToolTip="Show the whole map"
@@ -1417,15 +1419,11 @@
                                             ToolTip="The same as Find on server in the Bridge tab" />
                                 </StackPanel>
                             </Border>
-                        </Grid>
-                    </Border>
-
-                    <!-- players and legend -->
-                    <DockPanel Grid.Row="1" Grid.Column="2">
-                        <TextBlock DockPanel.Dock="Top" Text="Players" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
-                        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
-                            <TextBlock Text="Buildings" Style="{StaticResource SectionTitle}" Margin="0,0,0,4" />
-                            <StackPanel>
+                            <!-- legend -->
+                            <Expander Header="Legend" Margin="10" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="#E0202020"
+                                      Visibility="{Binding HasMap, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Margin="4,2,4,4">
+                                    <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,1">
                                     <Border Width="12" Height="12" CornerRadius="2" Background="#D29E69" BorderBrush="#60808080" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center" />
                                     <TextBlock Text="Houses" FontSize="12" VerticalAlignment="Center" />
@@ -1455,29 +1453,13 @@
                                     <TextBlock Text="Industrial" FontSize="12" VerticalAlignment="Center" />
                                 </StackPanel>
                             </StackPanel>
-                            <TextBlock Text="Wheel: zoom · drag: move · click a player to select · right-click: teleport here"
-                                       Opacity="0.6" FontSize="11.5" TextWrapping="Wrap" Margin="0,8,0,0" />
-                        </StackPanel>
-                        <ListBox ItemsSource="{Binding Bridge.Players}" SelectedValuePath="Username" SelectedValue="{Binding SelectedPlayer}" controls:PlayerMenu.Enabled="True"
-                                 HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Username}" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock FontSize="11.5" Opacity="0.6">
-                                            <TextBlock.Text>
-                                                <MultiBinding StringFormat="{}{0}, {1} · floor {2}" FallbackValue="no position" TargetNullValue="no position">
-                                                    <Binding Path="X" />
-                                                    <Binding Path="Y" />
-                                                    <Binding Path="Z" />
-                                                </MultiBinding>
-                                            </TextBlock.Text>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </DockPanel>
+                                    <TextBlock Text="Wheel: zoom · drag: move · click a player to select · right-click: player actions, or teleport, zombies and coordinates here"
+                                               Opacity="0.6" FontSize="11.5" TextWrapping="Wrap" MaxWidth="220" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Expander>
+
+                        </Grid>
+                    </Border>
 
                     <!-- status -->
                     <DockPanel Grid.Row="2" Grid.ColumnSpan="3" Margin="0,6,0,0">
@@ -1633,6 +1615,9 @@
                                                 Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}" />
                                         <Button Content="Call it off" Command="{Binding CancelRestartCommand}" Style="{StaticResource PairButton}"
                                                 Visibility="{Binding IsCountingDown, Converter={StaticResource BoolToVisibility}}" />
+                                        <Button Content="Restart now" Command="{Binding RestartNowCommand}" Style="{StaticResource PairButton}"
+                                                Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}"
+                                                ToolTip="No countdown: one line in chat for the players online, then save and quit (asks first)" />
                                     </WrapPanel>
                                     <TextBlock Text="{Binding CountdownText}" FontSize="28" FontWeight="SemiBold" Foreground="#F2C14E" Margin="0,8,0,0"
                                                Visibility="{Binding IsCountingDown, Converter={StaticResource BoolToVisibility}}" />
@@ -1670,7 +1655,31 @@
             </TabItem>
         </TabControl>
 
-        <Border Grid.Row="1" Grid.ColumnSpan="2" Padding="16,6" Background="#20808080">
+        <!-- online players, always in view; the same right-click menu as everywhere -->
+        <DockPanel Grid.Column="3" Width="180" Margin="10,12,12,8" DataContext="{Binding Players}">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                <Button DockPanel.Dock="Right" Content="&#xE72C;" FontFamily="{StaticResource IconFont}" Padding="6,4" MinWidth="0"
+                        Command="{Binding RefreshCommand}" ToolTip="Refresh now (it also refreshes by itself every 30 s)" />
+                <TextBlock Text="{Binding OnlineCount}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+            </DockPanel>
+            <TextBlock DockPanel.Dock="Bottom" Text="Right-click a player for the actions; double-click opens the Players tab. With the Map tab open, a click shows and follows the player."
+                       Opacity="0.6" FontSize="11.5" TextWrapping="Wrap" Margin="0,6,0,0" />
+            <ListBox x:Name="OnlineSidebar" ItemsSource="{Binding DataContext.SidebarPlayers, RelativeSource={RelativeSource AncestorType=Window}}"
+                     controls:PlayerMenu.Enabled="True" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     MouseDoubleClick="OnlineSidebar_MouseDoubleClick" PreviewMouseLeftButtonUp="OnlineSidebar_Click">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:SidebarPlayer}">
+                        <StackPanel ToolTip="{Binding Username}">
+                            <TextBlock Text="{Binding Username}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Detail}" FontSize="11.5" Opacity="0.6" TextTrimming="CharacterEllipsis"
+                                       Visibility="{Binding Detail, Converter={StaticResource NullToCollapsed}}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <Border Grid.Row="1" Grid.ColumnSpan="4" Padding="16,6" Background="#20808080">
             <TextBlock Text="{Binding StatusText}" />
         </Border>
     </Grid>

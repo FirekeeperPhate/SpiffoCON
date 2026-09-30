@@ -53,9 +53,6 @@ public sealed partial class LogsViewModel : ObservableObject
     /// <summary>Asks for a local Logs folder; set by the view.</summary>
     public Func<string?>? PickFolder { get; set; }
 
-    /// <summary>Raised after new lines were added (the view scrolls to the end).</summary>
-    public event EventHandler? LinesAdded;
-
     /// <summary>A chat message written since the log was opened (not the older lines read at opening).</summary>
     public event EventHandler<IReadOnlyList<LogLine>>? ChatReceived;
 
@@ -312,8 +309,6 @@ public sealed partial class LogsViewModel : ObservableObject
         StatusText = tail.CurrentFile is null
             ? $"No {tail.Type} log yet."
             : $"{tail.CurrentFile} · {(Follow ? "following" : "paused")} · {DateTime.Now:HH:mm:ss}";
-        if (lines.Count > 0)
-            LinesAdded?.Invoke(this, EventArgs.Empty);
     }
 
     // ---- replying ----

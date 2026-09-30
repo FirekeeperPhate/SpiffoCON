@@ -270,38 +270,66 @@ public sealed partial class MaintenanceViewModel : ObservableObject
             }
 
             StopCountdown();
-            IsQuitting = true;
-            try
-            {
-                RestartStatus = "Saving...";
-                var saved = await _main.RunAsync("save");
-                if (_closed)
-                    return;
-                if (!_main.IsSessionActive)
-                {
-                    RestartStatus = "Disconnected before quit was sent: the server was not restarted.";
-                    return;
-                }
-                RestartStatus = saved is null ? "save failed (see the console); quitting anyway..." : "Quitting...";
-                _main.ExpectShutdown();
-                var quit = await _main.RunAsync("quit");
-                if (_closed || !_main.IsSessionActive)
-                    return;
-                // no reply is normal when the server closes at once
-                RestartStatus = (quit is null ? $"quit sent at {DateTime.Now:HH:mm:ss} (no reply: the server may already be closing). " : $"Server stopped at {DateTime.Now:HH:mm:ss}. ")
-                    + "SpiffoCON checks every 15 s and tells you when it is back.";
-                _waitStarted = DateTime.Now;
-                _answeredPolls = 0;
-                _waitBack.Start();
-            }
-            finally
-            {
-                IsQuitting = false;
-            }
+            await SaveAndQuitAsync();
         }
         finally
         {
             _ticking = false;
+        }
+    }
+
+    /// <summary>Restart at once: no countdown, one line in chat, then save and quit.</summary>
+    [RelayCommand]
+    private async Task RestartNowAsync()
+    {
+        if (!_main.IsSessionActive)
+        {
+            RestartStatus = "Not connected.";
+            return;
+        }
+        int online = _main.OnlinePlayers.Count;
+        if (_main.Confirm?.Invoke(
+                "Restart the server now, without a countdown?\n\n"
+                + (online > 0 ? $"{online} player{(online == 1 ? " is" : "s are")} online and will be disconnected at once. " : "Nobody is online. ")
+                + "SpiffoCON sends save and quit; starting it again is up to your host.") != true)
+            return;
+        if (!_main.IsSessionActive || IsCountingDown || IsQuitting)
+            return;
+        if (online > 0)
+            await _main.RunAsync(ServerMessage.BuildCommand("<RGB:1,0.4,0.3>The server is restarting now."));
+        await SaveAndQuitAsync();
+    }
+
+    /// <summary>save, quit, then wait for the server to answer again.</summary>
+    async Task SaveAndQuitAsync()
+    {
+        IsQuitting = true;
+        try
+        {
+            RestartStatus = "Saving...";
+            var saved = await _main.RunAsync("save");
+            if (_closed)
+                return;
+            if (!_main.IsSessionActive)
+            {
+                RestartStatus = "Disconnected before quit was sent: the server was not restarted.";
+                return;
+            }
+            RestartStatus = saved is null ? "save failed (see the console); quitting anyway..." : "Quitting...";
+            _main.ExpectShutdown();
+            var quit = await _main.RunAsync("quit");
+            if (_closed || !_main.IsSessionActive)
+                return;
+            // no reply is normal when the server closes at once
+            RestartStatus = (quit is null ? $"quit sent at {DateTime.Now:HH:mm:ss} (no reply: the server may already be closing). " : $"Server stopped at {DateTime.Now:HH:mm:ss}. ")
+                + "SpiffoCON checks every 15 s and tells you when it is back.";
+            _waitStarted = DateTime.Now;
+            _answeredPolls = 0;
+            _waitBack.Start();
+        }
+        finally
+        {
+            IsQuitting = false;
         }
     }
 
