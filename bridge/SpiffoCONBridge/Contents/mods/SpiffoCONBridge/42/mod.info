@@ -3,4 +3,4 @@ id=SpiffoCONBridge
 description=Server-side helper for the SpiffoCON admin tool: lets it read player positions, inventories, vehicles and world state, and heal players, remove items, repair, refuel or remove vehicles. Does nothing on clients.
 author=Phate
 poster=poster.png
-modversion=4
+modversion=5

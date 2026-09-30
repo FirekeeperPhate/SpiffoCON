@@ -222,8 +222,8 @@
                         <TextBlock Text="SFTP password" Style="{StaticResource FieldLabel}" />
                         <PasswordBox x:Name="SftpPasswordBox" PasswordChanged="SftpPasswordBox_PasswordChanged" />
                     </StackPanel>
-                    <CheckBox Content="Connect the bridge and the logs too" IsChecked="{Binding AutoConnectFiles}" Margin="0,8,0,0"
-                              ToolTip="When RCON connects: Find on server in the Bridge tab, then in the Logs tab" />
+                    <CheckBox Content="On connect: bridge, logs and mods" IsChecked="{Binding AutoConnectFiles}" Margin="0,8,0,0"
+                              ToolTip="When RCON connects: Find on server in the Bridge tab, then in the Logs tab, then Load from server in the Catalog tab (over SFTP only, never SteamCMD)" />
                     <Button Content="Test SFTP" Command="{Binding TestSftpCommand}" HorizontalAlignment="Stretch" Margin="0,12,0,0"
                             Click="TestSftp_Click" />
                 </StackPanel>
@@ -461,6 +461,8 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="10" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
                     <!-- weather -->
@@ -540,9 +542,67 @@
                             </WrapPanel>
                         </StackPanel>
                     </Border>
+                    <!-- weather overrides: bridge v5 -->
+                    <Border Grid.Column="4" Style="{StaticResource Card}" VerticalAlignment="Top">
+                        <StackPanel>
+                            <TextBlock Text="Weather" Style="{StaticResource SectionTitle}" />
+                            <Grid Margin="0,8,0,0" IsEnabled="{Binding Bridge.CanSetWeather}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="62" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <CheckBox Grid.Row="0" Content="Fog" IsChecked="{Binding FogOn}" MinWidth="0" Margin="0,2,10,2" VerticalAlignment="Center" ToolTip="How thick the fog is" />
+                                <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Fog}" IsSnapToTickEnabled="True" TickFrequency="1"
+                                        IsEnabled="{Binding FogOn}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Fog, StringFormat={}{0:0} %}" TextAlignment="Right" VerticalAlignment="Center"
+                                           Opacity="{Binding FogOn, Converter={StaticResource OnOpacity}}" />
+                                <CheckBox Grid.Row="1" Content="Clouds" IsChecked="{Binding CloudsOn}" MinWidth="0" Margin="0,2,10,2" VerticalAlignment="Center" ToolTip="How cloudy the sky is" />
+                                <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Clouds}" IsSnapToTickEnabled="True" TickFrequency="1"
+                                        IsEnabled="{Binding CloudsOn}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Clouds, StringFormat={}{0:0} %}" TextAlignment="Right" VerticalAlignment="Center"
+                                           Opacity="{Binding CloudsOn, Converter={StaticResource OnOpacity}}" />
+                                <CheckBox Grid.Row="2" Content="Wind" IsChecked="{Binding WindOn}" MinWidth="0" Margin="0,2,10,2" VerticalAlignment="Center" ToolTip="Wind speed" />
+                                <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="120" Value="{Binding Wind}" IsSnapToTickEnabled="True" TickFrequency="1"
+                                        IsEnabled="{Binding WindOn}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding Wind, StringFormat={}{0:0} km/h}" TextAlignment="Right" VerticalAlignment="Center"
+                                           Opacity="{Binding WindOn, Converter={StaticResource OnOpacity}}" />
+                                <CheckBox Grid.Row="3" Content="Temperature" IsChecked="{Binding TemperatureOn}" MinWidth="0" Margin="0,2,10,2" VerticalAlignment="Center" ToolTip="Air temperature" />
+                                <Slider Grid.Row="3" Grid.Column="1" Minimum="-30" Maximum="45" Value="{Binding Temperature}" IsSnapToTickEnabled="True" TickFrequency="1"
+                                        IsEnabled="{Binding TemperatureOn}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding Temperature, StringFormat={}{0:0} °C}" TextAlignment="Right" VerticalAlignment="Center"
+                                           Opacity="{Binding TemperatureOn, Converter={StaticResource OnOpacity}}" />
+                                <CheckBox Grid.Row="4" Content="Snowfall" IsChecked="{Binding SnowOn}" MinWidth="0" Margin="0,2,10,2" VerticalAlignment="Center" ToolTip="Snow falling (instead of rain), and how much" />
+                                <Slider Grid.Row="4" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Snow}" IsSnapToTickEnabled="True" TickFrequency="1"
+                                        IsEnabled="{Binding SnowOn}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding Snow, StringFormat={}{0:0} %}" TextAlignment="Right" VerticalAlignment="Center"
+                                           Opacity="{Binding SnowOn, Converter={StaticResource OnOpacity}}" />
+                            </Grid>
+                            <TextBlock Text="Ticked: set by SpiffoCON until given back. Unticked: the game decides."
+                                       Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+                            <WrapPanel Margin="0,10,0,0" IsEnabled="{Binding Bridge.CanSetWeather}">
+                                <Button Content="Apply" Command="{Binding ApplyWeatherCommand}" Style="{StaticResource PairButton}"
+                                        ToolTip="Players see it at the next climate update, within ten game minutes" />
+                                <Button Content="Back to the game's weather" Command="{Binding ResetWeatherCommand}" Style="{StaticResource PairButton}"
+                                        ToolTip="Every setting back to the game (the settings are saved with the world until then)" />
+                            </WrapPanel>
+                            <TextBlock Text="{Binding WeatherResult}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Visibility="{Binding WeatherResult, Converter={StaticResource NullToCollapsed}}" />
+                            <TextBlock Text="{Binding WeatherStatus}" Opacity="0.75" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+
+
 
                     <!-- log -->
-                    <DockPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,4,0,0">
+                    <DockPanel Grid.Row="1" Grid.ColumnSpan="5" Margin="0,4,0,0">
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
                             <Button DockPanel.Dock="Right" Content="Clear" Command="{Binding ClearLogCommand}" FontSize="12" Padding="8,2" MinHeight="0" />
                             <TextBlock Text="Sent events" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />

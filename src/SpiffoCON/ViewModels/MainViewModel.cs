@@ -560,9 +560,19 @@ public sealed partial class MainViewModel : ObservableObject
         if (_shutDown || !IsSessionActive)
             return;
         // not over a newer message (a command's reply, a lost connection)
+        var summary = connected + (Bridge.IsConnected ? " · bridge connected" : " · no bridge (see the Bridge tab)")
+            + (Logs.IsOpen ? " · following the logs" : " · logs not found (see the Logs tab)");
         if (StatusText == connected)
-            StatusText = connected + (Bridge.IsConnected ? " · bridge connected" : " · no bridge (see the Bridge tab)")
-                + (Logs.IsOpen ? " · following the logs" : " · logs not found (see the Logs tab)");
+            StatusText = summary;
+
+        // then the server's mods over SFTP, so the Catalog is ready (mods unchanged since last time are skipped)
+        if (!Catalog.IsLoading)
+        {
+            bool loaded = await Catalog.LoadFromServerAutomaticallyAsync();
+            // the catalog's own commands reset the status bar to "Connected to…"
+            if (!_shutDown && IsSessionActive && (StatusText == connected || StatusText == summary))
+                StatusText = summary + (loaded ? " · mods loaded (Catalog tab)" : " · mods not loaded (see the Catalog tab)");
+        }
     }
 
     [RelayCommand]

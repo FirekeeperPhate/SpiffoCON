@@ -1,6 +1,6 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
--- refuel or remove vehicles). Server side only; it does nothing on clients.
+-- refuel or remove vehicles, set the weather). Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
 --   spiffocon_in.txt   written by SpiffoCON:  "SEQ <n>", one request per line (id<TAB>action<TAB>arg...), "END <n>"
@@ -9,7 +9,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 4
+local VERSION = 5
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -194,6 +194,37 @@ local function vehicles()
 	return result
 end
 
+-- ---- climate (bridge v5) ----
+-- The admin overrides of the game's own Climate panel (client/ISUI/AdminPanel/ISAdmPanelClimate.lua),
+-- set here on the server: it sends the resulting weather to every client at each ten-minute
+-- climate tick (ClimateManager.update). The game saves them with the world until they are reset.
+
+local FLOAT_PRECIPITATION, FLOAT_TEMPERATURE, FLOAT_FOG, FLOAT_WIND, FLOAT_CLOUDS = 3, 4, 5, 6, 8
+local BOOL_IS_SNOW = 0
+
+local function round(v, step)
+	if v == nil then return nil end
+	return math.floor(v / step + 0.5) * step
+end
+
+-- the admin value of a climate float, or nil when it is not overridden
+local function adminValue(index)
+	local f = getClimateManager():getClimateFloat(index)
+	if f and f:isEnableAdmin() then return f:getAdminValue() end
+	return nil
+end
+
+-- nil turns the override off; a value is kept within the float's own range
+local function setAdmin(index, value)
+	local f = getClimateManager():getClimateFloat(index)
+	if value == nil then
+		f:setEnableAdmin(false)
+	else
+		f:setEnableAdmin(true)
+		f:setAdminValue(math.max(f:getMin(), math.min(f:getMax(), value)))
+	end
+end
+
 local function world()
 	local t = getGameTime()
 	local climate = getClimateManager()
@@ -207,6 +238,21 @@ local function world()
 		temperature = try(function() return math.floor(climate:getTemperature() * 10) / 10 end),
 		rain = try(function() return math.floor(climate:getRainIntensity() * 100) / 100 end),
 		fog = try(function() return math.floor(climate:getFogIntensity() * 100) / 100 end),
+		clouds = try(function() return round(climate:getCloudIntensity(), 0.01) end),
+		wind = try(function() return round(climate:getWindspeedKph(), 0.1) end),
+		snow = try(function() return climate:getPrecipitationIsSnow() end),
+		-- bridge v5: what is overridden (absent when the weather decides)
+		adminFog = try(function() return round(adminValue(FLOAT_FOG), 0.01) end),
+		adminClouds = try(function() return round(adminValue(FLOAT_CLOUDS), 0.01) end),
+		adminWind = try(function()
+			local v = adminValue(FLOAT_WIND)
+			return v and round(v * climate:getMaxWindspeedKph(), 0.1)
+		end),
+		adminTemperature = try(function() return round(adminValue(FLOAT_TEMPERATURE), 0.1) end),
+		adminSnow = try(function()
+			if not climate:getClimateBool(BOOL_IS_SNOW):isEnableAdmin() then return nil end
+			return round(adminValue(FLOAT_PRECIPITATION), 0.01)
+		end),
 		zombiesLoaded = try(function() return getCell():getZombieList():size() end),
 		players = try(function() return getOnlinePlayers():size() end),
 	}
@@ -340,6 +386,46 @@ local function removeVehicle(id, script)
 	return { removed = true }
 end
 
+-- climate <setting> <value | off>: fog, clouds and snow 0-1, wind in km/h, temperature in °C;
+-- "climate reset" gives the weather back to the game
+local function setClimate(name, value)
+	local c = getClimateManager()
+	local off = value == nil or value == "" or value == "off"
+	local v = tonumber(value)
+	if name ~= "reset" and not off and not v then error("climate " .. tostring(name) .. " needs a number, or off") end
+	if name == "reset" then
+		for _, index in ipairs({ FLOAT_PRECIPITATION, FLOAT_TEMPERATURE, FLOAT_FOG, FLOAT_WIND, FLOAT_CLOUDS }) do
+			setAdmin(index, nil)
+		end
+		c:getClimateBool(BOOL_IS_SNOW):setEnableAdmin(false)
+		audit("weather back to the game's own")
+		return world()
+	elseif name == "fog" then
+		setAdmin(FLOAT_FOG, not off and v or nil)
+	elseif name == "clouds" then
+		setAdmin(FLOAT_CLOUDS, not off and v or nil)
+	elseif name == "wind" then
+		setAdmin(FLOAT_WIND, not off and v / c:getMaxWindspeedKph() or nil)
+	elseif name == "temperature" then
+		setAdmin(FLOAT_TEMPERATURE, not off and v or nil)
+	elseif name == "snow" then
+		-- snowfall: precipitation, falling as snow
+		local snow = c:getClimateBool(BOOL_IS_SNOW)
+		if off then
+			setAdmin(FLOAT_PRECIPITATION, nil)
+			snow:setEnableAdmin(false)
+		else
+			snow:setEnableAdmin(true)
+			snow:setAdminValue(true)
+			setAdmin(FLOAT_PRECIPITATION, v)
+		end
+	else
+		error("unknown climate setting " .. tostring(name))
+	end
+	audit("weather: " .. name .. " " .. (off and "back to the game's own" or tostring(v)))
+	return world()
+end
+
 local actions = {
 	ping = function() return { version = VERSION, players = getOnlinePlayers():size() } end,
 	players = function() return listPlayers() end,
@@ -351,6 +437,7 @@ local actions = {
 	repairvehicle = repairVehicle,
 	refuelvehicle = refuelVehicle,
 	removevehicle = removeVehicle,
+	climate = setClimate,
 }
 
 -- ---- channel ----

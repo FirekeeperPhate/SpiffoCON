@@ -49,6 +49,31 @@ public sealed class BridgeTests : IDisposable
     }
 
     [Fact]
+    public async Task The_weather_is_set_in_one_batch_and_read_back()
+    {
+        var asked = new List<string>();
+        RunFakeBridge((action, args) =>
+        {
+            lock (asked)
+                asked.Add(action + " " + string.Join(" ", args));
+            return action == "climate" && args is ["wind", _]
+                ? """{"id":"$ID","ok":true,"data":{"fog":0.8,"wind":60,"adminFog":0.8,"adminWind":60,"adminTemperature":-10,"adminSnow":0.5}}"""
+                : """{"id":"$ID","ok":true,"data":{"fog":0.8,"adminFog":0.8}}""";
+        });
+        var client = new BridgeClient(new LocalBridgeFiles(_dir)) { PollInterval = TimeSpan.FromMilliseconds(50) };
+        var world = await client.SetClimateAsync(
+        [
+            (BridgeClient.ClimateSetting.Fog, 0.8),
+            (BridgeClient.ClimateSetting.Clouds, null),
+            (BridgeClient.ClimateSetting.Wind, 60),
+        ]);
+        // one batch, in order, "off" for a setting given back; the last reply is the world after them all
+        Assert.Equal(["climate fog 0.8", "climate clouds off", "climate wind 60"], asked);
+        Assert.Equal((0.8, 60.0, -10.0, 0.5), (world.AdminFog, world.AdminWind, world.AdminTemperature, world.AdminSnow));
+        Assert.Null(world.AdminClouds);
+    }
+
+    [Fact]
     public async Task A_v2_bridge_still_answers_the_snapshot()
     {
         // 0.9.5 regression: v2 answered the END line as one more (failed) request

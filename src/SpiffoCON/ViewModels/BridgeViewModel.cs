@@ -38,6 +38,9 @@ public sealed partial class BridgeViewModel : ObservableObject
     [ObservableProperty] private string source = "Not connected to the bridge.";
     [ObservableProperty] private string statusText = "";
     [ObservableProperty] private string worldText = "";
+
+    /// <summary>The last world state the bridge reported (weather included).</summary>
+    [ObservableProperty] private BridgeWorld? world;
     [ObservableProperty] private bool isConnected;
     [ObservableProperty] private bool autoRefresh = true;
     [ObservableProperty] private string? workshopId;
@@ -189,6 +192,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             var snapshot = await _client.SnapshotAsync(timeout.Token);
             _failures = 0;
             var w = snapshot.World;
+            World = w;
             WorldText = $"{w.Year}-{w.Month:00}-{w.Day:00} {w.Hour:00}:{w.Minute:00} in game · {w.Temperature:0.#} °C"
                 + (w.Rain > 0 ? $" · rain {w.Rain:P0}" : "") + (w.Fog > 0 ? $" · fog {w.Fog:P0}" : "")
                 + $" · {w.Players} online · {w.ZombiesLoaded} zombies loaded · world age {w.WorldAgeHours} h";
@@ -368,6 +372,33 @@ public sealed partial class BridgeViewModel : ObservableObject
     private Task RemoveVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
         $"Remove {v.Script} #{id} from the world for good?" + (v.Driver is { } d ? $"\n\n{d} is driving it." : ""),
         async c => { await c.RemoveVehicleAsync(id, v.Script); return $"{v.Script} #{id} removed."; });
+
+    // ---- weather (bridge v5), for the Events tab ----
+
+    /// <summary>Weather overrides arrived with bridge v5.</summary>
+    public bool CanSetWeather => IsConnected && BridgeVersion >= 5;
+
+    partial void OnIsConnectedChanged(bool value) => OnPropertyChanged(nameof(CanSetWeather));
+
+    partial void OnBridgeVersionChanged(int value) => OnPropertyChanged(nameof(CanSetWeather));
+
+    /// <summary>Sets (or with <paramref name="reset"/> gives back to the game) the weather; null when it worked, else why not.</summary>
+    internal async Task<string?> SetWeatherAsync(IReadOnlyList<(BridgeClient.ClimateSetting Setting, double? Value)> settings, bool reset)
+    {
+        if (_client is null || !IsConnected)
+            return "The weather is set through the SpiffoCON Bridge: connect it in the Bridge tab.";
+        if (BridgeVersion < 5)
+            return $"The weather needs bridge v5 (the server runs v{BridgeVersion}): upload the new version to the Workshop and restart the server.";
+        try
+        {
+            World = reset ? await _client.ResetClimateAsync() : await _client.SetClimateAsync(settings);
+            return null;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not set the weather: " + ex.Message;
+        }
+    }
 
     bool _closed;
 

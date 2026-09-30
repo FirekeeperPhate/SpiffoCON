@@ -303,6 +303,32 @@ public sealed partial class BridgeClient(IBridgeFiles files)
 
     public Task RemoveVehicleAsync(int id, string? script = null) => VehicleAsync("removevehicle", id, script);
 
+    // ---- weather (bridge v5) ----
+
+    /// <summary>The weather settings the bridge can set.</summary>
+    public enum ClimateSetting { Fog, Clouds, Wind, Temperature, Snow }
+
+    /// <summary>
+    /// Overrides weather settings (fog, clouds, snow 0-1; wind km/h; temperature °C), or gives one back to
+    /// the game with a null value, all in one round trip. Players see it at the next ten-minute climate
+    /// tick. Returns the world after them.
+    /// </summary>
+    public async Task<BridgeWorld> SetClimateAsync(IReadOnlyList<(ClimateSetting Setting, double? Value)> settings, CancellationToken ct = default)
+    {
+        var replies = await SendAsync(settings.Select(s => ("climate", new[]
+        {
+            s.Setting.ToString().ToLowerInvariant(),
+            s.Value is { } v ? v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) : "off",
+        })).ToList(), ct).ConfigureAwait(false);
+        if (replies.FirstOrDefault(r => !r.Ok) is { } failed)
+            throw new BridgeException(failed.Error ?? "The bridge reported an error.");
+        return replies.Count == 0 ? new BridgeWorld() : replies[^1].Data.Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld();
+    }
+
+    /// <summary>Every weather setting back to the game.</summary>
+    public async Task<BridgeWorld> ResetClimateAsync() =>
+        (await SendAsync("climate", "reset").ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld();
+
     Task VehicleAsync(string action, int id, string? script)
     {
         var idText = id.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -388,6 +414,26 @@ public sealed record BridgeWorld
     public double? Temperature { get; init; }
     public double? Rain { get; init; }
     public double? Fog { get; init; }
+    public double? Clouds { get; init; }
+
+    /// <summary>km/h.</summary>
+    public double? Wind { get; init; }
+
+    /// <summary>Whether precipitation falls as snow.</summary>
+    public bool? Snow { get; init; }
+
+    // bridge v5: the weather SpiffoCON set (absent: the game decides)
+    public double? AdminFog { get; init; }
+    public double? AdminClouds { get; init; }
+
+    /// <summary>km/h.</summary>
+    public double? AdminWind { get; init; }
+
+    /// <summary>°C.</summary>
+    public double? AdminTemperature { get; init; }
+
+    /// <summary>Snowfall 0-1.</summary>
+    public double? AdminSnow { get; init; }
     public int? ZombiesLoaded { get; init; }
     public int? Players { get; init; }
 }

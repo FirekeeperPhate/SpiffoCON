@@ -46,6 +46,10 @@ Windows, .NET 10, WPF.
   player, on every online player or on one player; helicopter and gunshot events (the server
   picks the player for these two), and a button to call the helicopter off. Every reply is
   checked and listed. Syntax and replies checked on a real B42 server.
+  Weather (bridge v5): fog, clouds, wind, temperature and snowfall set to a value, as the
+  game's own admin Climate panel does; the server sends it to the players at its next climate
+  update (within ten game minutes). The game keeps the settings with the world until *Back to the
+  game's weather*.
 - Kits tab: sets of items (starter kit, event prizes) built from the catalog ("Add to kit"),
   shared by all your servers, given in one go to a player or to every online player.
 - Maintenance tab:
@@ -85,7 +89,8 @@ Windows, .NET 10, WPF.
   `spiffocon_out.txt`). Bridge v2 adds admin actions, each done the way the game's own
   server code does it (with its client sync) and written to the admin log: full heal,
   remove items (not worn or attached ones; bridge v3 removes them from the container they
-  are listed under), repair, refuel or remove a vehicle, all asked for confirmation. The bridge runs while the server runs a game:
+  are listed under), repair, refuel or remove a vehicle, all asked for confirmation. Bridge v5 sets the
+  weather (Events tab). The bridge runs while the server runs a game:
   an empty server with `PauseEmpty=true` is paused and the bridge waits.
 - Map tab: the game's world map (drawn like the in-game map from the game's own
   `worldmap.xml` and forest images, with building types in color and place names, or the
@@ -110,8 +115,9 @@ Windows, .NET 10, WPF.
   name. Each reply shows in the status bar.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
-  connection and checked afterwards. With SFTP on, connecting also connects the bridge and
-  follows the logs (a box in the SFTP settings turns it off).
+  connection and checked afterwards. With SFTP on, connecting also connects the bridge,
+  follows the logs and loads the server's mods into the Catalog over SFTP (never with SteamCMD:
+  that stays with Load from server, which asks); a box in the SFTP settings turns it off.
 - The connection panel hides by itself once connected (the arrow at the top left brings it back
   or hides it again) and is always shown while not connected.
 - Server list: save several servers (name, RCON, SFTP and the folders found on each), add,

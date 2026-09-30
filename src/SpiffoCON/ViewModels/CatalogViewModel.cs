@@ -215,7 +215,7 @@ public sealed partial class CatalogViewModel : ObservableObject
             var taken = count > 0 ? $"{count} base-game icons taken from {packs}." : "No item icons found in those texture packs.";
             if (_loadedFromServer && _main.IsSessionActive)
             {
-                await LoadFromServerCoreAsync();
+                await LoadFromServerCoreAsync(automatic: false);
                 // both outcomes count: the icons, and how the reload went
                 StatusText = taken + " " + StatusText;
             }
@@ -265,7 +265,7 @@ public sealed partial class CatalogViewModel : ObservableObject
         IsLoading = true;
         try
         {
-            await LoadFromServerCoreAsync();
+            await LoadFromServerCoreAsync(automatic: false);
         }
         finally
         {
@@ -273,8 +273,27 @@ public sealed partial class CatalogViewModel : ObservableObject
         }
     }
 
-    /// <summary>The load itself; the caller holds <see cref="IsLoading"/>.</summary>
-    async Task LoadFromServerCoreAsync()
+    /// <summary>
+    /// The load run by itself after connecting: only when SFTP answers, and without asking about
+    /// SteamCMD (mods it would need are left to Load from server, which asks). False when it didn't run.
+    /// </summary>
+    internal async Task<bool> LoadFromServerAutomaticallyAsync()
+    {
+        if (!_main.IsSessionActive || IsLoading || _main.CurrentSftpSettings() is null)
+            return false;
+        IsLoading = true;
+        try
+        {
+            return await LoadFromServerCoreAsync(automatic: true);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    /// <summary>The load itself; the caller holds <see cref="IsLoading"/>. False when nothing was loaded.</summary>
+    async Task<bool> LoadFromServerCoreAsync(bool automatic)
     {
         using var cts = _loadCts = new CancellationTokenSource();
         var ct = cts.Token;
@@ -285,13 +304,13 @@ public sealed partial class CatalogViewModel : ObservableObject
             if (reply is null)
             {
                 StatusText = "showoptions failed: see the console.";
-                return;
+                return false;
             }
             var options = ServerOptions.Parse(reply);
             if (options.Count == 0)
             {
                 StatusText = "The server's reply to showoptions was not a list of options.";
-                return;
+                return false;
             }
 
             var sftp = _main.CurrentSftpSettings();
@@ -313,13 +332,24 @@ public sealed partial class CatalogViewModel : ObservableObject
                     sftpProblem = "SFTP: " + ex.Message;
                 }
             }
+            // by itself only over a working SFTP: no local scan or SteamCMD surprise on connect
+            if (automatic && options.WorkshopItems.Count == 0)
+            {
+                StatusText = "The server has no workshop mods: nothing to copy.";
+                return false;
+            }
+            if (automatic && remoteWorkshop is null)
+            {
+                StatusText = (sftpProblem ?? "SFTP is not set.") + " The mods were not loaded: use Load from server.";
+                return false;
+            }
 
             var dispatcher = Application.Current.Dispatcher;
             var loadOptions = new CatalogLoadOptions
             {
                 Sftp = sftp,
                 RemoteWorkshopFolder = remoteWorkshop,
-                ConfirmSteamCmd = (bytes, items) => dispatcher.InvokeAsync(() => _main.Confirm?.Invoke(
+                ConfirmSteamCmd = automatic ? (_, _) => Task.FromResult(false) : (bytes, items) => dispatcher.InvokeAsync(() => _main.Confirm?.Invoke(
                     $"{items.Count} mods are not available over SFTP or in your Steam folder.\n\n" +
                     $"Download them with SteamCMD ({FormatSize(bytes)})? SteamCMD downloads whole mods, " +
                     "models and sounds included; SpiffoCON keeps them in its cache for next time.") ?? true).Task,
@@ -332,15 +362,20 @@ public sealed partial class CatalogViewModel : ObservableObject
             foreach (var s in result.Sources)
                 ModSources.Add(s);
             ModSummary = Summarize(result, options) + (sftpProblem is null ? "" : "\n" + sftpProblem);
-            StatusText = $"Loaded {result.Entries.Count(e => !e.Source.IsVanilla)} entries from {options.Mods.Count - result.MissingMods.Count} mods.";
+            StatusText = $"Loaded {result.Entries.Count(e => !e.Source.IsVanilla)} entries from {options.Mods.Count - result.MissingMods.Count} mods"
+                + (automatic ? " (by itself on connect)." : ".")
+                + (automatic && result.MissingMods.Count > 0 ? " Some mods are not over SFTP: Load from server can fetch them with SteamCMD." : "");
+            return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             StatusText = "Loading cancelled.";
+            return false;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StatusText = "Loading failed: " + ex.Message;
+            return false;
         }
         finally
         {

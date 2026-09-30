@@ -26,6 +26,8 @@ public sealed partial class EventsViewModel : ObservableObject
     {
         _main = main;
         _rainStop.Tick += async (_, _) => await StopRainOnTimerAsync();
+        Bridge.PropertyChanged += OnBridgeChanged;
+        ShowWeather(null);
     }
 
     public ObservableCollection<EventLogLine> Log { get; } = [];
@@ -284,5 +286,112 @@ public sealed partial class EventsViewModel : ObservableObject
             Log.RemoveAt(Log.Count - 1);
     }
 
-    public void Close() => _rainStop.Stop();
+    // ---- weather (bridge v5): the overrides of the game's own admin Climate panel ----
+
+    public BridgeViewModel Bridge => _main.Bridge;
+
+    [ObservableProperty] private bool fogOn;
+    [ObservableProperty] private double fog = 50;
+    [ObservableProperty] private bool cloudsOn;
+    [ObservableProperty] private double clouds = 50;
+    [ObservableProperty] private bool windOn;
+    [ObservableProperty] private double wind = 20;
+    [ObservableProperty] private bool temperatureOn;
+    [ObservableProperty] private double temperature = 20;
+    [ObservableProperty] private bool snowOn;
+    [ObservableProperty] private double snow = 50;
+    [ObservableProperty] private string weatherStatus = "";
+    [ObservableProperty] private string weatherResult = "";
+    [ObservableProperty] private bool isSettingWeather;
+
+    /// <summary>The controls show what the server has, once per bridge connection (not over the user's edits).</summary>
+    bool _weatherLoaded;
+
+    void OnBridgeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(BridgeViewModel.IsConnected) && !Bridge.IsConnected)
+            _weatherLoaded = false;
+        if (e.PropertyName is nameof(BridgeViewModel.World) or nameof(BridgeViewModel.IsConnected) or nameof(BridgeViewModel.BridgeVersion))
+            ShowWeather(Bridge.World);
+    }
+
+    void ShowWeather(Core.Bridge.BridgeWorld? w)
+    {
+        if (!Bridge.IsConnected || w is null)
+        {
+            WeatherStatus = "Fog, clouds, wind, temperature and snow are set through the SpiffoCON Bridge (v5): connect it in the Bridge tab.";
+            return;
+        }
+        if (!_weatherLoaded)
+        {
+            _weatherLoaded = true;
+            (FogOn, Fog) = (w.AdminFog is not null, (w.AdminFog ?? w.Fog ?? 0.5) * 100);
+            (CloudsOn, Clouds) = (w.AdminClouds is not null, (w.AdminClouds ?? w.Clouds ?? 0.5) * 100);
+            (WindOn, Wind) = (w.AdminWind is not null, w.AdminWind ?? w.Wind ?? 20);
+            (TemperatureOn, Temperature) = (w.AdminTemperature is not null, w.AdminTemperature ?? w.Temperature ?? 20);
+            (SnowOn, Snow) = (w.AdminSnow is not null, (w.AdminSnow ?? 0.5) * 100);
+        }
+        var set = new List<string>();
+        if (w.AdminFog is { } f) set.Add($"fog {f:P0}");
+        if (w.AdminClouds is { } c) set.Add($"clouds {c:P0}");
+        if (w.AdminWind is { } wi) set.Add($"wind {wi:0} km/h");
+        if (w.AdminTemperature is { } t) set.Add($"{t:0.#} °C");
+        if (w.AdminSnow is { } s) set.Add($"snowfall {s:P0}");
+        var now = new List<string>();
+        if (w.Fog is { } nf) now.Add($"fog {nf:P0}");
+        if (w.Clouds is { } nc) now.Add($"clouds {nc:P0}");
+        if (w.Wind is { } nw) now.Add($"wind {nw:0} km/h");
+        if (w.Temperature is { } nt) now.Add($"{nt:0.#} °C");
+        if (w.Rain is > 0) now.Add((w.Snow == true ? "snow " : "rain ") + $"{w.Rain:P0}");
+        WeatherStatus = (set.Count > 0 ? "Set by SpiffoCON: " + string.Join(", ", set) + "." : "The game decides the weather.")
+            + (now.Count > 0 ? " Now: " + string.Join(", ", now) + "." : "")
+            + (Bridge.BridgeVersion is > 0 and < 5 ? $" Setting it needs bridge v5 (the server runs v{Bridge.BridgeVersion})." : "");
+    }
+
+    [RelayCommand]
+    private async Task ApplyWeatherAsync()
+    {
+        var settings = new List<(Core.Bridge.BridgeClient.ClimateSetting, double?)>
+        {
+            (Core.Bridge.BridgeClient.ClimateSetting.Fog, FogOn ? Math.Round(Fog) / 100 : null),
+            (Core.Bridge.BridgeClient.ClimateSetting.Clouds, CloudsOn ? Math.Round(Clouds) / 100 : null),
+            (Core.Bridge.BridgeClient.ClimateSetting.Wind, WindOn ? Math.Round(Wind) : null),
+            (Core.Bridge.BridgeClient.ClimateSetting.Temperature, TemperatureOn ? Math.Round(Temperature) : null),
+            (Core.Bridge.BridgeClient.ClimateSetting.Snow, SnowOn ? Math.Round(Snow) / 100 : null),
+        };
+        await SetWeatherAsync(settings, reset: false);
+    }
+
+    [RelayCommand]
+    private async Task ResetWeatherAsync()
+    {
+        if (await SetWeatherAsync([], reset: true))
+            (FogOn, CloudsOn, WindOn, TemperatureOn, SnowOn) = (false, false, false, false, false);
+    }
+
+    async Task<bool> SetWeatherAsync(IReadOnlyList<(Core.Bridge.BridgeClient.ClimateSetting, double?)> settings, bool reset)
+    {
+        if (IsSettingWeather)
+            return false;
+        IsSettingWeather = true;
+        WeatherResult = "Sending to the bridge...";
+        try
+        {
+            var problem = await Bridge.SetWeatherAsync(settings, reset);
+            WeatherResult = problem ?? (reset
+                ? $"Weather given back to the game at {DateTime.Now:HH:mm:ss}."
+                : $"Set at {DateTime.Now:HH:mm:ss}. Players see it at the next climate update (within ten game minutes).");
+            return problem is null;
+        }
+        finally
+        {
+            IsSettingWeather = false;
+        }
+    }
+
+    public void Close()
+    {
+        _rainStop.Stop();
+        Bridge.PropertyChanged -= OnBridgeChanged;
+    }
 }
