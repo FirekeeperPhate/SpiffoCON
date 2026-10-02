@@ -162,10 +162,22 @@ public sealed partial class BridgeViewModel : ObservableObject
         _client = new BridgeClient(files);
         Source = files.Description;
         StatusText = "Asking the bridge...";
+        await PingAsync(_client);
+    }
+
+    /// <summary>The bridge's files were reached but it did not answer (a paused, empty server): asked again when someone joins.</summary>
+    bool _unanswered;
+
+    async Task PingAsync(BridgeClient client)
+    {
         try
         {
             var started = DateTime.Now;
-            int version = await _client.PingAsync();
+            int version = await client.PingAsync();
+            // connected to another folder or server meanwhile
+            if (!ReferenceEquals(client, _client))
+                return;
+            _unanswered = false;
             BridgeVersion = version;
             IsConnected = true;
             StatusText = $"Bridge v{version} answered in {(DateTime.Now - started).TotalSeconds:0.0} s."
@@ -174,10 +186,59 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            if (!ReferenceEquals(client, _client))
+                return;
             IsConnected = false;
-            StatusText = ex.Message;
+            // no reply is what a paused server gives; a refused password or a missing folder is not asked again
+            _unanswered = ex is BridgeException;
+            StatusText = ex.Message + (_unanswered && _main.OnlinePlayers.Count == 0
+                ? " Nobody is online: SpiffoCON asks again by itself when someone joins." : "");
         }
         UpdateTimer();
+    }
+
+    bool _waking;
+
+    /// <summary>
+    /// Someone is online, so the server runs again: a bridge that did not answer (or whose refreshes were
+    /// failing) is asked now. A player still loading keeps the server paused: a few tries, 20 s apart.
+    /// </summary>
+    async Task WakeAsync()
+    {
+        if (_waking || _closed || _client is not { } client)
+            return;
+        if (IsConnected)
+        {
+            // not waiting out the back-off of the refreshes that failed while it was paused
+            if (_failures > 0)
+            {
+                _failures = 0;
+                _retryAt = default;
+                await RefreshAsync();
+            }
+            return;
+        }
+        if (!_unanswered)
+            return;
+        _waking = true;
+        try
+        {
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                if (attempt > 0)
+                    await Task.Delay(TimeSpan.FromSeconds(20));
+                if (_closed || !ReferenceEquals(client, _client) || IsConnected || !_unanswered || _main.OnlinePlayers.Count == 0)
+                    return;
+                StatusText = "Someone is online: asking the bridge again...";
+                await PingAsync(client);
+                if (IsConnected)
+                    return;
+            }
+        }
+        finally
+        {
+            _waking = false;
+        }
     }
 
     // ---- data ----
@@ -235,7 +296,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             var wait = TimeSpan.FromSeconds(Math.Min(300, 15 * Math.Pow(2, _failures - 1)));
             _retryAt = DateTime.UtcNow + wait;
             StatusText = ex.Message + (_failures > 1 ? $" (trying again in {wait.TotalSeconds:0} s)" : "")
-                + (_main.OnlinePlayers.Count == 0 ? " Nobody is online: a server that pauses when empty (PauseEmpty) runs no mods, the bridge answers again when someone joins." : "");
+                + (_main.OnlinePlayers.Count == 0 ? " Nobody is online: SpiffoCON asks again by itself when someone joins." : "");
             // the last answer is not the present any more: nothing, rather than players where they were
             SelectedPlayer = null;
             Players.Clear();
@@ -264,6 +325,8 @@ public sealed partial class BridgeViewModel : ObservableObject
         // nobody online: no area is loaded, so no vehicle is either
         if (online.Count == 0)
             Vehicles.Clear();
+        else
+            _ = WakeAsync();
     }
 
     int _failures;
