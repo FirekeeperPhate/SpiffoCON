@@ -129,13 +129,19 @@ for i = 1, 3 do bagA.inner:AddItem(item("Base.Nails", "Nails")) end
 bagA.inner:AddItem(toolbox)
 toolbox.inner:AddItem(item("Base.Nails", "Nails"))
 for i = 1, 5 do bagB.inner:AddItem(item("Base.Nails", "Nails")) end
+-- and two duffel bags of different types under one name (the game has 18 "Duffel Bag")
+local duffelA, duffelB = bag("Base.Bag_DuffelBag", "Duffel Bag"), bag("Base.Bag_DuffelBagTINT", "Duffel Bag")
+rj.inventory:AddItem(duffelA)
+rj.inventory:AddItem(duffelB)
+duffelA.inner:AddItem(item("Base.Screws", "Screws"))
+for i = 1, 2 do duffelB.inner:AddItem(item("Base.Screws", "Screws")) end
 
 -- ---- world ----
 local world = {}
 local function key(x, y, z) return x .. "," .. y .. "," .. z end
 SAFE_SQUARES = {}
 local function square(x, y, z)
-	local sq = { x = x, y = y, z = z, corpses = {}, ground = {}, fire = false }
+	local sq = { x = x, y = y, z = z, corpses = {}, ground = {}, fires = {} }
 	sq.getStaticMovingObjects = function() return list(sq.corpses) end
 	sq.getWorldObjects = function() return list(sq.ground) end
 	sq.getChunk = function() return { getMinLevel = function() return -1 end, getMaxLevel = function() return 2 end } end
@@ -147,18 +153,28 @@ local function square(x, y, z)
 		for i, o in ipairs(sq.ground) do if o == object then table.remove(sq.ground, i); note("removeGround " .. object.name); return end end
 		error("object not here")
 	end
-	sq.haveFire = function() return sq.fire end
+	-- as the game: any IsoFire counts, the permanent flame of a lit campfire too
+	sq.haveFire = function() return #sq.fires > 0 end
+	sq.getObjects = function() return list(sq.fires) end
 	world[key(x, y, z)] = sq
 	return sq
 end
-function stopFire(sq) sq.fire = false; note("stopFire " .. sq.x .. "," .. sq.y .. "," .. sq.z) end
+-- IsoFireManager only knows the fires that are not permanent: those go, a campfire stays lit
+function stopFire(sq)
+	for i = #sq.fires, 1, -1 do if not sq.fires[i].permanent then table.remove(sq.fires, i) end end
+	note("stopFire " .. sq.x .. "," .. sq.y .. "," .. sq.z)
+end
+local function fire(permanent) return { class = "IsoFire", permanent = permanent, isPermanent = function() return permanent end } end
 for x = 90, 110 do for y = 90, 110 do for z = -1, 2 do square(x, y, z) end end end
 
 local function corpse(name, kind)
 	return { name = name, class = "IsoDeadBody",
 		isZombie = function() return kind == "zombie" end, isPlayer = function() return kind == "player" end, isAnimal = function() return kind == "animal" end }
 end
-local function ground(name) return { name = name, removeFromWorld = function() end, removeFromSquare = function() end, setSquare = function() end } end
+-- height: 0 on the floor, more on a table or a shelf
+local function ground(name, height)
+	return { name = name, getOffZ = function() return height or 0 end, removeFromWorld = function() end, removeFromSquare = function() end, setSquare = function() end }
+end
 local function at(x, y, z) return world[key(x, y, z)] end
 table.insert(at(100, 100, 0).corpses, corpse("z1", "zombie"))
 table.insert(at(100, 100, 0).corpses, corpse("dead player", "player"))
@@ -169,9 +185,11 @@ table.insert(at(100, 101, 2).ground, ground("plank upstairs"))
 table.insert(at(102, 100, 0).ground, ground("gun in the safehouse"))
 table.insert(at(102, 100, 0).ground, ground("ammo in the safehouse"))
 table.insert(at(100, 106, 0).ground, ground("far away"))
-at(100, 100, 0).fire = true
-at(101, 101, 1).fire = true
-at(100, 107, 0).fire = true
+table.insert(at(101, 100, 0).ground, ground("vase on a table", 0.42))
+table.insert(at(100, 100, 0).fires, fire(false))
+table.insert(at(101, 101, 1).fires, fire(false))
+table.insert(at(100, 107, 0).fires, fire(false))
+table.insert(at(99, 100, 0).fires, fire(true))    -- a lit campfire
 
 local zombies = {}
 local function zombie(x, y) zombies[#zombies + 1] = { getX = function() return x end, getY = function() return y end } end
@@ -206,7 +224,10 @@ function safehouse(id, title, owner, members, x, y, w, h)
 	s.getOnlineID = function() return id end
 	s.getTitle = function() return title end
 	s.getOwner = function() return owner end
-	s.getPlayers = function() return list(members) end
+	-- as the game: the owner is in the list too
+	local all = { owner }
+	for _, m in ipairs(members) do all[#all + 1] = m end
+	s.getPlayers = function() return list(all) end
 	s.getX = function() return x end
 	s.getY = function() return y end
 	s.getW = function() return w end

@@ -49,7 +49,9 @@ public sealed class BridgeScriptTests
         var house = snapshot.Safehouses[1];
         // a title with quotes comes through the script's own JSON encoder
         Assert.Equal(("2", "Kate \"the\" base", "kate", 480, 480, 10, 12), (house.Id, house.Title, house.Owner, house.X, house.Y, house.W, house.H));
+        // the game lists the owner among the players of a safehouse: not a member of their own
         Assert.Equal(["kate"], snapshot.Safehouses[0].Members);
+        Assert.Empty(house.Members);
         Assert.Equal(1790947308993, house.LastVisited);
 
         // an older client does not ask for them
@@ -70,6 +72,12 @@ public sealed class BridgeScriptTests
         nails = (await _client.InventoryAsync("rj")).Where(i => i.FullType == "Base.Nails").ToList();
         Assert.Equal([("Inventory > School Bag > Toolbox", 1), ("Inventory > School Bag", 2)], nails.Select(i => (i.Container, i.Count)));
         Assert.Equal(6, Told().Count(l => l == "sendRemove Nails from School Bag"));
+
+        // two bags of different types under one name are apart too
+        var screws = (await _client.InventoryAsync("rj")).Where(i => i.FullType == "Base.Screws").ToList();
+        Assert.Equal([("Inventory > Duffel Bag", 1), ("Inventory > Duffel Bag #2", 2)], screws.Select(i => (i.Container, i.Count)));
+        Assert.Equal((2, 0), await _client.RemoveItemAsync("rj", "Base.Screws", 0, "Inventory > Duffel Bag #2"));
+        Assert.Equal(("Inventory > Duffel Bag", 1), (await _client.InventoryAsync("rj")).Where(i => i.FullType == "Base.Screws").Select(i => (i.Container, i.Count)).Single());
     }
 
     [Fact]
@@ -98,8 +106,13 @@ public sealed class BridgeScriptTests
         Assert.True(await _client.RemoveSafehouseAsync("2", "kate"));
         Assert.Equal(["SafehouseRelease to all 2"], Told());
 
+        // a server with safehouse wars off (the option is 0) removes it the same way
+        _game.DoString("WAR_HIT_POINTS = 0; safehouse(3, 'Third', 'ann', {}, 300, 300, 4, 4)");
+        Assert.True(await _client.RemoveSafehouseAsync("3", "ann"));
+        Assert.Equal(["SafehouseRelease to all 3"], Told());
+
         // the server option can't be read: off the server's list at least, and said so
-        _game.DoString("WAR_HIT_POINTS = 0");
+        _game.DoString("getServerOptions = function() error('no options') end");
         Assert.False(await _client.RemoveSafehouseAsync("1", "rj"));
         Assert.Equal(["removeSafeHouse (not synced) 1"], Told());
         Assert.Empty(await _client.SafehousesAsync());
@@ -110,11 +123,12 @@ public sealed class BridgeScriptTests
     public async Task Items_on_the_ground_are_counted_then_removed_and_safehouses_are_left()
     {
         var count = await _client.RemoveGroundItemsAsync(100, 100, 3, apply: false, safehouses: false);
-        Assert.Equal((2, 0, 2, 29), (count.Found, count.Removed, count.InSafehouses, count.Loaded));
+        // the vase a player put on a table is not on the ground
+        Assert.Equal((2, 0, 2, 1, 29), (count.Found, count.Removed, count.InSafehouses, count.OnFurniture, count.Loaded));
         Assert.Empty(Told());
 
         var done = await _client.RemoveGroundItemsAsync(100, 100, 3, apply: true, safehouses: false);
-        Assert.Equal((2, 2), (done.Removed, done.InSafehouses));
+        Assert.Equal((2, 2, 1), (done.Removed, done.InSafehouses, done.OnFurniture));
         // every floor of the circle, and nothing inside the safehouse or beyond the radius
         Assert.Equal(["removeGround can", "removeGround plank upstairs"], Told());
 
@@ -129,7 +143,10 @@ public sealed class BridgeScriptTests
     {
         Assert.Equal(2, (await _client.StopFiresAsync(100, 100, 3)).Stopped);
         Assert.Equal(["stopFire 100,100,0", "stopFire 101,101,1"], Told());
+        // the lit campfire a square away is a fire to the game, but not one to put out: not counted, not touched
         Assert.Equal(0, (await _client.StopFiresAsync(100, 100, 3)).Stopped);
+        Assert.Empty(Told());
+        Assert.Equal(1, Lua("#getCell():getGridSquare(99, 100, 0).fires"));
 
         // the dead player on the same square stays, and so does the zombie four squares away
         Assert.Equal(2, (await _client.RemoveCorpsesAsync(100, 100, 3)).Removed);
@@ -153,9 +170,11 @@ public sealed class BridgeScriptTests
     [InlineData(6, 7, 1)]
     [InlineData(0.5, 23.5, 23)]
     [InlineData(23.5, 0.5, 1)]
-    [InlineData(7.5, 7.25, 23.75)]
     [InlineData(10, 18, 8)]
-    [InlineData(3, 3, 24)]
+    [InlineData(15, 10, 19)]   // into the next day and past 7:00: the night is counted once the day has turned
+    [InlineData(5, 3, 22)]     // into the next day, from before 7:00
+    [InlineData(8, 20 / 60.0 + 8, 20 / 60.0)]   // 8:20, a minute that is not a round fraction of an hour
+    [InlineData(21, 5 / 60.0 + 23, 5 / 60.0 + 2)]
     public async Task The_clock_skips_forward_to_the_hour_and_the_world_ages_by_as_much(double now, double target, double skipped)
     {
         var invariant = System.Globalization.CultureInfo.InvariantCulture;
@@ -163,20 +182,47 @@ public sealed class BridgeScriptTests
         double before = Lua("CLOCK.age()");
 
         var world = await _client.SetTimeAsync(target);
-        _game.DoString("for i = 1, 5 do CLOCK.tick() end");
+        Assert.Equal(skipped, world.SkippedHours!.Value, 0.011);
+        // to the minute that was asked for
+        int minutes = (int)Math.Round(target * 60);
+        Assert.Equal((minutes / 60, minutes % 60), (world.Hour, world.Minute));
+        // right away, before the game has ticked: nothing in between sees the world a day off
+        Assert.Equal(skipped, Lua("CLOCK.age()") - before, 0.011);
 
-        Assert.Equal(skipped, world.SkippedHours!.Value, 2);
-        Assert.Equal(((int)target, (int)Math.Round((target - (int)target) * 60)), (world.Hour, world.Minute));
-        Assert.Equal(skipped, Lua("CLOCK.age()") - before, 2);
-        Assert.Equal(target, Lua("CLOCK.time"), 2);
+        // the game's ticks, each followed by the bridge's (OnTick comes after GameTime.update)
+        _game.DoString("for i = 1, 5 do CLOCK.tick(); SpiffoCONBridgePoll() end");
+        Assert.Equal(skipped, Lua("CLOCK.age()") - before, 0.011);
+        Assert.Equal(target, Lua("CLOCK.time"), 0.011);
         Assert.Equal(target <= now ? 15 : 14, (int)Lua("CLOCK.day"));
     }
 
     [Fact]
-    public async Task An_hour_out_of_the_day_is_refused()
+    public async Task A_time_that_is_no_hour_of_the_day_or_almost_a_day_away_is_refused()
     {
         await Assert.ThrowsAsync<BridgeException>(() => _client.SetTimeAsync(24));
         await Assert.ThrowsAsync<BridgeException>(() => _client.SetTimeAsync(-1));
+        // not a number: no comparison holds, and the clock must not be set to it
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("settime", "nan"));
+
+        // two minutes behind the clock (or the very same time) would be a day: surely a mistake
+        _game.DoString("CLOCK.time = 14 + 32 / 60");
+        var ex = await Assert.ThrowsAsync<BridgeException>(() => _client.SetTimeAsync(14.5));
+        Assert.Contains("it is 14:32 in game", ex.Message);
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetTimeAsync(14 + 32 / 60.0));
+        Assert.Empty(Told());
+
+        // while the game has not yet turned the day of the last change, another is not computed on it
+        await _client.SetTimeAsync(10);
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetTimeAsync(12));
+    }
+
+    [Fact]
+    public async Task An_area_out_of_this_world_is_refused()
+    {
+        // a coordinate too big to count on would loop for ever inside the server's tick
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("stopfires", "1e300", "0", "5"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("removecorpses", "nan", "0", "5"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("removegrounditems", "0", "inf", "5", "1", "0"));
         Assert.Empty(Told());
     }
 

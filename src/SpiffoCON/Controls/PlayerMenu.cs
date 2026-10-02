@@ -105,10 +105,10 @@ public static class PlayerMenu
             "On every floor; the corpses of players and animals stay");
         Sub(cleanUp.Items, "Items on the ground", actions.AreaProblem is null,
             actions.CorpseRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveGroundItemsAsync(player, r)))),
-            actions.AreaProblem ?? "Counted first, then asked; furniture, containers and safehouses are not touched");
+            actions.AreaProblem ?? "Counted first, then asked; what is in containers, on tables and shelves, or inside a safehouse is not touched");
         Sub(cleanUp.Items, "Fires", actions.AreaProblem is null,
             actions.CorpseRadii.Select(r => ((object)$"{r} squares", (Func<Task>)(() => actions.StopFiresAsync(player, r)))),
-            actions.AreaProblem ?? "Puts out every fire in the area");
+            actions.AreaProblem ?? "Puts out every fire in the area (lit campfires are left)");
         menu.Items.Add(cleanUp);
         menu.Items.Add(new Separator());
 

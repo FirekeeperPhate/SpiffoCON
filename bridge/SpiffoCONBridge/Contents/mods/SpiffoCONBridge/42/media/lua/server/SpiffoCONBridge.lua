@@ -149,11 +149,12 @@ local function listPlayers()
 end
 
 -- the label of a bag inside the container labelled parent: its name, and from the second bag of the
--- same type in that container on, its number ("Inventory > School Bag #2"), so removeitem can tell two
--- bags of one type apart (bridge v7). seen counts the bags of each type met so far in the container.
-local function bagLabel(parent, name, fullType, seen)
-	seen[fullType] = (seen[fullType] or 0) + 1
-	return parent .. " > " .. name .. (seen[fullType] > 1 and (" #" .. seen[fullType]) or "")
+-- same name in that container on, its number ("Inventory > School Bag #2"), so removeitem can tell two
+-- such bags apart (bridge v7). seen counts the bags of each name met so far in the container.
+local function bagLabel(parent, name, seen)
+	-- counted by name, not by type: the game has many bag types under one name (18 "Duffel Bag")
+	seen[name] = (seen[name] or 0) + 1
+	return parent .. " > " .. name .. (seen[name] > 1 and (" #" .. seen[name]) or "")
 end
 
 -- items grouped by container and type: { container, fullType, name, count, equipped }
@@ -178,7 +179,7 @@ local function addItems(result, container, label, player)
 		-- bags and other containers: list what is inside them too
 		local inner = containerOf(item)
 		if inner then
-			addItems(result, inner, bagLabel(label, entry.name, fullType, bags), nil)
+			addItems(result, inner, bagLabel(label, entry.name, bags), nil)
 		end
 	end
 	for _, fullType in ipairs(order) do result[#result + 1] = grouped[fullType] end
@@ -337,7 +338,7 @@ local function collect(container, label, fullType, wanted, into)
 		-- addItems names a bag after the first item of its type in this container
 		names[itemType] = names[itemType] or (try(function() return item:getDisplayName() end) or itemType)
 		local inner = containerOf(item)
-		if inner then collect(inner, bagLabel(label, names[itemType], itemType, bags), fullType, wanted, into) end
+		if inner then collect(inner, bagLabel(label, names[itemType], bags), fullType, wanted, into) end
 	end
 end
 
@@ -470,6 +471,8 @@ local function areaOf(action, x, y, radius, username)
 	end
 	x, y, radius = tonumber(x), tonumber(y), tonumber(radius)
 	if not x or not y or not radius then error(action .. " needs x, y and a radius") end
+	-- written this way round so that "nan" fails too; a number too big to count on would loop for ever
+	if not (math.abs(x) < 1e7 and math.abs(y) < 1e7 and radius >= 0) then error(action .. ": x, y or the radius is out of range") end
 	return math.floor(x), math.floor(y), math.max(1, math.min(MAX_AREA_RADIUS, math.floor(radius)))
 end
 
@@ -478,16 +481,24 @@ end
 local function eachSquare(x, y, radius, visit)
 	local cell = getCell()
 	local loaded = 0
+	-- the levels each chunk has, asked once per chunk (8 x 8 squares in B42), not once per square
+	local levels = {}
 	for sx = x - radius, x + radius do
 		for sy = y - radius, y + radius do
 			if (sx - x) * (sx - x) + (sy - y) * (sy - y) <= radius * radius then
 				local ground = cell:getGridSquare(sx, sy, 0)
 				if ground then
 					loaded = loaded + 1
-					-- the levels this chunk has
-					local chunk = try(function() return ground:getChunk() end)
-					local minZ = chunk and try(function() return chunk:getMinLevel() end) or -1
-					local maxZ = chunk and try(function() return chunk:getMaxLevel() end) or 7
+					local key = math.floor(sx / 8) * 100000 + math.floor(sy / 8)
+					local range = levels[key]
+					if not range then
+						range = try(function()
+							local chunk = ground:getChunk()
+							return { chunk:getMinLevel(), chunk:getMaxLevel() }
+						end) or { -1, 7 }
+						levels[key] = range
+					end
+					local minZ, maxZ = range[1], range[2]
 					for z = minZ, maxZ do
 						local sq = z == 0 and ground or cell:getGridSquare(sx, sy, z)
 						if sq then visit(sq) end
@@ -528,15 +539,16 @@ local function removeCorpses(x, y, radius, username)
 end
 
 -- removegrounditems <x> <y> <radius> <apply: 0 | 1> <safehouses: 0 | 1> [username]: the items lying on
--- the ground (not furniture, not what is inside containers), as the debug "Remove items" tool
--- (IsoGridSquare.transmitRemoveItemFromSquare, which on a server tells the clients). With apply 0 it
--- only counts, so SpiffoCON can say how many before asking; items inside a safehouse stay unless
--- safehouses is 1, and are counted apart.
+-- the floor, as the debug "Remove items" tool (IsoGridSquare.transmitRemoveItemFromSquare, which on a
+-- server tells the clients). Not what is inside containers, and not what players put on a table, a
+-- shelf or a counter: those items have a height (getOffZ) and stay, counted apart. With apply 0 it only
+-- counts, so SpiffoCON can say how many before asking; items inside a safehouse stay unless safehouses
+-- is 1, and are counted apart too.
 local function removeGroundItems(x, y, radius, apply, safehouses, username)
 	x, y, radius = areaOf("removegrounditems", x, y, radius, username)
 	apply = apply == "1"
 	safehouses = safehouses == "1"
-	local found, removed, kept = 0, 0, 0
+	local found, removed, kept, raised = 0, 0, 0, 0
 	local loaded = eachSquare(x, y, radius, function(sq)
 		local objects = sq:getWorldObjects()
 		local count = objects:size()
@@ -545,20 +557,40 @@ local function removeGroundItems(x, y, radius, apply, safehouses, username)
 			kept = kept + count
 			return
 		end
-		found = found + count
-		if not apply then return end
+		-- backwards: removing takes the object out of this list
 		for i = count - 1, 0, -1 do
 			local object = objects:get(i)
-			sq:transmitRemoveItemFromSquare(object)
-			-- as the tool does after it: nothing left behind on the square the server has
-			try(function() object:removeFromWorld() end)
-			try(function() object:removeFromSquare() end)
-			try(function() object:setSquare(nil) end)
-			removed = removed + 1
+			-- on the floor only when the game says so: a height that can't be read is not a reason to delete
+			local height = try(function() return object:getOffZ() end)
+			if height and height < 0.01 then
+				found = found + 1
+				if apply then
+					sq:transmitRemoveItemFromSquare(object)
+					-- as the tool does after it: nothing left behind on the square the server has
+					try(function() object:removeFromWorld() end)
+					try(function() object:removeFromSquare() end)
+					try(function() object:setSquare(nil) end)
+					removed = removed + 1
+				end
+			else
+				raised = raised + 1
+			end
 		end
 	end)
 	if apply then audit("removed " .. removed .. " items on the ground within " .. radius .. " squares of " .. x .. ", " .. y) end
-	return { found = found, removed = removed, inSafehouses = kept, loaded = loaded, radius = radius }
+	return { found = found, removed = removed, inSafehouses = kept, onFurniture = raised, loaded = loaded, radius = radius }
+end
+
+-- a fire to put out: not the flame of a lit campfire or the like, which is an IsoFire too but a
+-- permanent one (as FireFighting.isSquareToExtinguish in the game's own Lua)
+local function isBurning(sq)
+	if not sq:haveFire() then return false end
+	local objects = sq:getObjects()
+	for i = 0, objects:size() - 1 do
+		local object = objects:get(i)
+		if instanceof(object, "IsoFire") and not object:isPermanent() then return true end
+	end
+	return false
 end
 
 -- stopfires <x> <y> <radius> [username]: stopFire(square) of the game, which on a server puts the
@@ -567,7 +599,7 @@ local function stopFires(x, y, radius, username)
 	x, y, radius = areaOf("stopfires", x, y, radius, username)
 	local stopped = 0
 	local loaded = eachSquare(x, y, radius, function(sq)
-		if sq:haveFire() then
+		if isBurning(sq) then
 			stopFire(sq)
 			stopped = stopped + 1
 		end
@@ -584,9 +616,14 @@ local function listSafehouses()
 	for i = 0, list:size() - 1 do
 		local s = list:get(i)
 		local members = array()
+		local owner = try(function() return s:getOwner() end)
 		local players = try(function() return s:getPlayers() end)
 		if players then
-			for m = 0, players:size() - 1 do members[#members + 1] = tostring(players:get(m)) end
+			for m = 0, players:size() - 1 do
+				-- the game keeps the owner in this list too (SafeHouse's constructor adds them)
+				local name = tostring(players:get(m))
+				if name ~= owner then members[#members + 1] = name end
+			end
 		end
 		result[#result + 1] = {
 			-- as a string: an id for the remove action, not a number to compute with
@@ -619,8 +656,9 @@ local function removeSafehouse(id, owner)
 		error("safehouse " .. tostring(id) .. " now belongs to " .. tostring(safe:getOwner()) .. ", not " .. owner .. ": refresh the list")
 	end
 	local name = tostring(safe:getTitle()) .. " of " .. tostring(safe:getOwner()) .. " at " .. tostring(safe:getX()) .. ", " .. tostring(safe:getY())
+	-- hitPoint removes it when its hit points plus one equal the option, whatever the option is (0 too)
 	local last = try(function() return getServerOptions():getInteger("WarSafehouseHitPoints") end)
-	if last and last >= 1 then
+	if last then
 		safe:setHitPoints(last - 1)
 		SafeHouse.hitPoint(id)
 	end
@@ -694,30 +732,52 @@ end
 -- ---- time and keys (bridge v7) ----
 
 -- settime <hour>: 0 to 24 with decimals (7.5 = 07:30). The clock skips forward to the next time it is
--- that hour, as if the hours in between had passed: the game has no way back (GameTime counts the age
--- of the world in nights that begin at 7:00, plus the time of day, so a clock set back would make the
--- world younger). The server sends its clock to the clients every ten seconds.
+-- that hour, as if the hours in between had passed: the game has no way back. GameTime counts the age
+-- of the world as its nights, each beginning at 7:00, plus the time of day, so a clock set back would
+-- make the world younger; and it turns the calendar itself when the time of day reaches 24. The
+-- server sends its clock to the clients every ten seconds.
+
+-- a night passed by the skip that is counted only once GameTime.update has turned the day (see poll):
+-- counted before, the world would be a day too old for the tick in between
+local nightToCount = false
+
 local function setTime(hour)
 	hour = tonumber(hour)
-	if not hour or hour < 0 or hour >= 24 then error("settime needs an hour from 0 to 24") end
+	-- written this way round so that "nan" fails too
+	if not hour or not (hour >= 0 and hour < 24) then error("settime needs an hour from 0 to 24") end
+	-- to the minute: SpiffoCON sends the hour with decimals (8:20 is 8.333333)
+	local minutes = math.min(1439, math.floor(hour * 60 + 0.5))
+	hour = minutes / 60
 	-- at 7:00 sharp the game itself would count the new night again on its next tick: a moment after it
-	if math.abs(hour - 7) < 0.001 then hour = 7.001 end
+	if minutes == 420 then hour = 7.001 end
 	local t = getGameTime()
 	local now = t:getTimeOfDay()
+	if now >= 24 or nightToCount then error("the clock is still turning from the last change: try again in a moment") end
 	local skipped = hour - now
 	if skipped <= 0 then skipped = skipped + 24 end
+	-- a time a few minutes behind the clock would skip a whole day (and the clients, who only see their
+	-- clock go on, would not turn their calendar): surely not what was meant
+	if skipped > 23.5 then
+		local nowMinutes = math.floor(now * 60 + 0.5)
+		error(string.format("it is %02d:%02d in game: that would skip almost a whole day. Choose a time at least half an hour from now",
+			math.floor(nowMinutes / 60), nowMinutes % 60))
+	end
+	local tomorrow = now + skipped >= 24
 	-- the night that begins at 7:00, if the skip passes it (the game counts it only as its own clock ticks past)
 	if (now <= 7 and now + skipped > 7) or (now > 7 and now + skipped > 31) then
-		t:setNightsSurvived(t:getNightsSurvived() + 1)
+		if now > 7 then
+			nightToCount = true
+		else
+			t:setNightsSurvived(t:getNightsSurvived() + 1)
+		end
 	end
 	-- past midnight: 24 more, and GameTime.update turns the calendar (and fires EveryDays) on its next tick
-	local tomorrow = now + skipped >= 24
 	t:setTimeOfDay(tomorrow and hour + 24 or hour)
-	audit("time of day set to " .. string.format("%02d:%02d", math.floor(hour), math.floor((hour - math.floor(hour)) * 60))
+	audit("time of day set to " .. string.format("%02d:%02d", math.floor(minutes / 60), minutes % 60)
 		.. (tomorrow and " of the next day" or "") .. ": " .. string.format("%.1f", skipped) .. " hours skipped")
 	local w = world()
-	w.hour = math.floor(hour)
-	w.minute = math.floor((hour - math.floor(hour)) * 60)
+	w.hour = math.floor(minutes / 60)
+	w.minute = minutes % 60
 	w.skippedHours = round(skipped, 0.01)
 	return w
 end
@@ -815,6 +875,17 @@ local function handle(seq, requests)
 end
 
 local function poll()
+	-- every tick, right after GameTime.update (OnTick comes after it): the night a time skip left to
+	-- count, as soon as the game has turned the day
+	if nightToCount then
+		pcall(function()
+			local t = getGameTime()
+			if t:getTimeOfDay() < 24 then
+				nightToCount = false
+				t:setNightsSurvived(t:getNightsSurvived() + 1)
+			end
+		end)
+	end
 	local now = getTimestampMs()
 	if now < nextPoll then return end
 	nextPoll = now + POLL_MS

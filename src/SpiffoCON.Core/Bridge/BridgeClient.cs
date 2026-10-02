@@ -369,7 +369,7 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     /// has no way back. Returns the world after it, with <see cref="BridgeWorld.SkippedHours"/>.
     /// </summary>
     public async Task<BridgeWorld> SetTimeAsync(double hour) =>
-        (await SendAsync("settime", hour.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false))
+        (await SendAsync("settime", hour.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false))
             .Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld();
 
     /// <summary>Puts a key of the vehicle in the player's inventory. Returns the key's name.</summary>
@@ -524,6 +524,9 @@ public sealed record BridgeGroundItems
 
     /// <summary>Items left because they are inside a safehouse.</summary>
     public int InSafehouses { get; init; }
+
+    /// <summary>Items left because they are not on the floor: put on a table, a shelf, a counter.</summary>
+    public int OnFurniture { get; init; }
 
     /// <summary>Ground squares of the area the server had loaded (none: nobody is near).</summary>
     public int Loaded { get; init; }

@@ -421,17 +421,29 @@ public sealed partial class EventsViewModel : ObservableObject
             WeatherResult = notNow;
             return;
         }
-        // the game's clock only goes forward: to the next time it is that hour
+        if (IsSettingWeather)
+            return;
+        // the game's clock only goes forward, to the next time it is that hour: how far that is depends on
+        // the time it is now, read now (the last refresh may be minutes old, and a few game minutes past the
+        // hour asked for means a whole day)
         string skip = "";
-        if (Bridge.World is { Hour: { } nowHour, Minute: { } nowMinute })
+        if (await Bridge.ReadWorldAsync() is { Hour: { } nowHour, Minute: { } nowMinute })
         {
             double hours = hour - (nowHour + nowMinute / 60.0);
-            if (hours <= 0)
+            bool nextDay = hours <= 0;
+            if (nextDay)
                 hours += 24;
-            skip = $" It is {nowHour:00}:{nowMinute:00} in game: about {hours:0.#} hour{(Math.Round(hours, 1) == 1 ? "" : "s")} pass"
-                + (hour < nowHour + nowMinute / 60.0 ? ", into the next day." : ".");
+            // the bridge refuses it too: a time just behind the clock is a slip, not a wish for tomorrow
+            if (hours > 23.5)
+            {
+                WeatherResult = $"It is {nowHour:00}:{nowMinute:00} in game, and the clock can only skip forward: {time} would be almost a whole day away. "
+                    + "Choose a time at least half an hour from now.";
+                return;
+            }
+            skip = $" It is {nowHour:00}:{nowMinute:00} in game: about {(hours < 1 ? $"{Math.Round(hours * 60):0} minutes" : $"{hours:0.#} hours")} pass"
+                + (nextDay ? ", into the next day." : ".");
         }
-        if (IsSettingWeather || _main.Confirm?.Invoke($"Skip forward to {time} for everyone?\n\n"
+        if (_main.Confirm?.Invoke($"Skip forward to {time} for everyone?\n\n"
                 + "The game's clock can't go back, so it jumps to the next time it is that hour." + skip
                 + " The world gets that much older, and with it what the game ages by its clock (food, for one). Players see it within ten seconds.") != true)
             return;

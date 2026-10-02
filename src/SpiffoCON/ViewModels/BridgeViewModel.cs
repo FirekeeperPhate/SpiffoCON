@@ -160,6 +160,10 @@ public sealed partial class BridgeViewModel : ObservableObject
         _failures = 0;
         _retryAt = default;
         _unanswered = false;
+        // what the previous folder or server said is not this one's: not its version (a refresh in flight
+        // would ask an older bridge for what it does not know), not its safehouses
+        BridgeVersion = 0;
+        Safehouses.Clear();
         _client = new BridgeClient(files);
         Source = files.Description;
         StatusText = "Asking the bridge...";
@@ -509,9 +513,18 @@ public sealed partial class BridgeViewModel : ObservableObject
     /// <summary>Weather overrides arrived with bridge v5.</summary>
     public bool CanSetWeather => IsConnected && BridgeVersion >= 5;
 
-    partial void OnIsConnectedChanged(bool value) => OnPropertyChanged(nameof(CanSetWeather));
+    /// <summary>The time of day arrived with bridge v7.</summary>
+    public bool CanSetTime => IsConnected && BridgeVersion >= 7;
 
-    partial void OnBridgeVersionChanged(int value) => OnPropertyChanged(nameof(CanSetWeather));
+    partial void OnIsConnectedChanged(bool value) => OnBridgeAbilitiesChanged();
+
+    partial void OnBridgeVersionChanged(int value) => OnBridgeAbilitiesChanged();
+
+    void OnBridgeAbilitiesChanged()
+    {
+        OnPropertyChanged(nameof(CanSetWeather));
+        OnPropertyChanged(nameof(CanSetTime));
+    }
 
     /// <summary>Sets (or with <paramref name="reset"/> gives back to the game) the weather; null when it worked, else why not.</summary>
     internal async Task<string?> SetWeatherAsync(IReadOnlyList<(BridgeClient.ClimateSetting Setting, double? Value)> settings, bool reset)
@@ -558,7 +571,16 @@ public sealed partial class BridgeViewModel : ObservableObject
         try
         {
             var count = await _client!.RemoveGroundItemsAsync(x, y, radius, apply: false, safehouses: false, aroundPlayer);
-            string kept = count.InSafehouses > 0 ? $" {count.InSafehouses} more are inside safehouses and stay." : "";
+            static string Left(BridgeGroundItems r, string verb)
+            {
+                var parts = new List<string>();
+                if (r.InSafehouses > 0)
+                    parts.Add($"{r.InSafehouses} inside safehouses");
+                if (r.OnFurniture > 0)
+                    parts.Add($"{r.OnFurniture} placed on tables or shelves");
+                return parts.Count > 0 ? $" {string.Join(" and ", parts)} {verb}." : "";
+            }
+            string kept = Left(count, "stay");
             if (count.Loaded == 0)
                 return $"No items removed: the area around {where} {NotLoaded}.";
             if (count.Found == 0)
@@ -567,8 +589,7 @@ public sealed partial class BridgeViewModel : ObservableObject
                     + "On every floor. Furniture and what is inside containers stay." + kept + " It can't be undone.") != true)
                 return null;
             var done = await _client!.RemoveGroundItemsAsync(x, y, radius, apply: true, safehouses: false, aroundPlayer);
-            return $"{done.Removed} item{(done.Removed == 1 ? "" : "s")} on the ground removed within {radius} squares of {where}."
-                + (done.InSafehouses > 0 ? $" {done.InSafehouses} inside safehouses left." : "");
+            return $"{done.Removed} item{(done.Removed == 1 ? "" : "s")} on the ground removed within {radius} squares of {where}." + Left(done, "left");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -617,7 +638,9 @@ public sealed partial class BridgeViewModel : ObservableObject
         try
         {
             bool synced = await _client!.RemoveSafehouseAsync(s.Id, s.Owner);
-            Safehouses.Remove(s);
+            // by id: a refresh meanwhile refilled the list with other instances
+            foreach (var gone in Safehouses.Where(x => x.Id == s.Id && x.Owner == s.Owner).ToList())
+                Safehouses.Remove(gone);
             return $"Safehouse of {s.Owner} removed." + (synced ? "" : " The server could not tell the players online: they see it gone at their next login.");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -626,7 +649,25 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
-    /// <summary>Sets the time of day for everyone (the date stays); null when it worked, else why not.</summary>
+    /// <summary>The world as it is now (the time of day, for one), or null when the bridge can't say.</summary>
+    internal async Task<BridgeWorld?> ReadWorldAsync()
+    {
+        if (_client is not { } client || !IsConnected)
+            return null;
+        try
+        {
+            var world = await client.WorldAsync();
+            if (ReferenceEquals(client, _client))
+                World = world;
+            return world;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Skips the clock forward to an hour of the day, for everyone; null when it worked, else why not.</summary>
     internal async Task<string?> SetTimeAsync(double hour)
     {
         if (V7Problem is { } problem)
@@ -659,7 +700,9 @@ public sealed partial class BridgeViewModel : ObservableObject
             return Task.CompletedTask;
         }
         return ActAsync($"Give {player.Username} a key of {v.Script} #{id}?",
-            async c => $"{player.Username} got {await c.GiveVehicleKeyAsync(id, v.Script, player.Username) ?? "the key"} ({v.Script} #{id}).");
+            async c => $"{player.Username} got {await c.GiveVehicleKeyAsync(id, v.Script, player.Username) ?? "the key"} ({v.Script} #{id}).",
+            // the key shows in the inventory on screen, which is this player's
+            reloadInventory: true);
     }
 
     // ---- the selected player's sheet (bridge v7) ----

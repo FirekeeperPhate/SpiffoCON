@@ -41,6 +41,7 @@ public sealed partial class MapViewModel : ObservableObject
         _steamCmdWorkshop = Path.Combine(dataFolder, "steamcmd", "steamapps", "workshop", "content", "108600");
         _main.PropertyChanged += OnMainChanged;
         Bridge.Players.CollectionChanged += OnPlayersChanged;
+        Bridge.Safehouses.CollectionChanged += OnSafehousesChanged;
         Bridge.PropertyChanged += OnBridgeChanged;
     }
 
@@ -84,7 +85,10 @@ public sealed partial class MapViewModel : ObservableObject
     /// <summary>The satellite view was asked for, but its images (pyramid.zip) are not here yet.</summary>
     public bool CanDownloadSatellite => Satellite && Scene is not null && Scene.Satellite is null;
 
-    public string TeleportHereText => SelectedPlayer is { } p ? $"Teleport {p} here" : "Teleport here (select a player first)";
+    public string TeleportHereText => SelectedPlayer is { } p ? $"Teleport {MenuText(p)} here" : "Teleport here (select a player first)";
+
+    /// <summary>A name in a menu header: an underscore would be taken for the access key and not shown.</summary>
+    static string MenuText(string? name) => (name ?? "").Replace("_", "__");
 
     partial void OnSatelliteChanged(bool value)
     {
@@ -439,17 +443,22 @@ public sealed partial class MapViewModel : ObservableObject
 
     // ---- safehouses (bridge v7) ----
 
-    [ObservableProperty] private bool showSafehouses = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RemoveSafehouseText), nameof(HasContextSafehouse))]
+    private bool showSafehouses = true;
 
-    /// <summary>The safehouse under the right-clicked square.</summary>
-    BridgeSafehouse? ContextSafehouse => Bridge.Safehouses.FirstOrDefault(s => s is { X: { } x, Y: { } y, W: { } w, H: { } h }
+    /// <summary>The safehouse under the right-clicked square (none while they are hidden).</summary>
+    BridgeSafehouse? ContextSafehouse => !ShowSafehouses ? null : Bridge.Safehouses.FirstOrDefault(s => s is { X: { } x, Y: { } y, W: { } w, H: { } h }
         && ContextSquare.X >= x && ContextSquare.X < x + w && ContextSquare.Y >= y && ContextSquare.Y < y + h);
 
-    public string RemoveSafehouseText => ContextSafehouse is { } s ? $"Remove the safehouse of {s.Owner}…" : "Remove the safehouse here (there is none)";
+    public string RemoveSafehouseText => ContextSafehouse is { } s ? $"Remove the safehouse of {MenuText(s.Owner)}…" : "Remove the safehouse here (there is none)";
 
     public bool HasContextSafehouse => ContextSafehouse is not null;
 
-    partial void OnContextSquareChanged(Point value)
+    partial void OnContextSquareChanged(Point value) => OnSafehousesChanged(null, null);
+
+    // also when the list changes under the same square (removed, or read for the first time)
+    void OnSafehousesChanged(object? sender, NotifyCollectionChangedEventArgs? e)
     {
         OnPropertyChanged(nameof(RemoveSafehouseText));
         OnPropertyChanged(nameof(HasContextSafehouse));
@@ -545,6 +554,7 @@ public sealed partial class MapViewModel : ObservableObject
         _closed = true;
         _work?.Cancel();
         Bridge.Players.CollectionChanged -= OnPlayersChanged;
+        Bridge.Safehouses.CollectionChanged -= OnSafehousesChanged;
         Bridge.PropertyChanged -= OnBridgeChanged;
         _main.PropertyChanged -= OnMainChanged;
         Scene?.Dispose();

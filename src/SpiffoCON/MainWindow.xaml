@@ -601,7 +601,7 @@
                                         ToolTip="Every setting back to the game (the settings are saved with the world until then)" />
                             </WrapPanel>
                             <!-- time of day: bridge v7 -->
-                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0" IsEnabled="{Binding Bridge.CanSetTime}">
                                 <TextBlock Text="Time of day" VerticalAlignment="Center" />
                                 <TextBox Text="{Binding TimeOfDay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0"
                                          ToolTip="Hours and minutes, like 8:30 or 21:00" />
@@ -1505,11 +1505,11 @@
                                         <MenuItem Header="{Binding RemoveCorpsesText}" Command="{Binding RemoveCorpsesCommand}"
                                                   ToolTip="Zombie corpses on every floor, through the bridge (v6); the corpses of players and animals stay" />
                                         <MenuItem Header="{Binding RemoveGroundItemsText}" Command="{Binding RemoveGroundItemsCommand}"
-                                                  ToolTip="Items lying on the ground, on every floor (bridge v7): counted first, then asked. Furniture, containers and safehouses are not touched" />
+                                                  ToolTip="Items lying on the floor, on every floor (bridge v7): counted first, then asked. What is in containers, on tables and shelves, or inside a safehouse is not touched" />
                                         <MenuItem Header="{Binding StopFiresText}" Command="{Binding StopFiresCommand}"
-                                                  ToolTip="Every fire in the area, on every floor (bridge v7)" />
+                                                  ToolTip="Every fire in the area, on every floor (bridge v7); lit campfires are left" />
                                         <Separator />
-                                        <MenuItem Header="{Binding RemoveSafehouseText}" Command="{Binding RemoveSafehouseCommand}" IsEnabled="{Binding HasContextSafehouse}"
+                                        <MenuItem Header="{Binding RemoveSafehouseText}" Command="{Binding RemoveSafehouseCommand}" IsEnabled="{Binding HasContextSafehouse}" ToolTipService.ShowOnDisabled="True"
                                                   ToolTip="Right-click inside a safehouse (the green areas, bridge v7). What is in it stays, but it is no longer protected" />
                                     </ContextMenu>
                                 </controls:WorldMapView.ContextMenu>
