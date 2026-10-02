@@ -25,6 +25,7 @@ public sealed partial class BridgeViewModel : ObservableObject
     {
         _main = main;
         _timer.Tick += async (_, _) => await RefreshAsync();
+        _main.OnlinePlayersChanged += (_, _) => DropOfflinePlayers();
         WorkshopId = BridgeMod.ReadWorkshopId(BridgeMod.DefaultWorkshopFolder) ?? BridgeMod.PublishedWorkshopId;
     }
 
@@ -224,12 +225,35 @@ public sealed partial class BridgeViewModel : ObservableObject
             _failures++;
             var wait = TimeSpan.FromSeconds(Math.Min(300, 15 * Math.Pow(2, _failures - 1)));
             _retryAt = DateTime.UtcNow + wait;
-            StatusText = ex.Message + (_failures > 1 ? $" (trying again in {wait.TotalSeconds:0} s)" : "");
+            StatusText = ex.Message + (_failures > 1 ? $" (trying again in {wait.TotalSeconds:0} s)" : "")
+                + (_main.OnlinePlayers.Count == 0 ? " Nobody is online: a server that pauses when empty (PauseEmpty) runs no mods, the bridge answers again when someone joins." : "");
+            // the last answer is not the present any more: nothing, rather than players where they were
+            SelectedPlayer = null;
+            Players.Clear();
+            Vehicles.Clear();
         }
         finally
         {
             _busy = false;
         }
+    }
+
+    /// <summary>
+    /// The server's own list (RCON) says who is online: a player who left goes from the bridge's list right
+    /// away, also when the bridge can't say so (it does not answer on a server paused because it is empty).
+    /// </summary>
+    void DropOfflinePlayers()
+    {
+        var online = _main.OnlinePlayers.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var gone in Players.Where(p => !online.Contains(p.Username)).ToList())
+        {
+            if (SelectedPlayer == gone)
+                SelectedPlayer = null;
+            Players.Remove(gone);
+        }
+        // nobody online: no area is loaded, so no vehicle is either
+        if (online.Count == 0)
+            Vehicles.Clear();
     }
 
     int _failures;
