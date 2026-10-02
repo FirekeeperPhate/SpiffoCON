@@ -260,6 +260,32 @@ public partial class MainWindow : Window
     }
 
     // the map is read the first time its tab is shown (lists and combo boxes inside raise this event too)
+    /// <summary>The least and the most space on each side of a tab's title (on top of the theme's own 6 px).</summary>
+    const double TightTabPadding = -3, WideTabPadding = 10;
+
+    void Tabs_SizeChanged(object sender, SizeChangedEventArgs e) => SpaceTabs();
+
+    /// <summary>
+    /// Spreads the tab titles over the room there is: well apart when the tabs have the window, closer
+    /// when the connection panel is open or the window is narrow, always on one row.
+    /// </summary>
+    void SpaceTabs()
+    {
+        var items = Tabs.Items.OfType<TabItem>().ToList();
+        if (items.Count == 0 || Tabs.ActualWidth <= 0)
+            return;
+        double current = items[0].Padding.Left;
+        // what the titles take by themselves, without the space this method gives them
+        double bare = items.Sum(i => i.DesiredSize.Width) - 2 * current * items.Count;
+        // a little room to spare: the selected title is bold, a few pixels wider
+        double each = Math.Floor((Tabs.ActualWidth - bare - 12) / (2 * items.Count));
+        each = Math.Clamp(each, TightTabPadding, WideTabPadding);
+        if (each == current)
+            return;
+        foreach (var item in items)
+            item.Padding = new Thickness(each, 0, each, 0);
+    }
+
     void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.OriginalSource == Tabs && Tabs.SelectedItem == MapTab)

@@ -236,12 +236,18 @@
                 Visibility="{Binding IsSessionActive, Converter={StaticResource BoolToVisibility}}" />
 
         <!-- Work area -->
-        <TabControl Grid.Column="2" Margin="0,8,0,8" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
+        <TabControl Grid.Column="2" Margin="0,8,0,8" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged" SizeChanged="Tabs_SizeChanged">
             <TabControl.Resources>
-                <!-- the Fluent tab border already has 6 px each side: a little less keeps the 14 tabs on one row
-                     with the connection panel open, at the default window size -->
+                <!-- the space between the headers follows the room there is (SpaceTabs in the code-behind): wide
+                     when the tabs have the window, down to this when the connection panel is open, so the 14
+                     tabs stay on one row (the Fluent tab border already has 6 px each side) -->
                 <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
                     <Setter Property="Padding" Value="-3,0" />
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                        </Trigger>
+                    </Style.Triggers>
                 </Style>
             </TabControl.Resources>
             <TabItem Header="Console">
