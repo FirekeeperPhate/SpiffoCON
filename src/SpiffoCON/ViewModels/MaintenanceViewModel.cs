@@ -243,9 +243,10 @@ public sealed partial class MaintenanceViewModel : ObservableObject
         if (_ticking || !IsCountingDown)
             return;
         _ticking = true;
+        long started = Environment.TickCount64;
         try
         {
-            long now = Environment.TickCount64;
+            long now = started;
             // the PC slept (or stalled) through part of the countdown: the players' last warning may be
             // long gone, so don't quit on them now
             if (now - _lastTickTicks > 20_000)
@@ -274,8 +275,11 @@ public sealed partial class MaintenanceViewModel : ObservableObject
         }
         finally
         {
-            // a warning that took long to send (a server stalled by a save) is not the PC sleeping
-            _lastTickTicks = Environment.TickCount64;
+            // a warning that took long to send (a server stalled by a save) is not the PC sleeping; a tick
+            // longer than any command can take is, and the next tick sees it
+            long ended = Environment.TickCount64;
+            if (ended - started < 45_000)
+                _lastTickTicks = ended;
             _ticking = false;
         }
     }
@@ -319,10 +323,10 @@ public sealed partial class MaintenanceViewModel : ObservableObject
             }
             RestartStatus = saved is null ? "save failed (see the console); quitting anyway..." : "Quitting...";
             _main.ExpectShutdown();
-            var quit = await _main.RunAsync("quit");
+            var (quit, notSent) = await _main.RunTrackedAsync("quit");
             if (_closed || !_main.IsSessionActive)
                 return;
-            if (quit is null && _main.LastCommandNotSent)
+            if (quit is null && notSent)
             {
                 // the link went down first: nothing reached the server, so its return is not waited for
                 _main.EndExpectedShutdown();

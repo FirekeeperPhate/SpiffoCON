@@ -675,16 +675,19 @@ public sealed partial class MainViewModel : ObservableObject
     /// Runs a command, logging it and its reply; null when it failed (the error is logged).
     /// <paramref name="quiet"/> logs only failures (background polling).
     /// </summary>
-    /// <summary>The last command failed before it was sent (no connection): the server never saw it.</summary>
-    internal bool LastCommandNotSent { get; private set; }
+    internal async Task<string?> RunAsync(string command, bool logReply = true, bool quiet = false) =>
+        (await RunTrackedAsync(command, logReply, quiet)).Reply;
 
-    internal async Task<string?> RunAsync(string command, bool logReply = true, bool quiet = false)
+    /// <summary>
+    /// As <see cref="RunAsync"/>, also saying whether a command that failed never left (no connection, so
+    /// the server never saw it). Per call: polls and other commands run in between.
+    /// </summary>
+    internal async Task<(string? Reply, bool NotSent)> RunTrackedAsync(string command, bool logReply = true, bool quiet = false)
     {
         if (!quiet)
             Log(ConsoleKind.Command, "> " + command);
         try
         {
-            LastCommandNotSent = false;
             var reply = await _rcon.ExecuteAsync(command);
             _lastQuietFailure = null;
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
@@ -703,16 +706,15 @@ public sealed partial class MainViewModel : ObservableObject
                 }
             }
             if (quiet)
-                return reply;
+                return (reply, false);
             if (logReply)
                 Log(ConsoleKind.Reply, reply.Length == 0 ? "(empty reply)" : reply.TrimEnd());
             else
                 Log(ConsoleKind.Info, $"({reply.ReplaceLineEndings("\n").Split('\n').Length} lines received)");
-            return reply;
+            return (reply, false);
         }
         catch (RconException ex)
         {
-            LastCommandNotSent = ex.CommandNotSent;
             // a background poll failing the same way every 30 s (server down for hours) is logged once
             var line = (quiet ? command + ": " : "") + ex.Message;
             if (!quiet || line != _lastQuietFailure)
@@ -731,12 +733,12 @@ public sealed partial class MainViewModel : ObservableObject
                 _knownPlayers = null;
                 StatusText = "Disconnected: the password was rejected";
             }
-            return null;
+            return (null, ex.CommandNotSent);
         }
         catch (ObjectDisposedException)
         {
             // the window is closing (or the server was switched) while a command was on its way
-            return null;
+            return (null, true);
         }
     }
 

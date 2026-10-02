@@ -98,6 +98,18 @@ public sealed class LogTailTests : IDisposable
     }
 
     [Fact]
+    public async Task The_first_file_of_a_folder_followed_while_empty_is_news()
+    {
+        var tail = new LogTail(new LocalLogFolder(_dir), "chat");
+        Assert.Empty(await tail.PollAsync());
+
+        Append("2026-09-28_12-25_chat.txt", "[28-09-26 12:30:00.000][info] Got message:ChatMessage{chat=General, author='rj', text='first'}.\r\n");
+        var chat = Assert.Single(await tail.PollAsync());
+        Assert.Equal("first", chat.Text);
+        Assert.False(tail.LastPollWasBacklog);
+    }
+
+    [Fact]
     public async Task Starts_near_the_end_of_a_big_file_without_a_cut_line()
     {
         var sb = new StringBuilder();

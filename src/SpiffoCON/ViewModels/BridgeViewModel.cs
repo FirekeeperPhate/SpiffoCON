@@ -159,10 +159,14 @@ public sealed partial class BridgeViewModel : ObservableObject
         _client?.Files.Dispose();
         _failures = 0;
         _retryAt = default;
+        _unanswered = false;
         _client = new BridgeClient(files);
         Source = files.Description;
         StatusText = "Asking the bridge...";
         await PingAsync(_client);
+        // someone is listed already (connecting while the first player loads in): no change of the list will come
+        if (_unanswered && _main.OnlinePlayers.Count > 0)
+            _ = WakeAsync(justAsked: true);
     }
 
     /// <summary>The bridge's files were reached but it did not answer (a paused, empty server): asked again when someone joins.</summary>
@@ -191,21 +195,24 @@ public sealed partial class BridgeViewModel : ObservableObject
             IsConnected = false;
             // no reply is what a paused server gives; a refused password or a missing folder is not asked again
             _unanswered = ex is BridgeException;
-            StatusText = ex.Message + (_unanswered && _main.OnlinePlayers.Count == 0
+            // the online list is RCON's: without a session nothing tells when someone joins
+            StatusText = ex.Message + (_unanswered && _main.IsSessionActive && _main.OnlinePlayers.Count == 0
                 ? " Nobody is online: SpiffoCON asks again by itself when someone joins." : "");
         }
         UpdateTimer();
     }
 
-    bool _waking;
+    /// <summary>The connection a wake is retrying for (a newer connection gets its own).</summary>
+    BridgeClient? _waking;
 
     /// <summary>
     /// Someone is online, so the server runs again: a bridge that did not answer (or whose refreshes were
-    /// failing) is asked now. A player still loading keeps the server paused: a few tries, 20 s apart.
+    /// failing) is asked now. A player still loading keeps the server paused: tries 20 s apart, then every
+    /// two minutes for a while (a server without the mod is not asked for ever).
     /// </summary>
-    async Task WakeAsync()
+    async Task WakeAsync(bool justAsked = false)
     {
-        if (_waking || _closed || _client is not { } client)
+        if (_closed || _client is not { } client || ReferenceEquals(_waking, client))
             return;
         if (IsConnected)
         {
@@ -220,13 +227,13 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
         if (!_unanswered)
             return;
-        _waking = true;
+        _waking = client;
         try
         {
-            for (int attempt = 0; attempt < 8; attempt++)
+            for (int attempt = justAsked ? 1 : 0; attempt < 18; attempt++)
             {
                 if (attempt > 0)
-                    await Task.Delay(TimeSpan.FromSeconds(20));
+                    await Task.Delay(TimeSpan.FromSeconds(attempt <= 8 ? 20 : 120));
                 if (_closed || !ReferenceEquals(client, _client) || IsConnected || !_unanswered || _main.OnlinePlayers.Count == 0)
                     return;
                 StatusText = "Someone is online: asking the bridge again...";
@@ -237,7 +244,8 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
         finally
         {
-            _waking = false;
+            if (ReferenceEquals(_waking, client))
+                _waking = null;
         }
     }
 
@@ -315,6 +323,9 @@ public sealed partial class BridgeViewModel : ObservableObject
     /// </summary>
     void DropOfflinePlayers()
     {
+        // the list is emptied also when the RCON session ends: that says nothing about who is online
+        if (!_main.IsSessionActive)
+            return;
         var online = _main.OnlinePlayers.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var gone in Players.Where(p => !online.Contains(p.Username)).ToList())
         {
@@ -509,7 +520,7 @@ public sealed partial class BridgeViewModel : ObservableObject
     /// Removes the zombie corpses within <paramref name="radius"/> squares of a spot, on every floor (players'
     /// and animals' corpses stay), after asking. Returns what happened, to show where it was asked.
     /// </summary>
-    internal async Task<string?> RemoveCorpsesAsync(int x, int y, int radius, string where)
+    internal async Task<string?> RemoveCorpsesAsync(int x, int y, int radius, string where, string? aroundPlayer = null)
     {
         if (CorpsesProblem is { } problem)
             return problem;
@@ -518,7 +529,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             return null;
         try
         {
-            var (removed, loaded) = await _client!.RemoveCorpsesAsync(x, y, radius);
+            var (removed, loaded) = await _client!.RemoveCorpsesAsync(x, y, radius, aroundPlayer);
             // the server only has the squares around players in memory
             return loaded == 0 ? $"No corpses removed: the area around {where} is not loaded on the server (it only keeps the surroundings of players)."
                 : removed == 0 ? $"No zombie corpses within {radius} squares of {where}."

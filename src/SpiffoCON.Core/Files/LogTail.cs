@@ -43,6 +43,7 @@ public sealed partial class LogTail(ILogFolder folder, string type)
     public TimeSpan FreshFileWindow { get; init; } = TimeSpan.FromMinutes(1);
 
     DateTime _lastPoll = DateTime.MinValue;
+    bool _sawNoFile;
 
     long _offset;
     byte[] _partial = [];
@@ -74,7 +75,11 @@ public sealed partial class LogTail(ILogFolder folder, string type)
         var sinceLastPoll = DateTime.Now - _lastPoll;
         _lastPoll = DateTime.Now;
         if (newest is null)
+        {
+            // followed since before the first file: when it comes, it is news (a fresh server's first chat line)
+            _sawNoFile = true;
             return lines;
+        }
 
         if (newest.Name != CurrentFile)
         {
@@ -84,7 +89,7 @@ public sealed partial class LogTail(ILogFolder folder, string type)
             CurrentFile = newest.Name;
             // a restart seen live: the new file is news, from its first line (mod errors at start-up);
             // after a long gap it was written while nobody watched: only its tail, as the past
-            LastPollWasBacklog = first || sinceLastPoll > FreshFileWindow;
+            LastPollWasBacklog = (first && !_sawNoFile) || sinceLastPoll > FreshFileWindow;
             _offset = LastPollWasBacklog ? Math.Max(0, newest.Size - InitialBytes) : 0;
             _partial = [];
             if (_offset > 0)

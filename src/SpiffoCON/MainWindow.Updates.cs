@@ -65,6 +65,10 @@ public partial class MainWindow
             if (release is not null)
                 _vm.AvailableVersion = newer ? release.Version.ToString() : null;
             _vm.IsCheckingForUpdates = false;
+            // a question was opened while GitHub was asked: not a second window over it (the answer is in
+            // the status bar's link and in the Maintenance tab)
+            if (ComponentDispatcher.IsThreadModal)
+                return;
             if (newer)
                 await OfferUpdateAsync(release!, installer);
             else if (!_closing)

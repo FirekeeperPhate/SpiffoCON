@@ -46,7 +46,10 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
     public async Task DisconnectAsync()
     {
         // a command waiting for its reply (up to the whole timeout on a server that stopped answering)
-        // fails now, so closing does not wait behind it
+        // fails now, so closing does not wait behind it; one queued behind it finds nothing to
+        // reconnect to, instead of logging in again after the user disconnected
+        _host = null;
+        _password = null;
         if (_connection is { } inFlight)
             await inFlight.DisposeAsync().ConfigureAwait(false);
         await _gate.WaitAsync().ConfigureAwait(false);
@@ -86,7 +89,15 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
                 throw;
             }
             int id = NextId();
-            await connection.SendAsync(id, RconPacket.TypeExecCommand, command, ct).ConfigureAwait(false);
+            try
+            {
+                await connection.SendAsync(id, RconPacket.TypeExecCommand, command, ct).ConfigureAwait(false);
+            }
+            catch (RconException ex)
+            {
+                ex.CommandNotSent = true;
+                throw;
+            }
 
             RconPacket? packet;
             var deadline = DateTime.UtcNow + _options.CommandTimeout;

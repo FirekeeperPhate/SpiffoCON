@@ -134,7 +134,7 @@ public sealed class PlayerActions(MainViewModel main)
     {
         if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)
             return;
-        if (await main.Bridge.RemoveCorpsesAsync(x, y, radius, info.Username) is { } result)
+        if (await main.Bridge.RemoveCorpsesAsync(x, y, radius, info.Username, aroundPlayer: info.Username) is { } result)
             main.StatusText = result;
     }
 

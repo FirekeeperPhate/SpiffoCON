@@ -441,7 +441,13 @@ end
 -- bodies" of the debug Horde Manager (IsoGridSquare.removeCorpse, which on a server also tells the
 -- clients nearby), with a real radius: in multiplayer that button clears the admin's whole loaded area.
 -- The server only has the squares near players: elsewhere nothing is loaded, so nothing is found.
-local function removeCorpses(x, y, radius)
+-- With a 4th argument, a username: around where that player is now (SpiffoCON's x and y are from its
+-- last refresh, seconds old: far behind someone driving).
+local function removeCorpses(x, y, radius, username)
+	if username and username ~= "" then
+		local p = requirePlayer(username)
+		x, y = p:getX(), p:getY()
+	end
 	x, y, radius = tonumber(x), tonumber(y), tonumber(radius)
 	if not x or not y or not radius then error("removecorpses needs x, y and a radius") end
 	x, y = math.floor(x), math.floor(y)

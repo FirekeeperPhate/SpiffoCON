@@ -315,10 +315,13 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     /// Removes the zombie corpses (not players' or animals') within a radius of a square, on every floor.
     /// Returns how many, and how many of those squares the server had loaded (none: nobody is near).
     /// </summary>
-    public async Task<(int Removed, int LoadedSquares)> RemoveCorpsesAsync(int x, int y, int radius)
+    public async Task<(int Removed, int LoadedSquares)> RemoveCorpsesAsync(int x, int y, int radius, string? aroundPlayer = null)
     {
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        var data = await SendAsync("removecorpses", x.ToString(inv), y.ToString(inv), radius.ToString(inv)).ConfigureAwait(false);
+        // with a player, the bridge uses where they are now (x and y are from the last refresh)
+        var data = await (aroundPlayer is null
+            ? SendAsync("removecorpses", x.ToString(inv), y.ToString(inv), radius.ToString(inv))
+            : SendAsync("removecorpses", x.ToString(inv), y.ToString(inv), radius.ToString(inv), aroundPlayer)).ConfigureAwait(false);
         return (data.GetProperty("removed").GetInt32(), data.TryGetProperty("loaded", out var loaded) ? loaded.GetInt32() : 0);
     }
 

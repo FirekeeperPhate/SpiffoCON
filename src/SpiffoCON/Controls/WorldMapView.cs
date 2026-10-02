@@ -166,7 +166,8 @@ public sealed class WorldMapView : FrameworkElement
         // asked before the map is there (the tab was never shown): done once it is
         if (ActualWidth <= 0 || Scene is null)
         {
-            _pendingCenter = (x, y, minScale);
+            // a later request to follow (no zoom) does not undo the zoom of the one still waiting
+            _pendingCenter = (x, y, Math.Max(minScale, _pendingCenter?.MinScale ?? 0), Environment.TickCount64);
             return;
         }
         _pendingCenter = null;
@@ -176,15 +177,20 @@ public sealed class WorldMapView : FrameworkElement
         InvalidateVisual();
     }
 
-    (double X, double Y, double MinScale)? _pendingCenter;
+    (double X, double Y, double MinScale, long Asked)? _pendingCenter;
 
     /// <summary>Set while a right-click selects a player: the map must stay under the menu about to open.</summary>
     bool _holdView;
 
     void CenterPending()
     {
-        if (_pendingCenter is { } c)
+        if (_pendingCenter is not { } c)
+            return;
+        // asked a moment ago, while the map was loading: not a click from minutes before a map download
+        if (Environment.TickCount64 - c.Asked < 60_000)
             CenterOn(c.X, c.Y, c.MinScale);
+        else if (Scene is not null && ActualWidth > 0)
+            _pendingCenter = null;
     }
 
     void ZoomAt(Point screen, double factor)

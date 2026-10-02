@@ -17,6 +17,7 @@ internal sealed class RconConnection : IAsyncDisposable
     readonly Task _readLoop;
     readonly SemaphoreSlim _writeLock = new(1, 1);
     volatile bool _disposing;
+    int _disposed;
 
     /// <summary>Raised once, from the read loop, when the connection ends without <see cref="DisposeAsync"/>.</summary>
     public event Action<RconConnection, Exception?>? Lost;
@@ -125,7 +126,8 @@ internal sealed class RconConnection : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposing)
+        // once, also when two callers race (a disconnect and a command giving up on the connection)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
         _disposing = true;
         _shutdown.Cancel();

@@ -155,7 +155,9 @@ public sealed partial class MapViewModel : ObservableObject
     {
         // each connection: the server's Map= and its mod maps are read (again: they may have changed, or
         // this may be another server)
-        if (e.PropertyName == nameof(MainViewModel.IsSessionActive) && _main.IsSessionActive && _activated && !_closed)
+        if (e.PropertyName == nameof(MainViewModel.IsSessionActive) && _main.IsSessionActive && _activated && !_closed
+            // not over a download of the map: it loads the map itself when it is done, with the server's maps
+            && !Downloading)
             _ = LoadAsync();
     }
 
@@ -304,6 +306,11 @@ public sealed partial class MapViewModel : ObservableObject
     [RelayCommand]
     private Task DownloadSatelliteAsync() => DownloadFromServerAsync(satellite: true);
 
+    /// <summary>Downloads of the map in progress (a second click starts another and cancels the first).</summary>
+    int _downloads;
+
+    bool Downloading => _downloads > 0;
+
     async Task DownloadFromServerAsync(bool satellite)
     {
         if (_main.CurrentSftpSettings() is not { } sftp)
@@ -313,6 +320,7 @@ public sealed partial class MapViewModel : ObservableObject
         }
         var ct = Restart();
         IsBusy = true;
+        _downloads++;
         var progress = new Progress<string>(s => StatusText = s);
         try
         {
@@ -343,6 +351,7 @@ public sealed partial class MapViewModel : ObservableObject
         }
         finally
         {
+            _downloads--;
             if (!ct.IsCancellationRequested)
                 IsBusy = false;
         }
