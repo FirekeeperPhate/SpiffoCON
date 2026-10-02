@@ -105,9 +105,10 @@ public static class PlayerCommands
     /// For the other player commands: their success texts vary ("User rj kicked.", "User rj is now
     /// invincible."), their failures share a few phrases taken from the server code.
     /// </summary>
-    public static CommandOutcome Interpret(string reply, string? player = null)
+    /// <param name="otherPlayer">A second name the reply echoes (teleporting one player to another).</param>
+    public static CommandOutcome Interpret(string reply, string? player = null, string? otherPlayer = null)
     {
-        if (IsError(reply, player))
+        if (IsError(reply, player, otherPlayer))
             return CommandOutcome.Failed;
         return reply.Trim().Length > 0 ? CommandOutcome.Success : CommandOutcome.Unconfirmed;
     }
@@ -123,13 +124,16 @@ public static class PlayerCommands
     /// called "InvalidSam" must not turn "User InvalidSam kicked." into a failure, and a player
     /// called "User" must not hide the "user" of "No such user".
     /// </summary>
-    static bool IsError(string reply, string? player)
+    static bool IsError(string reply, params string?[] players)
     {
-        var name = player?.Trim() ?? "";
         var names = new List<(int Start, int End)>();
-        for (int i = name.Length == 0 ? -1 : reply.IndexOf(name, StringComparison.OrdinalIgnoreCase); i >= 0;
-             i = reply.IndexOf(name, i + 1, StringComparison.OrdinalIgnoreCase))
-            names.Add((i, i + name.Length));
+        foreach (var player in players)
+        {
+            var name = player?.Trim() ?? "";
+            for (int i = name.Length == 0 ? -1 : reply.IndexOf(name, StringComparison.OrdinalIgnoreCase); i >= 0;
+                 i = reply.IndexOf(name, i + 1, StringComparison.OrdinalIgnoreCase))
+                names.Add((i, i + name.Length));
+        }
 
         foreach (var phrase in ErrorPhrases)
             for (int i = reply.IndexOf(phrase, StringComparison.OrdinalIgnoreCase); i >= 0;

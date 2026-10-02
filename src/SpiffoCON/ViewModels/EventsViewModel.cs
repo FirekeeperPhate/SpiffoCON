@@ -182,7 +182,9 @@ public sealed partial class EventsViewModel : ObservableObject
             Add("Not connected.", failed: true);
             return;
         }
+        // as chosen now: the event can be changed while the online list is read
         var e = SelectedEvent;
+        bool isHorde = IsHorde, targeted = PlayerTargeted;
         await _main.RefreshPlayersAsync(quiet: true);
         var online = _main.OnlinePlayers.ToList();
         if (online.Count == 0)
@@ -192,14 +194,14 @@ public sealed partial class EventsViewModel : ObservableObject
         }
 
         int horde = 0;
-        if (IsHorde && (!int.TryParse(HordeSize.Trim(), out horde) || horde < 1 || horde > EventCommands.MaxHorde))
+        if (isHorde && (!int.TryParse(HordeSize.Trim(), out horde) || horde < 1 || horde > EventCommands.MaxHorde))
         {
             Add($"The horde size must be 1 to {EventCommands.MaxHorde}.", failed: true);
             return;
         }
 
         List<string?> players;
-        if (!PlayerTargeted)
+        if (!targeted)
             players = [null];
         else
         {
@@ -227,7 +229,7 @@ public sealed partial class EventsViewModel : ObservableObject
             }
         }
 
-        if (IsHorde)
+        if (isHorde)
         {
             var who = players.Count == 1 ? players[0] : $"each of the {players.Count} online players";
             if (_main.Confirm?.Invoke($"Spawn {horde} zombies around {who}?") != true)
@@ -237,7 +239,7 @@ public sealed partial class EventsViewModel : ObservableObject
         foreach (var player in players)
         {
             var label = player is null ? $"{e.Name} (the server picks the player)" : $"{e.Name} on {player}";
-            if (IsHorde)
+            if (isHorde)
                 label = $"Horde of {horde} on {player}";
             await RunAsync(EventCommands.Build(e, player, horde), label);
             if (_unanswered)

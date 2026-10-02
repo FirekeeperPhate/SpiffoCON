@@ -45,6 +45,10 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
 
     public async Task DisconnectAsync()
     {
+        // a command waiting for its reply (up to the whole timeout on a server that stopped answering)
+        // fails now, so closing does not wait behind it
+        if (_connection is { } inFlight)
+            await inFlight.DisposeAsync().ConfigureAwait(false);
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -71,7 +75,16 @@ public sealed class RconClient(RconOptions? options = null) : IAsyncDisposable
         try
         {
             ThrowIfDisposed(); // closed while this command waited for the gate
-            var connection = await EnsureConnectedAsync(ct).ConfigureAwait(false);
+            RconConnection connection;
+            try
+            {
+                connection = await EnsureConnectedAsync(ct).ConfigureAwait(false);
+            }
+            catch (RconException ex)
+            {
+                ex.CommandNotSent = true;
+                throw;
+            }
             int id = NextId();
             await connection.SendAsync(id, RconPacket.TypeExecCommand, command, ct).ConfigureAwait(false);
 

@@ -675,12 +675,16 @@ public sealed partial class MainViewModel : ObservableObject
     /// Runs a command, logging it and its reply; null when it failed (the error is logged).
     /// <paramref name="quiet"/> logs only failures (background polling).
     /// </summary>
+    /// <summary>The last command failed before it was sent (no connection): the server never saw it.</summary>
+    internal bool LastCommandNotSent { get; private set; }
+
     internal async Task<string?> RunAsync(string command, bool logReply = true, bool quiet = false)
     {
         if (!quiet)
             Log(ConsoleKind.Command, "> " + command);
         try
         {
+            LastCommandNotSent = false;
             var reply = await _rcon.ExecuteAsync(command);
             _lastQuietFailure = null;
             StatusText = $"Connected to {Host.Trim()}:{RconPort}";
@@ -708,6 +712,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (RconException ex)
         {
+            LastCommandNotSent = ex.CommandNotSent;
             // a background poll failing the same way every 30 s (server down for hours) is logged once
             var line = (quiet ? command + ": " : "") + ex.Message;
             if (!quiet || line != _lastQuietFailure)
@@ -720,6 +725,10 @@ public sealed partial class MainViewModel : ObservableObject
             if (ex is RconAuthenticationException && !_expectingShutdown)
             {
                 IsSessionActive = false;
+                // as after Disconnect: nobody is shown as online by a session that ended
+                OnlinePlayers.Clear();
+                OnlinePlayersChanged?.Invoke(this, EventArgs.Empty);
+                _knownPlayers = null;
                 StatusText = "Disconnected: the password was rejected";
             }
             return null;

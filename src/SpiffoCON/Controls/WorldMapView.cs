@@ -132,12 +132,15 @@ public sealed class WorldMapView : FrameworkElement
         // the first map shows all of it; a new copy of it (satellite added) keeps the view
         if (first)
             Fit();
+        CenterPending();
         InvalidateVisual();
     }
 
     // ---- view ----
 
-    double MinScale => Scene is { } s && ActualWidth > 0 ? Math.Min(ActualWidth / s.WorldBounds.Width, ActualHeight / s.WorldBounds.Height) * 0.8 : 0.01;
+    // never above MaxScale: a scene with nothing drawn has no extent
+    double MinScale => Scene is { } s && ActualWidth > 0
+        ? Math.Min(Math.Min(ActualWidth / s.WorldBounds.Width, ActualHeight / s.WorldBounds.Height) * 0.8, MaxScale) : 0.01;
 
     Point ToScreen(double x, double y) => new((x - _origin.X) * _scale, (y - _origin.Y) * _scale);
 
@@ -149,7 +152,7 @@ public sealed class WorldMapView : FrameworkElement
         if (Scene is not { } scene || ActualWidth <= 0 || ActualHeight <= 0)
             return;
         var b = scene.WorldBounds;
-        _scale = Math.Min(ActualWidth / b.Width, ActualHeight / b.Height);
+        _scale = Math.Min(Math.Min(ActualWidth / b.Width, ActualHeight / b.Height), MaxScale);
         _origin = new Point(b.X + b.Width / 2 - ActualWidth / 2 / _scale, b.Y + b.Height / 2 - ActualHeight / 2 / _scale);
         _moved = false;
         InvalidateVisual();
@@ -158,12 +161,30 @@ public sealed class WorldMapView : FrameworkElement
     /// <summary>Centers on a square, zooming in to at least <paramref name="minScale"/>.</summary>
     public void CenterOn(double x, double y, double minScale = 1)
     {
-        if (ActualWidth <= 0)
+        if (_holdView)
             return;
+        // asked before the map is there (the tab was never shown): done once it is
+        if (ActualWidth <= 0 || Scene is null)
+        {
+            _pendingCenter = (x, y, minScale);
+            return;
+        }
+        _pendingCenter = null;
         _scale = Math.Clamp(Math.Max(_scale, minScale), MinScale, MaxScale);
         _origin = new Point(x - ActualWidth / 2 / _scale, y - ActualHeight / 2 / _scale);
         _moved = true;
         InvalidateVisual();
+    }
+
+    (double X, double Y, double MinScale)? _pendingCenter;
+
+    /// <summary>Set while a right-click selects a player: the map must stay under the menu about to open.</summary>
+    bool _holdView;
+
+    void CenterPending()
+    {
+        if (_pendingCenter is { } c)
+            CenterOn(c.X, c.Y, c.MinScale);
     }
 
     void ZoomAt(Point screen, double factor)
@@ -171,6 +192,12 @@ public sealed class WorldMapView : FrameworkElement
         var world = ToWorld(screen);
         _scale = Math.Clamp(_scale * factor, MinScale, MaxScale);
         _origin = new Point(world.X - screen.X / _scale, world.Y - screen.Y / _scale);
+        // zoomed while dragging: the drag goes on from this view
+        if (_dragStart is not null)
+        {
+            _dragStart = screen;
+            _dragOrigin = _origin;
+        }
         _moved = true;
         InvalidateVisual();
     }
@@ -181,6 +208,7 @@ public sealed class WorldMapView : FrameworkElement
         if (!_moved)
         {
             Fit();
+            CenterPending();
             return;
         }
         // keep the same point in the middle
@@ -246,7 +274,12 @@ public sealed class WorldMapView : FrameworkElement
         var world = ToWorld(e.GetPosition(this));
         ContextSquare = new Point(Math.Floor(world.X), Math.Floor(world.Y));
         if (PlayerAt(e.GetPosition(this)) is { } player)
+        {
+            // selected where it is: centering it now would move it from under the menu
+            _holdView = true;
             SelectedPlayer = player.Username;
+            _holdView = false;
+        }
         base.OnMouseRightButtonDown(e);
     }
 

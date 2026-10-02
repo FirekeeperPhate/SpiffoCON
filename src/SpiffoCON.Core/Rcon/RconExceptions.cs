@@ -4,6 +4,9 @@ public class RconException : Exception
 {
     public RconException(string message) : base(message) { }
     public RconException(string message, Exception? inner) : base(message, inner) { }
+
+    /// <summary>The command never left: there was no connection and none could be opened.</summary>
+    public bool CommandNotSent { get; set; }
 }
 
 /// <summary>The server rejected the password.</summary>

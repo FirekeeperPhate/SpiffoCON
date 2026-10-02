@@ -274,6 +274,8 @@ public sealed partial class MaintenanceViewModel : ObservableObject
         }
         finally
         {
+            // a warning that took long to send (a server stalled by a save) is not the PC sleeping
+            _lastTickTicks = Environment.TickCount64;
             _ticking = false;
         }
     }
@@ -320,10 +322,17 @@ public sealed partial class MaintenanceViewModel : ObservableObject
             var quit = await _main.RunAsync("quit");
             if (_closed || !_main.IsSessionActive)
                 return;
+            if (quit is null && _main.LastCommandNotSent)
+            {
+                // the link went down first: nothing reached the server, so its return is not waited for
+                _main.EndExpectedShutdown();
+                RestartStatus = $"quit could not be sent at {DateTime.Now:HH:mm:ss} (no connection): the server was not restarted.";
+                return;
+            }
             // no reply is normal when the server closes at once
             RestartStatus = (quit is null ? $"quit sent at {DateTime.Now:HH:mm:ss} (no reply: the server may already be closing). " : $"Server stopped at {DateTime.Now:HH:mm:ss}. ")
                 + "SpiffoCON checks every 15 s and tells you when it is back.";
-            _waitStarted = DateTime.Now;
+            _waitStarted = Environment.TickCount64;
             _answeredPolls = 0;
             _waitBack.Start();
         }
@@ -334,14 +343,15 @@ public sealed partial class MaintenanceViewModel : ObservableObject
     }
 
     bool _closed;
-    DateTime _waitStarted;
+    long _waitStarted;
 
     /// <summary>How long to wait for the server to answer again before giving up.</summary>
     static readonly TimeSpan WaitBackLimit = TimeSpan.FromMinutes(15);
 
     async Task WaitBackTickAsync()
     {
-        if (DateTime.Now - _waitStarted > WaitBackLimit)
+        // not the wall clock: a time sync or a changed clock must not end (or stretch) the wait
+        if (Environment.TickCount64 - _waitStarted > WaitBackLimit.TotalMilliseconds)
         {
             _waitBack.Stop();
             _main.EndExpectedShutdown();

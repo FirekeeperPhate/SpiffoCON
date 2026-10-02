@@ -205,5 +205,12 @@ public sealed class MapTests : IDisposable
         Assert.Equal("0/tile2x1.png", Encoding.ASCII.GetString(pyramid.ReadTile(0, 2, 1)!));
         Assert.Null(pyramid.ReadTile(0, 1, 1));
         Assert.Equal(512, MapPyramid.TileSquares(1));
+
+        // a newer copy downloaded while this one is drawn takes its place (MapFiles.DownloadAsync)
+        var part = path + ".part";
+        File.WriteAllText(part, "newer");
+        MapFiles.Replace(part, path);
+        Assert.Equal("newer", File.ReadAllText(path));
+        Assert.Equal("0/tile2x1.png", Encoding.ASCII.GetString(pyramid.ReadTile(0, 2, 1)!));
     }
 }

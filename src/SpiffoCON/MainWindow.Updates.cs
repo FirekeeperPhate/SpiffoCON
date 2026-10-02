@@ -26,7 +26,8 @@ public partial class MainWindow
                 || DateTime.UtcNow - book.LastUpdateCheck < TimeSpan.FromDays(1))))
             return;
         _checkingUpdates = true;
-        _vm.IsCheckingForUpdates = interactive;
+        // also during the quiet daily check: a click on the link then would get no answer
+        _vm.IsCheckingForUpdates = true;
         try
         {
             if (interactive)
@@ -37,9 +38,10 @@ public partial class MainWindow
             {
                 release = await UpdateCheck.LatestAsync(current);
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException
+                                           or InvalidOperationException or KeyNotFoundException or FormatException)
             {
-                // offline
+                // offline, or an answer that is not GitHub's (a proxy, a captive portal)
             }
             bool newer = release is not null && release.Version > current;
             var installer = release is null ? null : UpdateCheck.InstallerFor(release, AppInstall.Kind, AppInstall.SelfContained);

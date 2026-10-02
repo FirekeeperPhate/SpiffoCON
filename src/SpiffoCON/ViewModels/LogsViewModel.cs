@@ -184,7 +184,13 @@ public sealed partial class LogsViewModel : ObservableObject
             UpdateTypes(files);
             if (Types.Count == 0)
             {
-                StatusText = "No log files in this folder.";
+                // followed all the same: the server writes its logs as things happen
+                _settingType = true;
+                Types.Add(keep);
+                SelectedType = keep;
+                _settingType = false;
+                await StartTailAsync(keep);
+                StatusText = "No log files in this folder yet: they are shown as the server writes them.";
                 return true;
             }
             _settingType = true;

@@ -125,7 +125,7 @@ public sealed partial class PlayersViewModel : ObservableObject
             Result = "A player can't be teleported to themselves.";
             return Task.CompletedTask;
         }
-        return RunAsync(PlayerCommands.TeleportToPlayer(Target, TeleportTarget));
+        return RunAsync(PlayerCommands.TeleportToPlayer(Target, TeleportTarget), other: TeleportTarget);
     }
 
     [RelayCommand]
@@ -169,7 +169,7 @@ public sealed partial class PlayersViewModel : ObservableObject
 
     // ----
 
-    async Task RunAsync(string command, string? confirm = null, bool refresh = false)
+    async Task RunAsync(string command, string? confirm = null, bool refresh = false, string? other = null)
     {
         if (!_main.IsSessionActive)
         {
@@ -187,7 +187,7 @@ public sealed partial class PlayersViewModel : ObservableObject
         var reply = await _main.RunAsync(command);
         Result = reply is null
             ? "Failed: see the console."
-            : PlayerCommands.Interpret(reply, Target) switch
+            : PlayerCommands.Interpret(reply, Target, other) switch
             {
                 CommandOutcome.Success => reply.Trim(),
                 CommandOutcome.Failed => "Failed: " + reply.Trim(),

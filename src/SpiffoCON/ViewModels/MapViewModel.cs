@@ -49,14 +49,15 @@ public sealed partial class MapViewModel : ObservableObject
     /// <summary>Asks for a game folder; set by the view.</summary>
     public Func<string?>? PickFolder { get; set; }
 
-    /// <summary>Center the view on a square; handled by the view.</summary>
-    public event Action<double, double>? CenterRequested;
+    /// <summary>Center the view on a square (true: zooming in to it when far out); handled by the view.</summary>
+    public event Action<double, double, bool>? CenterRequested;
 
     /// <summary>Show the whole map; handled by the view.</summary>
     public event Action? FitRequested;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasMap))]
+    [NotifyPropertyChangedFor(nameof(CanDownloadSatellite))]
     private MapScene? scene;
 
     public bool HasMap => Scene is not null;
@@ -94,13 +95,22 @@ public sealed partial class MapViewModel : ObservableObject
     partial void OnSelectedPlayerChanged(string? value)
     {
         if (Find(value) is { X: { } x, Y: { } y })
-            CenterRequested?.Invoke(x + 0.5, y + 0.5);
+            CenterRequested?.Invoke(x + 0.5, y + 0.5, true);
+    }
+
+    /// <summary>Selects a player and brings them into view, also when already selected.</summary>
+    public void Show(string username)
+    {
+        if (SelectedPlayer == username)
+            OnSelectedPlayerChanged(username);
+        else
+            SelectedPlayer = username;
     }
 
     partial void OnFollowChanged(bool value)
     {
         if (value && Find(SelectedPlayer) is { X: { } x, Y: { } y })
-            CenterRequested?.Invoke(x + 0.5, y + 0.5);
+            CenterRequested?.Invoke(x + 0.5, y + 0.5, true);
     }
 
     BridgePlayer? Find(string? username) => username is null ? null : Bridge.Players.FirstOrDefault(p => p.Username == username);
@@ -126,8 +136,9 @@ public sealed partial class MapViewModel : ObservableObject
             int placed = players.Count(p => p.X is not null);
             PlayersText = players.Count == 0 ? "Nobody online." : $"{players.Count} online" + (placed < players.Count ? $", {placed} with a position" : "")
                 + $" · {Bridge.Vehicles.Count} vehicles loaded · updated {DateTime.Now:HH:mm:ss}";
+            // following keeps the zoom the user chose
             if (Follow && Find(SelectedPlayer) is { X: { } x, Y: { } y })
-                CenterRequested?.Invoke(x + 0.5, y + 0.5);
+                CenterRequested?.Invoke(x + 0.5, y + 0.5, false);
         });
     }
 
@@ -142,8 +153,9 @@ public sealed partial class MapViewModel : ObservableObject
 
     void OnMainChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // opened before connecting: now the server's Map= (and its mod maps) can be read
-        if (e.PropertyName == nameof(MainViewModel.IsSessionActive) && _main.IsSessionActive && _activated && _maps is null && !_closed)
+        // each connection: the server's Map= and its mod maps are read (again: they may have changed, or
+        // this may be another server)
+        if (e.PropertyName == nameof(MainViewModel.IsSessionActive) && _main.IsSessionActive && _activated && !_closed)
             _ = LoadAsync();
     }
 
@@ -217,6 +229,10 @@ public sealed partial class MapViewModel : ObservableObject
                     sftpProblem = ex.Message;
                 }
             }
+            // reloading, but the server's copy could not be read: the one copied before is still good
+            foreach (var name in modNames)
+                if (!modFolders.ContainsKey(name) && ModMaps.FromCache(_modCacheFolder, name) is { } cached)
+                    modFolders[name] = cached;
             if (ct.IsCancellationRequested)
                 return;
 

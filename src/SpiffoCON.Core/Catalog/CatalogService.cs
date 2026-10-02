@@ -67,16 +67,17 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
     {
         var key = $"{sftp.Host.ToLowerInvariant()}|{sftp.Port}|{remoteFolder.TrimEnd('/')}";
         var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..16];
-        RemoveLegacySftpCache();
         // "s-": a hash made only of digits must not look like a 0.9.4 folder to the cleanup
-        return Path.Combine(SftpCacheRoot, "s-" + hash.ToLowerInvariant());
+        var folder = Path.Combine(SftpCacheRoot, "s-" + hash.ToLowerInvariant());
+        RemoveLegacySftpCache(keep: folder);
+        return folder;
     }
 
     /// <summary>
     /// Up to 0.9.4 the copies of all servers shared cache/sftp/&lt;workshop id&gt;: removed. Per-server
     /// copies unused for two months go too.
     /// </summary>
-    void RemoveLegacySftpCache()
+    void RemoveLegacySftpCache(string keep)
     {
         try
         {
@@ -93,7 +94,8 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
             {
                 var state = Path.Combine(dir, "items.json");
                 var used = File.Exists(state) ? File.GetLastWriteTimeUtc(state) : Directory.GetLastWriteTimeUtc(dir);
-                if (DateTime.UtcNow - used > TimeSpan.FromDays(60))
+                // not the copy about to be used: after a long break only what changed is fetched again
+                if (DateTime.UtcNow - used > TimeSpan.FromDays(60) && !dir.Equals(keep, StringComparison.OrdinalIgnoreCase))
                     Directory.Delete(dir, recursive: true);
             }
         }

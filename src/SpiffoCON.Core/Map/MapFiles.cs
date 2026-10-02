@@ -109,8 +109,40 @@ public sealed record MapFiles(string MapFolder, string? LabelsJson)
                 File.Delete(part);
                 throw new IOException($"{local}: the download was cut short.");
             }
-            File.Move(part, target, overwrite: true);
+            Replace(part, target);
         }
         return true;
+    }
+
+    /// <summary>
+    /// Puts a downloaded file in place. The copy being drawn is open (MapPyramid, shared for delete): Windows
+    /// won't overwrite it, but it can step aside under another name and go when the map lets it.
+    /// </summary>
+    public static void Replace(string part, string target)
+    {
+        if (!File.Exists(target))
+        {
+            File.Move(part, target);
+            return;
+        }
+        var old = $"{target}.{Guid.NewGuid():N}.old";
+        File.Move(target, old);
+        try
+        {
+            File.Move(part, target);
+        }
+        catch
+        {
+            File.Move(old, target);
+            throw;
+        }
+        try
+        {
+            File.Delete(old);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // held by something else: a leftover, not a failed download
+        }
     }
 }

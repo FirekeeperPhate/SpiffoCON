@@ -55,6 +55,48 @@ public sealed class LogTailTests : IDisposable
         Assert.Equal("2026-09-28_13-08_chat.txt", tail.CurrentFile);
     }
 
+    /// <summary>A folder whose next read fails (the link dropped between listing and reading).</summary>
+    sealed class FailingOnce(ILogFolder inner) : ILogFolder
+    {
+        public bool Fail { get; set; }
+
+        public string Description => inner.Description;
+
+        public Task<IReadOnlyList<LogFileInfo>> ListAsync(CancellationToken ct = default) => inner.ListAsync(ct);
+
+        public Task<byte[]> ReadAsync(string name, long offset, int maxBytes, CancellationToken ct = default)
+        {
+            if (!Fail)
+                return inner.ReadAsync(name, offset, maxBytes, ct);
+            Fail = false;
+            throw new IOException("link down");
+        }
+
+        public void Dispose() => inner.Dispose();
+    }
+
+    [Fact]
+    public async Task A_read_that_fails_is_tried_again_as_the_same_poll()
+    {
+        Append("2026-09-28_12-25_chat.txt", "[28-09-26 12:27:04.544][info] old line\r\n");
+        var folder = new FailingOnce(new LocalLogFolder(_dir)) { Fail = true };
+        var tail = new LogTail(folder, "chat");
+
+        // the first read fails: the retry is still the first read, the past and not news
+        await Assert.ThrowsAsync<IOException>(() => tail.PollAsync());
+        Assert.Null(tail.CurrentFile);
+        Assert.Single(await tail.PollAsync());
+        Assert.True(tail.LastPollWasBacklog);
+
+        // a restart seen while the read fails: its marker is not lost
+        Append("2026-09-28_13-08_chat.txt", "[28-09-26 13:08:01.000][info] Start chat server initialization....\r\n");
+        folder.Fail = true;
+        await Assert.ThrowsAsync<IOException>(() => tail.PollAsync());
+        var after = await tail.PollAsync();
+        Assert.Equal(LogLineKind.Marker, after[0].Kind);
+        Assert.Equal(2, after.Count);
+    }
+
     [Fact]
     public async Task Starts_near_the_end_of_a_big_file_without_a_cut_line()
     {

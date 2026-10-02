@@ -172,9 +172,12 @@ public sealed partial class BridgeClient(IBridgeFiles files)
             await Files.WriteAsync(InFile, sb.ToString(), ct).ConfigureAwait(false);
 
             var deadline = DateTime.UtcNow + Timeout;
-            while (DateTime.UtcNow < deadline)
+            // the last look is after the deadline, right before giving up: an action the server ran in the
+            // last moments is not reported as failed
+            for (bool last = false; !last;)
             {
                 await Task.Delay(PollInterval, ct).ConfigureAwait(false);
+                last = DateTime.UtcNow >= deadline;
                 var text = await Files.ReadAsync(OutFile, ct).ConfigureAwait(false);
                 if (text is not null && TryParse(text, seq, out var replies))
                     return InRequestOrder(replies, requests.Count);

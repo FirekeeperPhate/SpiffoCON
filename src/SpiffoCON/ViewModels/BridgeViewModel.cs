@@ -19,7 +19,8 @@ public sealed partial class BridgeViewModel : ObservableObject
     readonly MainViewModel _main;
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(15) };
     BridgeClient? _client;
-    bool _busy;
+    /// <summary>The client a refresh is waiting on (a newer connection is not held up by it).</summary>
+    BridgeClient? _refreshing;
 
     public BridgeViewModel(MainViewModel main)
     {
@@ -184,13 +185,17 @@ public sealed partial class BridgeViewModel : ObservableObject
     [RelayCommand]
     private async Task RefreshAsync()
     {
-        if (_client is null || _busy || _closed || DateTime.UtcNow < _retryAt)
+        var client = _client;
+        if (client is null || ReferenceEquals(_refreshing, client) || _closed || DateTime.UtcNow < _retryAt)
             return;
-        _busy = true;
+        _refreshing = client;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            var snapshot = await _client.SnapshotAsync(timeout.Token);
+            var snapshot = await client.SnapshotAsync(timeout.Token);
+            // connected to another folder or server meanwhile: this answer is not for the lists any more
+            if (!ReferenceEquals(client, _client))
+                return;
             _failures = 0;
             var w = snapshot.World;
             World = w;
@@ -211,6 +216,10 @@ public sealed partial class BridgeViewModel : ObservableObject
                 Vehicles.Add(v);
             StatusText = $"Updated at {DateTime.Now:HH:mm:ss}" + (AutoRefresh ? " · every 15 s" : "")
                 + (snapshot.Problem is { } problem ? $" · not available: {problem}" + (BridgeVersion < 4 && problem.Contains("vehicles") ? " (fixed in bridge v4: upload it to the Workshop)" : "") : "");
+        }
+        catch (Exception ex) when (!ReferenceEquals(client, _client) && ex is not OutOfMemoryException)
+        {
+            // the connection it used was replaced (and closed): not the new one's failure
         }
         catch (Exception ex) when (ex is Renci.SshNet.Common.SshAuthenticationException or SftpHostKeyMismatchException)
         {
@@ -234,7 +243,8 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
         finally
         {
-            _busy = false;
+            if (ReferenceEquals(_refreshing, client))
+                _refreshing = null;
         }
     }
 

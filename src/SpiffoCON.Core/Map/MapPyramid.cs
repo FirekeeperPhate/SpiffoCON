@@ -35,7 +35,18 @@ public sealed class MapPyramid : IDisposable
     {
         if (!File.Exists(path))
             return null;
-        var zip = ZipFile.OpenRead(path);
+        // shared for delete too: a newer copy downloaded from the server can replace the file while it is drawn
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        ZipArchive zip;
+        try
+        {
+            zip = new ZipArchive(stream, ZipArchiveMode.Read);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
         try
         {
             int minX = 0, minY = 0, maxX = 0, maxY = 0;

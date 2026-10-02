@@ -31,7 +31,7 @@ public sealed class PlayerActions(MainViewModel main)
 
     public int HordeSize => int.TryParse(main.Events.HordeSize.Trim(), out var n) ? Math.Clamp(n, 1, EventCommands.MaxHorde) : 20;
 
-    async Task RunAsync(string player, string command, string label, string? confirm = null, bool refresh = false)
+    async Task RunAsync(string player, string command, string label, string? confirm = null, bool refresh = false, string? other = null)
     {
         if (!main.IsSessionActive)
         {
@@ -43,7 +43,7 @@ public sealed class PlayerActions(MainViewModel main)
         var reply = await main.RunAsync(command);
         var outcome = $"{label}: " + (reply is null
             ? "failed, see the console."
-            : PlayerCommands.Interpret(reply, player) switch
+            : PlayerCommands.Interpret(reply, player, other) switch
             {
                 CommandOutcome.Success => reply.Trim(),
                 CommandOutcome.Failed => "failed: " + reply.Trim(),
@@ -69,7 +69,7 @@ public sealed class PlayerActions(MainViewModel main)
         RunAsync(player, PlayerCommands.SetAccessLevel(player, level), $"{player} → {level}", $"Make {player} {level}?");
 
     public Task TeleportAsync(string player, string to) =>
-        RunAsync(player, PlayerCommands.TeleportToPlayer(player, to), $"Teleport {player} to {to}");
+        RunAsync(player, PlayerCommands.TeleportToPlayer(player, to), $"Teleport {player} to {to}", other: to);
 
     public Task GodModeAsync(string player, bool on) =>
         RunAsync(player, PlayerCommands.GodMode(player, on), $"God mode {(on ? "on" : "off")} for {player}");
@@ -143,7 +143,7 @@ public sealed class PlayerActions(MainViewModel main)
     public void ShowOnMap(string player)
     {
         main.ShowTab("Map");
-        main.Map.SelectedPlayer = BridgeInfo(player)?.Username ?? player;
+        main.Map.Show(BridgeInfo(player)?.Username ?? player);
     }
 
     public void ShowInventory(string player)

@@ -66,6 +66,17 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceDir}\*"; Excludes: "*.pdb"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
+[InstallDelete]
+; program files only (runtime and app DLLs, exes, their .json configs, the license): see IsSpiffoconFolder
+Type: filesandordirs; Name: "{app}\bridge\SpiffoCONBridge"; Check: IsOwnProgramFolder
+Type: files; Name: "{app}\*.dll"; Check: IsSpiffoconFolder
+Type: files; Name: "{app}\*.json"; Check: IsSpiffoconFolder
+Type: files; Name: "{app}\*.pdb"; Check: IsSpiffoconFolder
+Type: files; Name: "{app}\createdump.exe"; Check: IsSpiffoconFolder
+Type: files; Name: "{app}\LICENSE.txt"; Check: IsSpiffoconFolder
+; last: the checks look for it
+Type: files; Name: "{app}\{#AppExe}"; Check: IsSpiffoconFolder
+
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
@@ -82,44 +93,29 @@ begin
   Result := ExpandConstant('{param:UPDATE|0}') = '1';
 end;
 
-{ Switching edition (Full <-> Light) or upgrading: remove the previous program files so no stale
-  runtime or library DLLs are left behind, and the bridge folder so no old mod files stay in it.
-  The user's data is not in the program folder (profile in %APPDATA%\SpiffoCON, caches and
-  sandbox backups in %LOCALAPPDATA%\SpiffoCON) and is never touched. }
-procedure CleanProgramFolder;
+{ Switching edition (Full <-> Light) or upgrading: the previous program files are removed so no stale
+  runtime or library DLLs are left behind, and the bridge folder so no old mod files stay in it
+  ([InstallDelete]: it runs after Setup has closed a running SpiffoCON, whose loaded DLLs can't be
+  deleted before). The user's data is not in the program folder (profile in %APPDATA%\SpiffoCON,
+  caches and sandbox backups in %LOCALAPPDATA%\SpiffoCON) and is never touched. }
+
+{ Only a folder this setup installed before: a folder chosen by hand (say D:\Tools) may hold other
+  programs' files. The bridge mod's own folder is always ours: no old mod files may be uploaded again. }
+function IsOwnProgramFolder: Boolean;
 var
-  App, Name: String;
-  FindRec: TFindRec;
+  App: String;
 begin
   App := ExpandConstant('{app}\');
-  { Only a folder this setup installed before, and only one named for it: a folder chosen by
-    hand (say D:\Tools) may hold other programs' files }
-  if (WizardForm.PrevAppDir = '') or
-     (CompareText(AddBackslash(WizardForm.PrevAppDir), App) <> 0) or
-     not FileExists(App + '{#AppExe}') then
-    Exit;
-  { The bridge mod's own folder is always ours: no old mod files may be uploaded again }
-  DelTree(App + 'bridge\SpiffoCONBridge', True, True, True);
-  { Loose files only in a folder named for SpiffoCON }
-  if CompareText(ExtractFileName(RemoveBackslash(App)), 'SpiffoCON') <> 0 then
-    Exit;
-  if FindFirst(App + '*', FindRec) then
-  begin
-    try
-      repeat
-        Name := FindRec.Name;
-        { program files only: runtime and app DLLs, exes, their .json configs, the license }
-        if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0) and
-           (CompareText(Copy(Name, 1, 5), 'unins') <> 0) and
-           ((CompareText(ExtractFileExt(Name), '.dll') = 0) or (CompareText(ExtractFileExt(Name), '.exe') = 0) or
-            (CompareText(ExtractFileExt(Name), '.json') = 0) or (CompareText(ExtractFileExt(Name), '.pdb') = 0) or
-            (CompareText(Name, 'LICENSE.txt') = 0)) then
-          DeleteFile(App + Name);
-      until not FindNext(FindRec);
-    finally
-      FindClose(FindRec);
-    end;
-  end;
+  Result := (WizardForm.PrevAppDir <> '') and
+    (CompareText(AddBackslash(WizardForm.PrevAppDir), App) = 0) and
+    FileExists(App + '{#AppExe}');
+end;
+
+{ Loose program files only in a folder named for SpiffoCON }
+function IsSpiffoconFolder: Boolean;
+begin
+  Result := IsOwnProgramFolder and
+    (CompareText(ExtractFileName(RemoveBackslash(ExpandConstant('{app}'))), 'SpiffoCON') = 0);
 end;
 
 const
@@ -169,12 +165,6 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   CloseUpdatedApp;
   Result := '';
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssInstall then
-    CleanProgramFolder;
 end;
 
 #if Flavor == "Light"

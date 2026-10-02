@@ -50,9 +50,25 @@ public sealed partial class LogTail(ILogFolder folder, string type)
     /// <summary>New complete lines since the last call (the first call returns the file's tail).</summary>
     public async Task<IReadOnlyList<LogLine>> PollAsync(CancellationToken ct = default)
     {
+        var before = (CurrentFile, _offset, _partial, _lastPoll);
+        try
+        {
+            return await PollCoreAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // nothing was read: the next poll decides again from where this one started, or the past
+            // (the first read's tail, a new file's marker) would come back as news, or not at all
+            (CurrentFile, _offset, _partial, _lastPoll) = before;
+            throw;
+        }
+    }
+
+    async Task<IReadOnlyList<LogLine>> PollCoreAsync(CancellationToken ct)
+    {
         var lines = new List<LogLine>();
         LastPollWasBacklog = false;
-        var newest = (await folder.ListAsync(ct).ConfigureAwait(false))
+        var newest =(await folder.ListAsync(ct).ConfigureAwait(false))
             .Where(f => f.Type.Equals(Type, StringComparison.OrdinalIgnoreCase))
             .MaxBy(f => f.Started);
         var sinceLastPoll = DateTime.Now - _lastPoll;

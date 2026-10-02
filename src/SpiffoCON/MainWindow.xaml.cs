@@ -53,7 +53,12 @@ public partial class MainWindow : Window
             await Dispatcher.Yield(DispatcherPriority.Background);
             await _vm.ShutdownAsync();
             _book.Selected = target.Id;
+            var before = _vm;
             Attach(new MainViewModel(_book));
+            // SpiffoCON's own update is not the server's: what the last check found stays
+            _vm.AvailableVersion = before.AvailableVersion;
+            _vm.UpdateStatus = before.UpdateStatus;
+            _vm.IsCheckingForUpdates = before.IsCheckingForUpdates;
             _vm.SaveProfile();
         }
         finally
@@ -129,7 +134,7 @@ public partial class MainWindow : Window
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose your Project Zomboid (or dedicated server) folder" };
             return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
         };
-        _vm.Map.CenterRequested += (x, y) => MapView.CenterOn(x, y, minScale: 0.5);
+        _vm.Map.CenterRequested += (x, y, zoomIn) => MapView.CenterOn(x, y, minScale: zoomIn ? 0.5 : 0);
         _vm.Map.FitRequested += () => MapView.Fit();
         _vm.Map.PropertyChanged += OnMapChanged;
         _vm.UpdateCheckRequested += interactive => _ = CheckForUpdatesAsync(interactive);
@@ -233,7 +238,7 @@ public partial class MainWindow : Window
         if (Tabs.SelectedItem != MapTab || e.OriginalSource is not DependencyObject source
             || ItemsControl.ContainerFromElement(OnlineSidebar, source) is not ListBoxItem { DataContext: SidebarPlayer player })
             return;
-        _vm.Map.SelectedPlayer = player.Username;
+        _vm.Map.Show(player.Username);
         _vm.Map.Follow = true;
     }
 
