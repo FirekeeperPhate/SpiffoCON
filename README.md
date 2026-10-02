@@ -122,10 +122,22 @@ instead.
   server code does it (with its client sync) and written to the admin log: full heal,
   remove items (not worn or attached ones; bridge v3 removes them from the container they
   are listed under), repair, refuel or remove a vehicle, all asked for confirmation. Bridge v5
-  sets the weather (Events tab); bridge v6 removes the zombie corpses within a radius of a spot
-  on the map or of a player, on every floor (the corpses of players and animals stay), as the
-  debug Horde Manager's *Remove bodies* does. The bridge runs while the server runs a game: an empty server
-  with `PauseEmpty=true` is paused and the bridge waits.
+  sets the weather (Events tab). Bridge v6 removes the zombie corpses within a radius of a spot
+  on the map or of a player, on every floor (those of players and animals stay), as the debug
+  Horde Manager's *Remove bodies* does. Bridge v7 adds:
+  - more to clean up within a radius: items lying on the ground (counted first, then asked;
+    furniture, containers and safehouses are not touched) and fires;
+  - the safehouses, drawn on the map with their owner, and removing one (what is in it stays);
+  - a player's sheet next to the inventory: profession, traits, skills, and what is wrong
+    with them (infection, bites, hunger, panic...);
+  - the zombies near each player, in the sidebar and in the players list;
+  - the time of day (Events tab): the clock skips forward to the next time it is that hour,
+    the only way the game's clock goes, and the world ages by the hours skipped;
+  - a key of a vehicle for the selected player;
+  - two bags of the same type in one inventory told apart ("School Bag #2").
+
+  The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
+  paused and the bridge waits; SpiffoCON connects to it by itself when someone joins.
 - Map tab: the game's world map (drawn like the in-game map from the game's own
   `worldmap.xml` and forest images, with building types in color and place names, or the
   game's top-down satellite view) with the players and vehicles the bridge reports, updated at

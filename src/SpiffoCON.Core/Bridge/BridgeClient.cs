@@ -325,6 +325,60 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return (data.GetProperty("removed").GetInt32(), data.TryGetProperty("loaded", out var loaded) ? loaded.GetInt32() : 0);
     }
 
+    /// <summary>
+    /// The items lying on the ground within a radius (every floor): counted, or with <paramref name="apply"/>
+    /// removed. Those inside a safehouse stay, and are counted apart, unless <paramref name="safehouses"/>.
+    /// </summary>
+    public async Task<BridgeGroundItems> RemoveGroundItemsAsync(int x, int y, int radius, bool apply, bool safehouses, string? aroundPlayer = null)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var data = await SendAsync("removegrounditems", x.ToString(inv), y.ToString(inv), radius.ToString(inv),
+            apply ? "1" : "0", safehouses ? "1" : "0", aroundPlayer ?? "").ConfigureAwait(false);
+        return data.Deserialize(BridgeJson.Default.BridgeGroundItems) ?? new BridgeGroundItems();
+    }
+
+    /// <summary>Puts out the fires within a radius (every floor). Returns the burning squares put out, and the loaded squares.</summary>
+    public async Task<(int Stopped, int LoadedSquares)> StopFiresAsync(int x, int y, int radius, string? aroundPlayer = null)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var data = await SendAsync("stopfires", x.ToString(inv), y.ToString(inv), radius.ToString(inv), aroundPlayer ?? "").ConfigureAwait(false);
+        return (data.GetProperty("stopped").GetInt32(), data.TryGetProperty("loaded", out var loaded) ? loaded.GetInt32() : 0);
+    }
+
+    // ---- items on the ground and fires above, safehouses, player sheet, time, keys: bridge v7 ----
+
+    public async Task<IReadOnlyList<BridgeSafehouse>> SafehousesAsync() =>
+        Deserialize(await SendAsync("safehouses").ConfigureAwait(false), BridgeJson.Default.ListBridgeSafehouse);
+
+    /// <summary>
+    /// Removes a safehouse (what is inside stays). The owner is checked by the bridge: ids are given again.
+    /// False when the server could only take it off its own list, and clients learn at their next login.
+    /// </summary>
+    public async Task<bool> RemoveSafehouseAsync(string id, string? owner)
+    {
+        var data = await SendAsync("removesafehouse", id, owner ?? "").ConfigureAwait(false);
+        return !data.TryGetProperty("synced", out var synced) || synced.GetBoolean();
+    }
+
+    /// <summary>Traits, skills and condition of an online player.</summary>
+    public async Task<BridgePlayerDetails> PlayerDetailsAsync(string username) =>
+        (await SendAsync("playerdetails", username).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgePlayerDetails) ?? new BridgePlayerDetails();
+
+    /// <summary>
+    /// Skips the clock forward to the next time it is that hour (0 up to 24, decimals for minutes): the game
+    /// has no way back. Returns the world after it, with <see cref="BridgeWorld.SkippedHours"/>.
+    /// </summary>
+    public async Task<BridgeWorld> SetTimeAsync(double hour) =>
+        (await SendAsync("settime", hour.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false))
+            .Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld();
+
+    /// <summary>Puts a key of the vehicle in the player's inventory. Returns the key's name.</summary>
+    public async Task<string?> GiveVehicleKeyAsync(int id, string? script, string username)
+    {
+        var data = await SendAsync("vehiclekey", id.ToString(System.Globalization.CultureInfo.InvariantCulture), script ?? "", username).ConfigureAwait(false);
+        return data.TryGetProperty("name", out var name) ? name.GetString() : null;
+    }
+
     // ---- weather (bridge v5) ----
 
     /// <summary>The weather settings the bridge can set.</summary>
@@ -358,19 +412,24 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     }
 
     /// <summary>World, players and vehicles in one round trip.</summary>
-    public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default)
+    /// <param name="safehouses">Also the safehouses (bridge v7: an older bridge would answer "unknown action").</param>
+    public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default, bool safehouses = false)
     {
-        var replies = await SendAsync([("world", []), ("players", []), ("vehicles", [])], ct).ConfigureAwait(false);
+        (string, string[])[] requests = safehouses
+            ? [("world", []), ("players", []), ("vehicles", []), ("safehouses", [])]
+            : [("world", []), ("players", []), ("vehicles", [])];
+        var replies = await SendAsync(requests, ct).ConfigureAwait(false);
         // one part failing (bridge v3 on B42 can't list vehicles) must not hide the others
         if (replies.All(r => !r.Ok))
             throw new BridgeException(replies[0].Error ?? "The bridge reported an error.");
-        var problems = new[] { "world", "players", "vehicles" }.Zip(replies)
+        var problems = new[] { "world", "players", "vehicles", "safehouses" }.Zip(replies)
             .Where(p => !p.Second.Ok).Select(p => $"{p.First}: {p.Second.Error}").ToList();
         return new BridgeSnapshot(
             replies[0].Ok ? replies[0].Data.Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld() : new BridgeWorld(),
             replies[1].Ok ? Deserialize(replies[1].Data, BridgeJson.Default.ListBridgePlayer) : [],
             replies[2].Ok ? Deserialize(replies[2].Data, BridgeJson.Default.ListBridgeVehicle) : [])
         {
+            Safehouses = replies.Count > 3 && replies[3].Ok ? Deserialize(replies[3].Data, BridgeJson.Default.ListBridgeSafehouse) : null,
             Problem = problems.Count == 0 ? null : string.Join("; ", problems),
         };
     }
@@ -383,6 +442,9 @@ public sealed record BridgeSnapshot(BridgeWorld World, IReadOnlyList<BridgePlaye
 {
     /// <summary>The parts the bridge could not give (the rest of the snapshot is still valid).</summary>
     public string? Problem { get; init; }
+
+    /// <summary>Null when they were not asked for (or could not be read): what was known before stays.</summary>
+    public IReadOnlyList<BridgeSafehouse>? Safehouses { get; init; }
 }
 
 public sealed record BridgePlayer
@@ -403,11 +465,78 @@ public sealed record BridgePlayer
     public string? Profession { get; init; }
     public string? SteamId { get; init; }
     public string? Vehicle { get; init; }
+
+    /// <summary>Bridge v7: the zombies within about 30 squares (absent with an older bridge).</summary>
+    public int? ZombiesNear { get; init; }
+}
+
+/// <summary>Bridge v7: what playerdetails adds to a player.</summary>
+public sealed record BridgePlayerDetails
+{
+    public string Username { get; init; } = "";
+    public string? Profession { get; init; }
+    public List<string> Traits { get; init; } = [];
+    public List<BridgeSkill> Skills { get; init; } = [];
+
+    /// <summary>hunger, thirst, fatigue, endurance, stress, panic...: each 0 to 1 of its own range.</summary>
+    public Dictionary<string, double?> Stats { get; init; } = [];
+    public bool? Infected { get; init; }
+
+    /// <summary>Body parts bitten.</summary>
+    public int? Bitten { get; init; }
+    public bool? OnFire { get; init; }
+    public int? Health { get; init; }
+    public double? HoursSurvived { get; init; }
+    public int? ZombieKills { get; init; }
+}
+
+public sealed record BridgeSkill
+{
+    public string Name { get; init; } = "";
+    public string? Category { get; init; }
+    public int? Level { get; init; }
+}
+
+public sealed record BridgeSafehouse
+{
+    /// <summary>The id the server knows it by now (given again to others as safehouses come and go).</summary>
+    public string Id { get; init; } = "";
+    public string? Title { get; init; }
+    public string? Owner { get; init; }
+    public List<string> Members { get; init; } = [];
+    public int? X { get; init; }
+    public int? Y { get; init; }
+    public int? W { get; init; }
+    public int? H { get; init; }
+
+    /// <summary>Milliseconds since 1970 (UTC).</summary>
+    public long? LastVisited { get; init; }
+
+    /// <summary>Members online now.</summary>
+    public int? Online { get; init; }
+}
+
+public sealed record BridgeGroundItems
+{
+    /// <summary>Items that would be (or were) removed.</summary>
+    public int Found { get; init; }
+    public int Removed { get; init; }
+
+    /// <summary>Items left because they are inside a safehouse.</summary>
+    public int InSafehouses { get; init; }
+
+    /// <summary>Ground squares of the area the server had loaded (none: nobody is near).</summary>
+    public int Loaded { get; init; }
 }
 
 public sealed record BridgeItem
 {
     public string Container { get; init; } = "";
+
+    /// <summary>The container without the "Inventory > " every bag's path starts with: "School Bag #2".</summary>
+    [JsonIgnore]
+    public string ContainerShort => Container.StartsWith("Inventory > ", StringComparison.Ordinal) ? Container["Inventory > ".Length..] : Container;
+
     public string FullType { get; init; } = "";
     public string Name { get; init; } = "";
     public int Count { get; init; }
@@ -456,6 +585,9 @@ public sealed record BridgeWorld
 
     /// <summary>Snowfall 0-1.</summary>
     public double? AdminSnow { get; init; }
+
+    /// <summary>Only in the reply to a time change: the hours the clock skipped forward.</summary>
+    public double? SkippedHours { get; init; }
     public int? ZombiesLoaded { get; init; }
     public int? Players { get; init; }
 }
@@ -465,4 +597,7 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(List<BridgeItem>))]
 [JsonSerializable(typeof(List<BridgeVehicle>))]
 [JsonSerializable(typeof(BridgeWorld))]
+[JsonSerializable(typeof(List<BridgeSafehouse>))]
+[JsonSerializable(typeof(BridgePlayerDetails))]
+[JsonSerializable(typeof(BridgeGroundItems))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

@@ -171,7 +171,8 @@ public sealed partial class MainViewModel : ObservableObject
             return "dead";
         if (p.X is not { } x || p.Y is not { } y)
             return null;
-        return $"{x}, {y}" + (p.Z is { } z and not 0 ? $" · floor {z}" : "") + (p.Vehicle is { Length: > 0 } ? " · in a vehicle" : "");
+        return $"{x}, {y}" + (p.Z is { } z and not 0 ? $" · floor {z}" : "") + (p.Vehicle is { Length: > 0 } ? " · in a vehicle" : "")
+            + (p.ZombiesNear is > 0 and var near ? $" · {near} zombie{(near == 1 ? "" : "s")} near" : "");
     }
 
     /// <summary>Asks the window to show a tab (by its header).</summary>

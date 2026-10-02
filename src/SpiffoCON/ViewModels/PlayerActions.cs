@@ -128,6 +128,9 @@ public sealed class PlayerActions(MainViewModel main)
     public string? CorpsesProblem(string player) =>
         main.Bridge.CorpsesProblem ?? (BridgeInfo(player)?.X is null ? "The bridge has no position for this player." : null);
 
+    /// <summary>Why items on the ground and fires can't be dealt with (null: they can): bridge v7.</summary>
+    public string? AreaProblem => main.Bridge.V7Problem;
+
     public IReadOnlyList<int> CorpseRadii => [10, 25, 50, 100];
 
     public async Task RemoveCorpsesAsync(string player, int radius)
@@ -135,6 +138,22 @@ public sealed class PlayerActions(MainViewModel main)
         if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)
             return;
         if (await main.Bridge.RemoveCorpsesAsync(x, y, radius, info.Username, aroundPlayer: info.Username) is { } result)
+            main.StatusText = result;
+    }
+
+    public async Task RemoveGroundItemsAsync(string player, int radius)
+    {
+        if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)
+            return;
+        if (await main.Bridge.RemoveGroundItemsAsync(x, y, radius, info.Username, aroundPlayer: info.Username) is { } result)
+            main.StatusText = result;
+    }
+
+    public async Task StopFiresAsync(string player, int radius)
+    {
+        if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)
+            return;
+        if (await main.Bridge.StopFiresAsync(x, y, radius, info.Username, aroundPlayer: info.Username) is { } result)
             main.StatusText = result;
     }
 

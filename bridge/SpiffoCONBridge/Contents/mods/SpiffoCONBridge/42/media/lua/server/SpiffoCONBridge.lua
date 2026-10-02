@@ -1,6 +1,7 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
--- refuel or remove vehicles, set the weather, remove zombie corpses). Server side only; it does nothing on clients.
+-- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse).
+-- Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
 --   spiffocon_in.txt   written by SpiffoCON:  "SEQ <n>", one request per line (id<TAB>action<TAB>arg...), "END <n>"
@@ -9,7 +10,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 6
+local VERSION = 7
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -120,13 +121,39 @@ local function playerInfo(p)
 	return info
 end
 
+-- how far "near" is for zombiesNear: about what a player sees around them
+local NEAR_SQUARES = 30
+
 local function listPlayers()
 	local result = array()
 	local players = getOnlinePlayers()
 	for i = 0, players:size() - 1 do
 		result[#result + 1] = playerInfo(players:get(i))
 	end
+	-- bridge v7: the zombies within NEAR_SQUARES of each player (any floor), in one pass over them
+	try(function()
+		local zombies = getCell():getZombieList()
+		local near = {}
+		for z = 0, zombies:size() - 1 do
+			local zombie = zombies:get(z)
+			local zx, zy = zombie:getX(), zombie:getY()
+			for i, info in ipairs(result) do
+				if info.x and (zx - info.x) * (zx - info.x) + (zy - info.y) * (zy - info.y) <= NEAR_SQUARES * NEAR_SQUARES then
+					near[i] = (near[i] or 0) + 1
+				end
+			end
+		end
+		for i, info in ipairs(result) do info.zombiesNear = near[i] or 0 end
+	end)
 	return result
+end
+
+-- the label of a bag inside the container labelled parent: its name, and from the second bag of the
+-- same type in that container on, its number ("Inventory > School Bag #2"), so removeitem can tell two
+-- bags of one type apart (bridge v7). seen counts the bags of each type met so far in the container.
+local function bagLabel(parent, name, fullType, seen)
+	seen[fullType] = (seen[fullType] or 0) + 1
+	return parent .. " > " .. name .. (seen[fullType] > 1 and (" #" .. seen[fullType]) or "")
 end
 
 -- items grouped by container and type: { container, fullType, name, count, equipped }
@@ -134,6 +161,7 @@ local function addItems(result, container, label, player)
 	local items = container:getItems()
 	local grouped = {}
 	local order = {}
+	local bags = {}
 	for i = 0, items:size() - 1 do
 		local item = items:get(i)
 		local fullType = item:getFullType()
@@ -150,7 +178,7 @@ local function addItems(result, container, label, player)
 		-- bags and other containers: list what is inside them too
 		local inner = containerOf(item)
 		if inner then
-			addItems(result, inner, label .. " > " .. entry.name, nil)
+			addItems(result, inner, bagLabel(label, entry.name, fullType, bags), nil)
 		end
 	end
 	for _, fullType in ipairs(order) do result[#result + 1] = grouped[fullType] end
@@ -301,6 +329,7 @@ end
 local function collect(container, label, fullType, wanted, into)
 	local items = container:getItems()
 	local names = {}
+	local bags = {}
 	for i = 0, items:size() - 1 do
 		local item = items:get(i)
 		local itemType = item:getFullType()
@@ -308,7 +337,7 @@ local function collect(container, label, fullType, wanted, into)
 		-- addItems names a bag after the first item of its type in this container
 		names[itemType] = names[itemType] or (try(function() return item:getDisplayName() end) or itemType)
 		local inner = containerOf(item)
-		if inner then collect(inner, label .. " > " .. names[itemType], fullType, wanted, into) end
+		if inner then collect(inner, bagLabel(label, names[itemType], itemType, bags), fullType, wanted, into) end
 	end
 end
 
@@ -426,68 +455,294 @@ local function setClimate(name, value)
 	return world()
 end
 
--- ---- corpses (bridge v6) ----
+-- ---- areas: zombie corpses (bridge v6), items on the ground and fires (bridge v7) ----
+-- Within a radius of a spot, on every floor. The server only has the squares near players: elsewhere
+-- nothing is loaded, so nothing is found ("loaded" in the reply counts the ground squares it had).
 
-local MAX_CORPSE_RADIUS = 100
+local MAX_AREA_RADIUS = 100
 
--- a zombie's corpse only: a player's (their loot) and an animal's (butchering) stay
-local function isZombieCorpse(body)
-	if try(function() return body:isAnimal() end) then return false end
-	if try(function() return body:isPlayer() end) then return false end
-	return try(function() return body:isZombie() end) == true
-end
-
--- removecorpses <x> <y> <radius>: the zombie corpses within radius squares, on every floor. As "Remove
--- bodies" of the debug Horde Manager (IsoGridSquare.removeCorpse, which on a server also tells the
--- clients nearby), with a real radius: in multiplayer that button clears the admin's whole loaded area.
--- The server only has the squares near players: elsewhere nothing is loaded, so nothing is found.
--- With a 4th argument, a username: around where that player is now (SpiffoCON's x and y are from its
--- last refresh, seconds old: far behind someone driving).
-local function removeCorpses(x, y, radius, username)
+-- x, y, radius as numbers; with a username, where that player is now (SpiffoCON's x and y are from its
+-- last refresh, seconds old: far behind someone driving)
+local function areaOf(action, x, y, radius, username)
 	if username and username ~= "" then
 		local p = requirePlayer(username)
 		x, y = p:getX(), p:getY()
 	end
 	x, y, radius = tonumber(x), tonumber(y), tonumber(radius)
-	if not x or not y or not radius then error("removecorpses needs x, y and a radius") end
-	x, y = math.floor(x), math.floor(y)
-	radius = math.max(1, math.min(MAX_CORPSE_RADIUS, math.floor(radius)))
+	if not x or not y or not radius then error(action .. " needs x, y and a radius") end
+	return math.floor(x), math.floor(y), math.max(1, math.min(MAX_AREA_RADIUS, math.floor(radius)))
+end
+
+-- calls visit(square) for every loaded square of the circle, basements and upper floors included;
+-- returns how many ground squares were loaded
+local function eachSquare(x, y, radius, visit)
 	local cell = getCell()
-	local removed, loaded = 0, 0
+	local loaded = 0
 	for sx = x - radius, x + radius do
 		for sy = y - radius, y + radius do
 			if (sx - x) * (sx - x) + (sy - y) * (sy - y) <= radius * radius then
 				local ground = cell:getGridSquare(sx, sy, 0)
 				if ground then
 					loaded = loaded + 1
-					-- basements and upper floors: the levels this chunk has
+					-- the levels this chunk has
 					local chunk = try(function() return ground:getChunk() end)
 					local minZ = chunk and try(function() return chunk:getMinLevel() end) or -1
 					local maxZ = chunk and try(function() return chunk:getMaxLevel() end) or 7
 					for z = minZ, maxZ do
 						local sq = z == 0 and ground or cell:getGridSquare(sx, sy, z)
-						if sq then
-							local objects = sq:getStaticMovingObjects()
-							-- backwards: removing takes the body out of this list
-							for i = objects:size() - 1, 0, -1 do
-								local body = objects:get(i)
-								if instanceof(body, "IsoDeadBody") and isZombieCorpse(body) then
-									sq:removeCorpse(body, false)
-									removed = removed + 1
-								end
-							end
-						end
+						if sq then visit(sq) end
 					end
 				end
 			end
 		end
 	end
+	return loaded
+end
+
+-- the corpse of a zombie only: those of players (their loot) and of animals (butchering) stay
+local function isZombieCorpse(body)
+	if try(function() return body:isAnimal() end) then return false end
+	if try(function() return body:isPlayer() end) then return false end
+	return try(function() return body:isZombie() end) == true
+end
+
+-- removecorpses <x> <y> <radius> [username]: as "Remove bodies" of the debug Horde Manager
+-- (IsoGridSquare.removeCorpse, which on a server also tells the clients nearby), with a real radius:
+-- in multiplayer that button clears the whole loaded area of the admin.
+local function removeCorpses(x, y, radius, username)
+	x, y, radius = areaOf("removecorpses", x, y, radius, username)
+	local removed = 0
+	local loaded = eachSquare(x, y, radius, function(sq)
+		local objects = sq:getStaticMovingObjects()
+		-- backwards: removing takes the body out of this list
+		for i = objects:size() - 1, 0, -1 do
+			local body = objects:get(i)
+			if instanceof(body, "IsoDeadBody") and isZombieCorpse(body) then
+				sq:removeCorpse(body, false)
+				removed = removed + 1
+			end
+		end
+	end)
 	audit("removed " .. removed .. " zombie corpses within " .. radius .. " squares of " .. x .. ", " .. y)
 	return { removed = removed, loaded = loaded, radius = radius }
 end
 
+-- removegrounditems <x> <y> <radius> <apply: 0 | 1> <safehouses: 0 | 1> [username]: the items lying on
+-- the ground (not furniture, not what is inside containers), as the debug "Remove items" tool
+-- (IsoGridSquare.transmitRemoveItemFromSquare, which on a server tells the clients). With apply 0 it
+-- only counts, so SpiffoCON can say how many before asking; items inside a safehouse stay unless
+-- safehouses is 1, and are counted apart.
+local function removeGroundItems(x, y, radius, apply, safehouses, username)
+	x, y, radius = areaOf("removegrounditems", x, y, radius, username)
+	apply = apply == "1"
+	safehouses = safehouses == "1"
+	local found, removed, kept = 0, 0, 0
+	local loaded = eachSquare(x, y, radius, function(sq)
+		local objects = sq:getWorldObjects()
+		local count = objects:size()
+		if count == 0 then return end
+		if not safehouses and try(function() return SafeHouse.getSafeHouse(sq) end) then
+			kept = kept + count
+			return
+		end
+		found = found + count
+		if not apply then return end
+		for i = count - 1, 0, -1 do
+			local object = objects:get(i)
+			sq:transmitRemoveItemFromSquare(object)
+			-- as the tool does after it: nothing left behind on the square the server has
+			try(function() object:removeFromWorld() end)
+			try(function() object:removeFromSquare() end)
+			try(function() object:setSquare(nil) end)
+			removed = removed + 1
+		end
+	end)
+	if apply then audit("removed " .. removed .. " items on the ground within " .. radius .. " squares of " .. x .. ", " .. y) end
+	return { found = found, removed = removed, inSafehouses = kept, loaded = loaded, radius = radius }
+end
+
+-- stopfires <x> <y> <radius> [username]: stopFire(square) of the game, which on a server puts the
+-- fire out and tells the clients nearby
+local function stopFires(x, y, radius, username)
+	x, y, radius = areaOf("stopfires", x, y, radius, username)
+	local stopped = 0
+	local loaded = eachSquare(x, y, radius, function(sq)
+		if sq:haveFire() then
+			stopFire(sq)
+			stopped = stopped + 1
+		end
+	end)
+	audit("put out " .. stopped .. " burning squares within " .. radius .. " squares of " .. x .. ", " .. y)
+	return { stopped = stopped, loaded = loaded, radius = radius }
+end
+
+-- ---- safehouses (bridge v7) ----
+
+local function listSafehouses()
+	local result = array()
+	local list = SafeHouse.getSafehouseList()
+	for i = 0, list:size() - 1 do
+		local s = list:get(i)
+		local members = array()
+		local players = try(function() return s:getPlayers() end)
+		if players then
+			for m = 0, players:size() - 1 do members[#members + 1] = tostring(players:get(m)) end
+		end
+		result[#result + 1] = {
+			-- as a string: an id for the remove action, not a number to compute with
+			id = try(function() return tostring(s:getOnlineID()) end),
+			title = try(function() return s:getTitle() end),
+			owner = try(function() return s:getOwner() end),
+			members = members,
+			x = try(function() return s:getX() end),
+			y = try(function() return s:getY() end),
+			w = try(function() return s:getW() end),
+			h = try(function() return s:getH() end),
+			-- milliseconds since 1970, as a string (a Java long through Lua loses digits as a number)
+			lastVisited = try(function() return string.format("%.0f", s:getLastVisited()) end),
+			online = try(function() return s:getPlayerConnected() end),
+		}
+	end
+	return result
+end
+
+-- removesafehouse <id> <owner>: the owner is checked, so a safehouse that got this id after the list
+-- was read is not removed in its place. The way the server itself removes one and tells every client
+-- is SafeHouse.hitPoint (the safehouse-war hit that takes the last hit point): the hit points are set
+-- one short of the WarSafehouseHitPoints option first. What is inside is not touched.
+local function removeSafehouse(id, owner)
+	id = tonumber(id)
+	if not id then error("removesafehouse needs an id") end
+	local safe = SafeHouse.getSafeHouse(id)
+	if not safe then error("no safehouse with id " .. tostring(id) .. ": refresh the list") end
+	if owner and owner ~= "" and safe:getOwner() ~= owner then
+		error("safehouse " .. tostring(id) .. " now belongs to " .. tostring(safe:getOwner()) .. ", not " .. owner .. ": refresh the list")
+	end
+	local name = tostring(safe:getTitle()) .. " of " .. tostring(safe:getOwner()) .. " at " .. tostring(safe:getX()) .. ", " .. tostring(safe:getY())
+	local last = try(function() return getServerOptions():getInteger("WarSafehouseHitPoints") end)
+	if last and last >= 1 then
+		safe:setHitPoints(last - 1)
+		SafeHouse.hitPoint(id)
+	end
+	if SafeHouse.getSafehouseList():contains(safe) then
+		-- the option could not be read: off the list of the server at least (clients learn at their next login)
+		SafeHouse.removeSafeHouse(safe)
+		audit("removed safehouse " .. name .. " (clients are told at their next login)")
+		return { removed = true, synced = false }
+	end
+	audit("removed safehouse " .. name)
+	return { removed = true, synced = true }
+end
+
+-- ---- the sheet of a player (bridge v7) ----
+
+local STATS = { "HUNGER", "THIRST", "FATIGUE", "ENDURANCE", "STRESS", "PANIC", "BOREDOM", "UNHAPPINESS", "PAIN", "INTOXICATION", "SICKNESS" }
+
+-- playerdetails <username>: traits, skills and condition, as the server has them
+local function playerDetails(username)
+	local p = requirePlayer(username)
+	local info = playerInfo(p)
+
+	local traits = array()
+	try(function()
+		local known = p:getCharacterTraits():getKnownTraits()
+		for i = 0, known:size() - 1 do
+			local trait = known:get(i)
+			local def = try(function() return CharacterTraitDefinition.getCharacterTraitDefinition(trait) end)
+			traits[#traits + 1] = (def and (try(function() return def:getLabel() end) or try(function() return def:getUIName() end))) or tostring(trait)
+		end
+	end)
+	info.traits = traits
+
+	local skills = array()
+	try(function()
+		for i = 0, PerkFactory.PerkList:size() - 1 do
+			local perk = PerkFactory.PerkList:get(i)
+			local parent = perk:getParent()
+			-- as the skills panel of the game: the categories themselves are not skills
+			if parent ~= Perks.None then
+				skills[#skills + 1] = {
+					name = try(function() return perk:getName() end) or tostring(perk),
+					category = try(function() return parent:getName() end) or tostring(parent),
+					level = try(function() return p:getPerkLevel(perk) end),
+				}
+			end
+		end
+	end)
+	info.skills = skills
+
+	-- each as a fraction of its own range (the game keeps some 0 to 1, others 0 to 100); endurance: 1 is rested
+	local stats = {}
+	for _, name in ipairs(STATS) do
+		stats[name:lower()] = try(function()
+			local stat = CharacterStat[name]
+			local min, max = stat:getMinimumValue(), stat:getMaximumValue()
+			return round((p:getStats():get(stat) - min) / (max - min), 0.01)
+		end)
+	end
+	info.stats = stats
+
+	local body = try(function() return p:getBodyDamage() end)
+	if body then
+		info.infected = try(function() return body:IsInfected() end)
+		info.bitten = try(function() return body:getNumPartsBitten() end)
+		info.onFire = try(function() return body:IsOnFire() end)
+	end
+	return info
+end
+
+-- ---- time and keys (bridge v7) ----
+
+-- settime <hour>: 0 to 24 with decimals (7.5 = 07:30). The clock skips forward to the next time it is
+-- that hour, as if the hours in between had passed: the game has no way back (GameTime counts the age
+-- of the world in nights that begin at 7:00, plus the time of day, so a clock set back would make the
+-- world younger). The server sends its clock to the clients every ten seconds.
+local function setTime(hour)
+	hour = tonumber(hour)
+	if not hour or hour < 0 or hour >= 24 then error("settime needs an hour from 0 to 24") end
+	-- at 7:00 sharp the game itself would count the new night again on its next tick: a moment after it
+	if math.abs(hour - 7) < 0.001 then hour = 7.001 end
+	local t = getGameTime()
+	local now = t:getTimeOfDay()
+	local skipped = hour - now
+	if skipped <= 0 then skipped = skipped + 24 end
+	-- the night that begins at 7:00, if the skip passes it (the game counts it only as its own clock ticks past)
+	if (now <= 7 and now + skipped > 7) or (now > 7 and now + skipped > 31) then
+		t:setNightsSurvived(t:getNightsSurvived() + 1)
+	end
+	-- past midnight: 24 more, and GameTime.update turns the calendar (and fires EveryDays) on its next tick
+	local tomorrow = now + skipped >= 24
+	t:setTimeOfDay(tomorrow and hour + 24 or hour)
+	audit("time of day set to " .. string.format("%02d:%02d", math.floor(hour), math.floor((hour - math.floor(hour)) * 60))
+		.. (tomorrow and " of the next day" or "") .. ": " .. string.format("%.1f", skipped) .. " hours skipped")
+	local w = world()
+	w.hour = math.floor(hour)
+	w.minute = math.floor((hour - math.floor(hour)) * 60)
+	w.skippedHours = round(skipped, 0.01)
+	return w
+end
+
+-- vehiclekey <id> <script> <username>: as Commands.getKey in server/Vehicles/VehicleCommands.lua
+local function vehicleKey(id, script, username)
+	local v = requireVehicle(id, script)
+	local p = requirePlayer(username)
+	local key = v:createVehicleKey()
+	if not key then error(vehicleName(v) .. " gave no key") end
+	p:getInventory():AddItem(key)
+	sendAddItemToContainer(p:getInventory(), key)
+	audit("gave " .. username .. " the key of " .. vehicleName(v))
+	return { given = true, name = try(function() return key:getDisplayName() end) }
+end
+
 local actions = {
 	removecorpses = removeCorpses,
+	removegrounditems = removeGroundItems,
+	stopfires = stopFires,
+	safehouses = listSafehouses,
+	removesafehouse = removeSafehouse,
+	playerdetails = playerDetails,
+	settime = setTime,
+	vehiclekey = vehicleKey,
 	ping = function() return { version = VERSION, players = getOnlinePlayers():size() } end,
 	players = function() return listPlayers() end,
 	inventory = function(username) return inventory(username) end,
@@ -542,7 +797,7 @@ local function handle(seq, requests)
 			reply.ok = false
 			reply.error = "unknown action " .. tostring(action)
 		else
-			local ok, result = pcall(handler, request[3], request[4], request[5], request[6])
+			local ok, result = pcall(handler, request[3], request[4], request[5], request[6], request[7], request[8])
 			reply.ok = ok
 			if ok then reply.data = result else reply.error = tostring(result) end
 		end

@@ -391,6 +391,63 @@ public sealed partial class EventsViewModel : ObservableObject
         }
     }
 
+    // ---- time of day (bridge v7) ----
+
+    [ObservableProperty] private string timeOfDay = "08:00";
+
+    /// <summary>"8", "8:30", "20.15": the hour of the day with decimals, or null.</summary>
+    internal static double? ParseTime(string text)
+    {
+        var parts = text.Trim().Split(':', '.', ',');
+        if (parts.Length is < 1 or > 2 || !int.TryParse(parts[0], out int hour) || hour is < 0 or > 23)
+            return null;
+        int minute = 0;
+        if (parts.Length == 2 && (!int.TryParse(parts[1], out minute) || minute is < 0 or > 59))
+            return null;
+        return hour + minute / 60.0;
+    }
+
+    [RelayCommand]
+    private async Task SetTimeAsync()
+    {
+        if (ParseTime(TimeOfDay) is not { } hour)
+        {
+            WeatherResult = "Time of day: hours and minutes, like 8:30 or 21:00.";
+            return;
+        }
+        string time = $"{(int)hour:00}:{Math.Round((hour - (int)hour) * 60):00}";
+        if (Bridge.V7Problem is { } notNow)
+        {
+            WeatherResult = notNow;
+            return;
+        }
+        // the game's clock only goes forward: to the next time it is that hour
+        string skip = "";
+        if (Bridge.World is { Hour: { } nowHour, Minute: { } nowMinute })
+        {
+            double hours = hour - (nowHour + nowMinute / 60.0);
+            if (hours <= 0)
+                hours += 24;
+            skip = $" It is {nowHour:00}:{nowMinute:00} in game: about {hours:0.#} hour{(Math.Round(hours, 1) == 1 ? "" : "s")} pass"
+                + (hour < nowHour + nowMinute / 60.0 ? ", into the next day." : ".");
+        }
+        if (IsSettingWeather || _main.Confirm?.Invoke($"Skip forward to {time} for everyone?\n\n"
+                + "The game's clock can't go back, so it jumps to the next time it is that hour." + skip
+                + " The world gets that much older, and with it what the game ages by its clock (food, for one). Players see it within ten seconds.") != true)
+            return;
+        IsSettingWeather = true;
+        WeatherResult = "Sending to the bridge...";
+        try
+        {
+            WeatherResult = await Bridge.SetTimeAsync(hour)
+                ?? $"Time of day set to {time} at {DateTime.Now:HH:mm:ss}" + (Bridge.World?.SkippedHours is { } skipped ? $": {skipped:0.#} game hours skipped." : ".");
+        }
+        finally
+        {
+            IsSettingWeather = false;
+        }
+    }
+
     public void Close()
     {
         _rainStop.Stop();

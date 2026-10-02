@@ -384,7 +384,7 @@ public sealed partial class MapViewModel : ObservableObject
     private string hordeCount = "20";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SpawnHordeText), nameof(RemoveZombiesText), nameof(RemoveCorpsesText))]
+    [NotifyPropertyChangedFor(nameof(SpawnHordeText), nameof(RemoveZombiesText), nameof(RemoveCorpsesText), nameof(RemoveGroundItemsText), nameof(StopFiresText))]
     private string hordeRadius = "5";
 
     public string SpawnHordeText => $"Spawn {HordeCount.Trim()} zombies here";
@@ -393,17 +393,74 @@ public sealed partial class MapViewModel : ObservableObject
 
     public string RemoveCorpsesText => $"Remove the zombie corpses within {HordeRadius.Trim()} squares";
 
-    /// <summary>Through the bridge (v6): RCON has no command for corpses.</summary>
+    public string RemoveGroundItemsText => $"Remove the items on the ground within {HordeRadius.Trim()} squares…";
+
+    public string StopFiresText => $"Put out the fires within {HordeRadius.Trim()} squares";
+
+    // ---- through the bridge (corpses: v6, the rest: v7): RCON has no command for these ----
+
+    bool ReadAreaRadius(out int radius)
+    {
+        if (int.TryParse(HordeRadius.Trim(), out radius) && radius >= 1 && radius <= BridgeClient.MaxCorpseRadius)
+            return true;
+        StatusText = $"Radius: a whole number of squares from 1 to {BridgeClient.MaxCorpseRadius} for cleaning up.";
+        return false;
+    }
+
     [RelayCommand]
     private async Task RemoveCorpsesAsync()
     {
-        if (!int.TryParse(HordeRadius.Trim(), out var radius) || radius < 1 || radius > BridgeClient.MaxCorpseRadius)
-        {
-            StatusText = $"Radius: a whole number of squares from 1 to {BridgeClient.MaxCorpseRadius} for corpses.";
+        if (!ReadAreaRadius(out var radius))
             return;
-        }
         int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
         if (await Bridge.RemoveCorpsesAsync(x, y, radius, $"{x}, {y}") is { } result)
+            StatusText = result;
+    }
+
+    [RelayCommand]
+    private async Task RemoveGroundItemsAsync()
+    {
+        if (!ReadAreaRadius(out var radius))
+            return;
+        int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
+        if (await Bridge.RemoveGroundItemsAsync(x, y, radius, $"{x}, {y}") is { } result)
+            StatusText = result;
+    }
+
+    [RelayCommand]
+    private async Task StopFiresAsync()
+    {
+        if (!ReadAreaRadius(out var radius))
+            return;
+        int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
+        if (await Bridge.StopFiresAsync(x, y, radius, $"{x}, {y}") is { } result)
+            StatusText = result;
+    }
+
+    // ---- safehouses (bridge v7) ----
+
+    [ObservableProperty] private bool showSafehouses = true;
+
+    /// <summary>The safehouse under the right-clicked square.</summary>
+    BridgeSafehouse? ContextSafehouse => Bridge.Safehouses.FirstOrDefault(s => s is { X: { } x, Y: { } y, W: { } w, H: { } h }
+        && ContextSquare.X >= x && ContextSquare.X < x + w && ContextSquare.Y >= y && ContextSquare.Y < y + h);
+
+    public string RemoveSafehouseText => ContextSafehouse is { } s ? $"Remove the safehouse of {s.Owner}…" : "Remove the safehouse here (there is none)";
+
+    public bool HasContextSafehouse => ContextSafehouse is not null;
+
+    partial void OnContextSquareChanged(Point value)
+    {
+        OnPropertyChanged(nameof(RemoveSafehouseText));
+        OnPropertyChanged(nameof(HasContextSafehouse));
+    }
+
+    [RelayCommand]
+    private async Task RemoveSafehouseAsync()
+    {
+        if (ContextSafehouse is not { } safehouse)
+            return;
+        if (await Bridge.RemoveSafehouseAsync(safehouse) is { } result)
             StatusText = result;
     }
 

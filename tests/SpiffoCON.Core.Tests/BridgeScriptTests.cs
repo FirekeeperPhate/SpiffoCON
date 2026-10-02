@@ -1,0 +1,231 @@
+using MoonSharp.Interpreter;
+using SpiffoCON.Core.Bridge;
+
+namespace SpiffoCON.Core.Tests;
+
+/// <summary>
+/// The bridge mod's own Lua script (bridge/SpiffoCONBridge/.../SpiffoCONBridge.lua), run in a Lua
+/// interpreter against a mock of the game (Bridge/GameMock.lua) and driven by the real
+/// <see cref="BridgeClient"/> through the real file protocol: requests, JSON replies, C# types.
+/// The mock's world: rj at 100,102 with two school bags, kate at 500,500; corpses, items on the ground
+/// and fires around 100,100; a safehouse of rj at 102,98 (5x5) and one of kate; a pick-up truck, id 7.
+/// </summary>
+public sealed class BridgeScriptTests
+{
+    readonly Script _game = new();
+    readonly BridgeClient _client;
+
+    public BridgeScriptTests()
+    {
+        var folder = Path.Combine(AppContext.BaseDirectory, "Bridge");
+        _game.DoString(File.ReadAllText(Path.Combine(folder, "GameMock.lua")));
+        _game.DoString(File.ReadAllText(Path.Combine(folder, "SpiffoCONBridge.lua")));
+        var files = new GameFiles(_game);
+        files.Tick(); // the first poll only notes what was there before the start
+        _client = new BridgeClient(files) { PollInterval = TimeSpan.FromMilliseconds(2), Timeout = TimeSpan.FromSeconds(2) };
+    }
+
+    /// <summary>What the game was told to do since the last call (the admin log apart).</summary>
+    List<string> Told()
+    {
+        var lines = _game.Globals.Get("LOG").Table.Values.Select(v => v.String).Where(l => !l.StartsWith("log ")).ToList();
+        _game.DoString("LOG = {}");
+        return lines;
+    }
+
+    double Lua(string expression) => _game.DoString("return " + expression).Number;
+
+    [Fact]
+    public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
+    {
+        Assert.Equal(7, await _client.PingAsync());
+        var snapshot = await _client.SnapshotAsync(safehouses: true);
+        Assert.Null(snapshot.Problem);
+        var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
+        Assert.Equal((100, 102, 0, 87, "Carpenter", 5), (rj.X, rj.Y, rj.Z, rj.Health, rj.Profession, rj.ZombiesNear));
+        Assert.Equal(1, snapshot.Players.Single(p => p.Username == "kate").ZombiesNear);
+
+        Assert.Equal(2, snapshot.Safehouses!.Count);
+        var house = snapshot.Safehouses[1];
+        // a title with quotes comes through the script's own JSON encoder
+        Assert.Equal(("2", "Kate \"the\" base", "kate", 480, 480, 10, 12), (house.Id, house.Title, house.Owner, house.X, house.Y, house.W, house.H));
+        Assert.Equal(["kate"], snapshot.Safehouses[0].Members);
+        Assert.Equal(1790947308993, house.LastVisited);
+
+        // an older client does not ask for them
+        Assert.Null((await _client.SnapshotAsync()).Safehouses);
+    }
+
+    [Fact]
+    public async Task Two_bags_of_one_type_are_told_apart()
+    {
+        var nails = (await _client.InventoryAsync("rj")).Where(i => i.FullType == "Base.Nails").ToList();
+        Assert.Equal(
+            [("Inventory > School Bag > Toolbox", 1), ("Inventory > School Bag", 3), ("Inventory > School Bag #2", 5)],
+            nails.Select(i => (i.Container, i.Count)));
+        Assert.Equal("School Bag #2", nails[2].ContainerShort);
+
+        Assert.Equal((5, 0), await _client.RemoveItemAsync("rj", "Base.Nails", 0, "Inventory > School Bag #2"));
+        Assert.Equal((1, 0), await _client.RemoveItemAsync("rj", "Base.Nails", 1, "Inventory > School Bag"));
+        nails = (await _client.InventoryAsync("rj")).Where(i => i.FullType == "Base.Nails").ToList();
+        Assert.Equal([("Inventory > School Bag > Toolbox", 1), ("Inventory > School Bag", 2)], nails.Select(i => (i.Container, i.Count)));
+        Assert.Equal(6, Told().Count(l => l == "sendRemove Nails from School Bag"));
+    }
+
+    [Fact]
+    public async Task A_player_sheet_has_traits_skills_and_condition()
+    {
+        var sheet = await _client.PlayerDetailsAsync("kate");
+        Assert.Equal(("kate", "Carpenter", true, 1, false), (sheet.Username, sheet.Profession, sheet.Infected, sheet.Bitten, sheet.OnFire));
+        // a trait the game has no definition for keeps its id
+        Assert.Equal(["Brave", "Fast Reader", "base:mystery"], sheet.Traits);
+        // the categories themselves are not skills
+        Assert.Equal([("Axe", "Combat", 4), ("Carpentry", "Crafting", 2)], sheet.Skills.Select(s => (s.Name, s.Category, s.Level)));
+        // each stat as a fraction of its own range: panic is kept 0-100 by the game
+        Assert.Equal((0.26, 0.5, 1.0), (sheet.Stats["hunger"], sheet.Stats["panic"], sheet.Stats["endurance"]));
+
+        var ex = await Assert.ThrowsAsync<BridgeException>(() => _client.PlayerDetailsAsync("ghost"));
+        Assert.Contains("ghost is not online", ex.Message);
+    }
+
+    [Fact]
+    public async Task A_safehouse_is_removed_the_way_that_tells_the_clients()
+    {
+        // ids are given again as safehouses come and go: the owner must still be the one the list showed
+        var ex = await Assert.ThrowsAsync<BridgeException>(() => _client.RemoveSafehouseAsync("2", "rj"));
+        Assert.Contains("now belongs to kate", ex.Message);
+
+        Assert.True(await _client.RemoveSafehouseAsync("2", "kate"));
+        Assert.Equal(["SafehouseRelease to all 2"], Told());
+
+        // the server option can't be read: off the server's list at least, and said so
+        _game.DoString("WAR_HIT_POINTS = 0");
+        Assert.False(await _client.RemoveSafehouseAsync("1", "rj"));
+        Assert.Equal(["removeSafeHouse (not synced) 1"], Told());
+        Assert.Empty(await _client.SafehousesAsync());
+        await Assert.ThrowsAsync<BridgeException>(() => _client.RemoveSafehouseAsync("1", "rj"));
+    }
+
+    [Fact]
+    public async Task Items_on_the_ground_are_counted_then_removed_and_safehouses_are_left()
+    {
+        var count = await _client.RemoveGroundItemsAsync(100, 100, 3, apply: false, safehouses: false);
+        Assert.Equal((2, 0, 2, 29), (count.Found, count.Removed, count.InSafehouses, count.Loaded));
+        Assert.Empty(Told());
+
+        var done = await _client.RemoveGroundItemsAsync(100, 100, 3, apply: true, safehouses: false);
+        Assert.Equal((2, 2), (done.Removed, done.InSafehouses));
+        // every floor of the circle, and nothing inside the safehouse or beyond the radius
+        Assert.Equal(["removeGround can", "removeGround plank upstairs"], Told());
+
+        // around a player: where the bridge has them now, not the x and y that were sent
+        Assert.Equal(1, (await _client.RemoveGroundItemsAsync(0, 0, 4, apply: false, safehouses: false, aroundPlayer: "rj")).Found);
+        // nobody near: nothing is loaded there
+        Assert.Equal(0, (await _client.RemoveGroundItemsAsync(9000, 9000, 4, apply: true, safehouses: false)).Loaded);
+    }
+
+    [Fact]
+    public async Task Fires_are_put_out_and_only_zombie_corpses_removed()
+    {
+        Assert.Equal(2, (await _client.StopFiresAsync(100, 100, 3)).Stopped);
+        Assert.Equal(["stopFire 100,100,0", "stopFire 101,101,1"], Told());
+        Assert.Equal(0, (await _client.StopFiresAsync(100, 100, 3)).Stopped);
+
+        // the dead player on the same square stays, and so does the zombie four squares away
+        Assert.Equal(2, (await _client.RemoveCorpsesAsync(100, 100, 3)).Removed);
+        Assert.Equal(["removeCorpse z1", "removeCorpse z-basement"], Told());
+        // a radius is clamped, not refused
+        Assert.Equal(1, (await _client.RemoveCorpsesAsync(100, 100, 100000)).Removed);
+    }
+
+    /// <summary>
+    /// The game counts the age of the world in nights that begin at 7:00, plus the time of day, and turns
+    /// the calendar at 24:00: whatever the two hours, the world must get older by exactly the hours
+    /// skipped, and the game's own next ticks must not count a night or a day again.
+    /// </summary>
+    [Theory]
+    [InlineData(20.5, 7.5, 11)]
+    [InlineData(22.1, 6.25, 8.15)]
+    [InlineData(12, 8, 20)]
+    [InlineData(5, 22, 17)]
+    [InlineData(5, 6, 1)]
+    [InlineData(8, 7, 23)]
+    [InlineData(6, 7, 1)]
+    [InlineData(0.5, 23.5, 23)]
+    [InlineData(23.5, 0.5, 1)]
+    [InlineData(7.5, 7.25, 23.75)]
+    [InlineData(10, 18, 8)]
+    [InlineData(3, 3, 24)]
+    public async Task The_clock_skips_forward_to_the_hour_and_the_world_ages_by_as_much(double now, double target, double skipped)
+    {
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        _game.DoString($"CLOCK.time, CLOCK.nights, CLOCK.day = {now.ToString(invariant)}, 36, 14");
+        double before = Lua("CLOCK.age()");
+
+        var world = await _client.SetTimeAsync(target);
+        _game.DoString("for i = 1, 5 do CLOCK.tick() end");
+
+        Assert.Equal(skipped, world.SkippedHours!.Value, 2);
+        Assert.Equal(((int)target, (int)Math.Round((target - (int)target) * 60)), (world.Hour, world.Minute));
+        Assert.Equal(skipped, Lua("CLOCK.age()") - before, 2);
+        Assert.Equal(target, Lua("CLOCK.time"), 2);
+        Assert.Equal(target <= now ? 15 : 14, (int)Lua("CLOCK.day"));
+    }
+
+    [Fact]
+    public async Task An_hour_out_of_the_day_is_refused()
+    {
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetTimeAsync(24));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetTimeAsync(-1));
+        Assert.Empty(Told());
+    }
+
+    [Fact]
+    public async Task A_vehicle_key_goes_into_the_players_inventory()
+    {
+        Assert.Equal("Pick-up Truck Key", await _client.GiveVehicleKeyAsync(7, "Base.PickUpTruck", "kate"));
+        Assert.Equal(["sendAdd Pick-up Truck Key"], Told());
+        Assert.Equal("Pick-up Truck Key", Assert.Single(await _client.InventoryAsync("kate")).Name);
+
+        // the id is another vehicle by now, or the player left: nothing is given
+        await Assert.ThrowsAsync<BridgeException>(() => _client.GiveVehicleKeyAsync(7, "Base.Van", "kate"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.GiveVehicleKeyAsync(7, "Base.PickUpTruck", "ghost"));
+        Assert.Empty(Told());
+    }
+
+    /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>
+    sealed class GameFiles(Script game) : IBridgeFiles
+    {
+        public string Description => "mock game";
+
+        public Task<string?> ReadAsync(string name, CancellationToken ct = default)
+        {
+            lock (game)
+            {
+                var value = game.Globals.Get("FILES").Table.Get(name);
+                return Task.FromResult(value.IsNil() ? null : value.String);
+            }
+        }
+
+        public Task WriteAsync(string name, string text, CancellationToken ct = default)
+        {
+            lock (game)
+            {
+                game.Globals.Get("FILES").Table.Set(name, DynValue.NewString(text));
+                Tick();
+            }
+            return Task.CompletedTask;
+        }
+
+        public void Tick()
+        {
+            lock (game)
+            {
+                game.Globals.Set("NOW", DynValue.NewNumber(game.Globals.Get("NOW").Number + 2000));
+                game.Call(game.Globals.Get("SpiffoCONBridgePoll"));
+            }
+        }
+
+        public void Dispose() { }
+    }
+}

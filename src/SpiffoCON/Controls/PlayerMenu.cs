@@ -96,9 +96,20 @@ public static class PlayerMenu
             ((object)(ev.Id == "horde" ? $"{ev.Name} ({actions.HordeSize} zombies)" : ev.Name), (Func<Task>)(() => actions.EventAsync(player, ev)))));
         Add(menu.Items, "Heal completely…", () => actions.HealAsync(player), online && actions.CanHeal(player),
             actions.CanHeal(player) ? null : "Needs bridge v2 (Bridge tab)");
-        Sub(menu.Items, "Remove zombie corpses around", online && actions.CorpsesProblem(player) is null,
+        // through the bridge (corpses: v6, the rest: v7): what RCON has no command for, within a radius
+        // of where the player is now
+        var cleanUp = new MenuItem { Header = "Clean up around", IsEnabled = online && actions.CorpsesProblem(player) is null, ToolTip = actions.CorpsesProblem(player) };
+        ToolTipService.SetShowOnDisabled(cleanUp, true);
+        Sub(cleanUp.Items, "Zombie corpses", true,
             actions.CorpseRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveCorpsesAsync(player, r)))),
-            actions.CorpsesProblem(player));
+            "On every floor; the corpses of players and animals stay");
+        Sub(cleanUp.Items, "Items on the ground", actions.AreaProblem is null,
+            actions.CorpseRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveGroundItemsAsync(player, r)))),
+            actions.AreaProblem ?? "Counted first, then asked; furniture, containers and safehouses are not touched");
+        Sub(cleanUp.Items, "Fires", actions.AreaProblem is null,
+            actions.CorpseRadii.Select(r => ((object)$"{r} squares", (Func<Task>)(() => actions.StopFiresAsync(player, r)))),
+            actions.AreaProblem ?? "Puts out every fire in the area");
+        menu.Items.Add(cleanUp);
         menu.Items.Add(new Separator());
 
         Sub(menu.Items, "Powers", online,

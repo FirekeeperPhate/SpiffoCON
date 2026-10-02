@@ -62,6 +62,25 @@ public sealed class WorldMapView : FrameworkElement
         set => SetValue(VehiclesProperty, value);
     }
 
+    /// <summary>The safehouses the bridge reports (v7), drawn as outlined areas.</summary>
+    public static readonly DependencyProperty SafehousesProperty = DependencyProperty.Register(
+        nameof(Safehouses), typeof(IEnumerable), typeof(WorldMapView), new PropertyMetadata(null, OnCollectionChanged));
+
+    public IEnumerable? Safehouses
+    {
+        get => (IEnumerable?)GetValue(SafehousesProperty);
+        set => SetValue(SafehousesProperty, value);
+    }
+
+    public static readonly DependencyProperty ShowSafehousesProperty = DependencyProperty.Register(
+        nameof(ShowSafehouses), typeof(bool), typeof(WorldMapView), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public bool ShowSafehouses
+    {
+        get => (bool)GetValue(ShowSafehousesProperty);
+        set => SetValue(ShowSafehousesProperty, value);
+    }
+
     public static readonly DependencyProperty ShowVehiclesProperty = DependencyProperty.Register(
         nameof(ShowVehicles), typeof(bool), typeof(WorldMapView), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
 
@@ -301,12 +320,20 @@ public sealed class WorldMapView : FrameworkElement
             text += $" · {Describe(p)}";
         else if (ShowVehicles && VehicleAt(screen) is { } v)
             text += $" · {v.Script} #{v.Id}" + (v.Driver is { } driver ? $", driven by {driver}" : "") + (v.EngineRunning == true ? ", engine on" : "");
+        else if (ShowSafehouses && SafehouseAt(world) is { } safehouse)
+            text += " · " + ViewModels.BridgeViewModel.Describe(safehouse);
         PointerText = text;
     }
 
     static string Describe(BridgePlayer p) =>
         p.Username + (p.Dead == true ? " (dead)" : p.Health is { } h ? $" (health {h})" : "")
-        + (p.Vehicle is { Length: > 0 } car ? $", in {car}" : "") + (p.Z is { } z and not 0 ? $", floor {z}" : "");
+        + (p.Vehicle is { Length: > 0 } car ? $", in {car}" : "") + (p.Z is { } z and not 0 ? $", floor {z}" : "")
+        + (p.ZombiesNear is > 0 and var near ? $", {near} zombie{(near == 1 ? "" : "s")} near" : "");
+
+    /// <summary>The safehouse a square is in.</summary>
+    BridgeSafehouse? SafehouseAt(Point world) =>
+        Safehouses?.OfType<BridgeSafehouse>().FirstOrDefault(s => s is { X: { } x, Y: { } y, W: { } w, H: { } h }
+            && world.X >= x && world.X < x + w && world.Y >= y && world.Y < y + h);
 
     /// <summary>The player whose marker is at a point of the view (for the right-click menu).</summary>
     public string? PlayerNameAt(Point screen) => PlayerAt(screen)?.Username;
@@ -361,6 +388,8 @@ public sealed class WorldMapView : FrameworkElement
         }
         dc.Pop();
 
+        if (ShowSafehouses)
+            DrawSafehouses(dc);
         DrawLabels(dc, scene, satellite);
         if (ShowVehicles)
             DrawVehicles(dc);
@@ -556,6 +585,38 @@ public sealed class WorldMapView : FrameworkElement
     static readonly Brush VehicleFill = Frozen(Color.FromRgb(0x4F, 0xA3, 0xE0));
     static readonly Brush VehicleDriven = Frozen(Color.FromRgb(0x2E, 0xCC, 0x71));
     static readonly Pen MarkerOutline = Frozen(new Pen(Frozen(Color.FromRgb(0x1A, 0x1A, 0x1A)), 1.5));
+
+    static readonly Brush SafehouseFill = Frozen(Color.FromArgb(0x38, 0x2E, 0xCC, 0x71));
+    static readonly Pen SafehouseOutline = Frozen(new Pen(Frozen(Color.FromRgb(0x1E, 0x9E, 0x55)), 2));
+
+    void DrawSafehouses(DrawingContext dc)
+    {
+        if (Safehouses is null)
+            return;
+        double dip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        foreach (var s in Safehouses.OfType<BridgeSafehouse>())
+        {
+            if (s is not { X: { } x, Y: { } y, W: { } w, H: { } h })
+                continue;
+            var rect = new Rect(ToScreen(x, y), ToScreen(x + w, y + h));
+            if (rect.Right < 0 || rect.Bottom < 0 || rect.Left > ActualWidth || rect.Top > ActualHeight)
+                continue;
+            // far out it is a dot: kept visible
+            if (rect.Width < 8 || rect.Height < 8)
+                rect.Inflate(Math.Max(0, (8 - rect.Width) / 2), Math.Max(0, (8 - rect.Height) / 2));
+            dc.DrawRectangle(SafehouseFill, SafehouseOutline, rect);
+            // whose it is, once there is room for it
+            if (rect.Width < 60 || string.IsNullOrEmpty(s.Owner))
+                continue;
+            var text = new FormattedText(s.Owner, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, Brushes.White, dip)
+            {
+                MaxTextWidth = Math.Max(1, rect.Width - 6), MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis,
+            };
+            var box = new Rect(Math.Round(rect.Left + 2), Math.Round(rect.Top + 2), text.Width + 6, text.Height + 2);
+            dc.DrawRoundedRectangle(NameBackground, null, box, 3, 3);
+            dc.DrawText(text, new Point(box.X + 3, box.Y + 1));
+        }
+    }
 
     void DrawVehicles(DrawingContext dc)
     {

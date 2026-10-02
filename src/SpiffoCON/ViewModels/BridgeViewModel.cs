@@ -261,7 +261,7 @@ public sealed partial class BridgeViewModel : ObservableObject
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            var snapshot = await client.SnapshotAsync(timeout.Token);
+            var snapshot = await client.SnapshotAsync(timeout.Token, safehouses: BridgeVersion >= 7);
             // connected to another folder or server meanwhile: this answer is not for the lists any more
             if (!ReferenceEquals(client, _client))
                 return;
@@ -283,6 +283,12 @@ public sealed partial class BridgeViewModel : ObservableObject
             Vehicles.Clear();
             foreach (var v in snapshot.Vehicles.OrderBy(v => v.Script))
                 Vehicles.Add(v);
+            if (snapshot.Safehouses is { } safehouses)
+            {
+                Safehouses.Clear();
+                foreach (var s in safehouses.OrderBy(s => s.Owner, StringComparer.CurrentCultureIgnoreCase))
+                    Safehouses.Add(s);
+            }
             StatusText = $"Updated at {DateTime.Now:HH:mm:ss}" + (AutoRefresh ? " · every 15 s" : "")
                 + (snapshot.Problem is { } problem ? $" · not available: {problem}" + (BridgeVersion < 4 && problem.Contains("vehicles") ? " (fixed in bridge v4: upload it to the Workshop)" : "") : "");
         }
@@ -355,6 +361,7 @@ public sealed partial class BridgeViewModel : ObservableObject
         int load = ++_inventoryLoad;
         InventoryTitle = $"Inventory of {username}: loading...";
         Inventory.Clear();
+        PlayerSheet = "";
         _inventoryOwner = null;
         try
         {
@@ -367,6 +374,22 @@ public sealed partial class BridgeViewModel : ObservableObject
                 Inventory.Add(item);
             _inventoryOwner = username;
             InventoryTitle = $"Inventory of {username}: {items.Sum(i => i.Count)} items";
+            // traits, skills and condition came with bridge v7
+            if (BridgeVersion >= 7)
+            {
+                try
+                {
+                    var details = await _client.PlayerDetailsAsync(username);
+                    if (load == _inventoryLoad)
+                        PlayerSheet = DescribeSheet(details);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // the inventory above is still good
+                    if (load == _inventoryLoad)
+                        PlayerSheet = "Traits and skills: " + ex.Message;
+                }
+            }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -508,13 +531,171 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
-    // ---- zombie corpses (bridge v6), for the map and the player menu ----
+    // ---- bridge v6 (corpses) and v7: areas (for the map and the player menu), safehouses, time, keys ----
 
-    /// <summary>Why corpses can't be removed now (null: they can).</summary>
+    /// <summary>Why something that came with bridge v7 can't be done now (null: it can).</summary>
+    public string? V7Problem =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 7 ? $"This needs bridge v7 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>Why corpses can't be removed now (null: they can): that came with bridge v6.</summary>
     public string? CorpsesProblem =>
         _client is null || !IsConnected ? "Zombie corpses are removed through the SpiffoCON Bridge: connect it in the Bridge tab."
         : BridgeVersion < 6 ? $"Removing corpses needs bridge v6 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
         : null;
+
+    const string NotLoaded = "is not loaded on the server (it only keeps the surroundings of players)";
+
+    /// <summary>
+    /// Removes the items lying on the ground within a radius, on every floor, after counting them and
+    /// asking with the count. Items inside a safehouse are never touched.
+    /// </summary>
+    internal async Task<string?> RemoveGroundItemsAsync(int x, int y, int radius, string where, string? aroundPlayer = null)
+    {
+        if (V7Problem is { } problem)
+            return problem;
+        try
+        {
+            var count = await _client!.RemoveGroundItemsAsync(x, y, radius, apply: false, safehouses: false, aroundPlayer);
+            string kept = count.InSafehouses > 0 ? $" {count.InSafehouses} more are inside safehouses and stay." : "";
+            if (count.Loaded == 0)
+                return $"No items removed: the area around {where} {NotLoaded}.";
+            if (count.Found == 0)
+                return $"No items on the ground within {radius} squares of {where}." + kept;
+            if (_main.Confirm?.Invoke($"Remove the {count.Found} item{(count.Found == 1 ? "" : "s")} lying on the ground within {radius} squares of {where}?\n\n"
+                    + "On every floor. Furniture and what is inside containers stay." + kept + " It can't be undone.") != true)
+                return null;
+            var done = await _client!.RemoveGroundItemsAsync(x, y, radius, apply: true, safehouses: false, aroundPlayer);
+            return $"{done.Removed} item{(done.Removed == 1 ? "" : "s")} on the ground removed within {radius} squares of {where}."
+                + (done.InSafehouses > 0 ? $" {done.InSafehouses} inside safehouses left." : "");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not remove the items: " + ex.Message;
+        }
+    }
+
+    /// <summary>Puts out the fires within a radius, on every floor (no question: nothing is lost).</summary>
+    internal async Task<string?> StopFiresAsync(int x, int y, int radius, string where, string? aroundPlayer = null)
+    {
+        if (V7Problem is { } problem)
+            return problem;
+        try
+        {
+            var (stopped, loaded) = await _client!.StopFiresAsync(x, y, radius, aroundPlayer);
+            return loaded == 0 ? $"No fires put out: the area around {where} {NotLoaded}."
+                : stopped == 0 ? $"Nothing is burning within {radius} squares of {where}."
+                : $"Fire put out on {stopped} square{(stopped == 1 ? "" : "s")} within {radius} squares of {where}.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not put out the fires: " + ex.Message;
+        }
+    }
+
+    /// <summary>The safehouses the bridge last reported (kept while it does not answer: they don't move).</summary>
+    public ObservableCollection<BridgeSafehouse> Safehouses { get; } = [];
+
+    internal static string Describe(BridgeSafehouse s)
+    {
+        int people = s.Members.Count + 1;
+        return $"{(string.IsNullOrWhiteSpace(s.Title) ? "Safehouse" : s.Title)} of {s.Owner}"
+            + (people > 1 ? $" ({people} people)" : "")
+            + (s.LastVisited is > 0 and var ms ? $", last visited {DateTimeOffset.FromUnixTimeMilliseconds(ms).LocalDateTime:d MMM}" : "");
+    }
+
+    /// <summary>Removes a safehouse after asking; what is built or stored in it stays, anyone can enter it again.</summary>
+    internal async Task<string?> RemoveSafehouseAsync(BridgeSafehouse s)
+    {
+        if (V7Problem is { } problem)
+            return problem;
+        if (_main.Confirm?.Invoke($"Remove the safehouse \"{s.Title}\" of {s.Owner} at {s.X}, {s.Y}?\n\n"
+                + (s.Members.Count > 0 ? $"Members: {string.Join(", ", s.Members)}.\n" : "")
+                + "The building and everything in it stay, but it is no longer protected: anyone can enter, loot and claim it. It can't be undone.") != true)
+            return null;
+        try
+        {
+            bool synced = await _client!.RemoveSafehouseAsync(s.Id, s.Owner);
+            Safehouses.Remove(s);
+            return $"Safehouse of {s.Owner} removed." + (synced ? "" : " The server could not tell the players online: they see it gone at their next login.");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not remove the safehouse: " + ex.Message;
+        }
+    }
+
+    /// <summary>Sets the time of day for everyone (the date stays); null when it worked, else why not.</summary>
+    internal async Task<string?> SetTimeAsync(double hour)
+    {
+        if (V7Problem is { } problem)
+            return problem;
+        try
+        {
+            World = await _client!.SetTimeAsync(hour);
+            return null;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not set the time: " + ex.Message;
+        }
+    }
+
+    /// <summary>A key of the vehicle for the player selected in the list above.</summary>
+    [RelayCommand]
+    private Task GiveVehicleKeyAsync(BridgeVehicle? v)
+    {
+        if (v?.Id is not int id)
+            return Task.CompletedTask;
+        if (V7Problem is { } problem)
+        {
+            StatusText = problem;
+            return Task.CompletedTask;
+        }
+        if (SelectedPlayer is not { } player)
+        {
+            StatusText = "Select in the players list who gets the key, then press Key again.";
+            return Task.CompletedTask;
+        }
+        return ActAsync($"Give {player.Username} a key of {v.Script} #{id}?",
+            async c => $"{player.Username} got {await c.GiveVehicleKeyAsync(id, v.Script, player.Username) ?? "the key"} ({v.Script} #{id}).");
+    }
+
+    // ---- the selected player's sheet (bridge v7) ----
+
+    /// <summary>Profession, traits, skills and condition of the selected player (empty with an older bridge).</summary>
+    [ObservableProperty] private string playerSheet = "";
+
+    internal static string DescribeSheet(BridgePlayerDetails d)
+    {
+        static string Percent(double? v) => v is { } x ? $"{x:P0}" : "?";
+        var lines = new List<string>();
+        lines.Add((d.Profession ?? "No profession") + (d.Traits.Count > 0 ? " · " + string.Join(", ", d.Traits) : ""));
+
+        var condition = new List<string>();
+        if (d.Infected == true)
+            condition.Add("INFECTED");
+        if (d.Bitten is > 0 and var bites)
+            condition.Add($"{bites} bite{(bites == 1 ? "" : "s")}");
+        if (d.OnFire == true)
+            condition.Add("ON FIRE");
+        // only what is worth a look: a rested, fed, calm player shows nothing here
+        foreach (var (key, label) in new[] { ("hunger", "hunger"), ("thirst", "thirst"), ("fatigue", "tiredness"), ("panic", "panic"),
+                     ("stress", "stress"), ("pain", "pain"), ("sickness", "sickness"), ("intoxication", "drunk"), ("boredom", "boredom"), ("unhappiness", "unhappiness") })
+            if (d.Stats.TryGetValue(key, out var v) && v >= 0.15)
+                condition.Add($"{label} {Percent(v)}");
+        if (d.Stats.TryGetValue("endurance", out var endurance) && endurance <= 0.85)
+            condition.Add($"endurance {Percent(endurance)}");
+        lines.Add(condition.Count > 0 ? string.Join(" · ", condition) : "No wounds to report, fed and rested.");
+
+        // by category, levels above 0 first to the eye: "Combat: Axe 4, Long Blunt 2"
+        foreach (var group in d.Skills.Where(s => s.Level is > 0).GroupBy(s => s.Category ?? ""))
+            lines.Add((group.Key.Length > 0 ? group.Key + ": " : "") + string.Join(", ", group.OrderByDescending(s => s.Level).Select(s => $"{s.Name} {s.Level}")));
+        if (!d.Skills.Any(s => s.Level is > 0))
+            lines.Add(d.Skills.Count > 0 ? "All skills at level 0." : "");
+        return string.Join("\n", lines.Where(l => l.Length > 0));
+    }
 
     /// <summary>
     /// Removes the zombie corpses within <paramref name="radius"/> squares of a spot, on every floor (players'

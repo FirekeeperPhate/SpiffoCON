@@ -552,7 +552,7 @@
                     <!-- weather overrides: bridge v5 -->
                     <Border Grid.Column="4" Style="{StaticResource Card}" VerticalAlignment="Top">
                         <StackPanel>
-                            <TextBlock Text="Weather" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="Weather and time" Style="{StaticResource SectionTitle}" />
                             <Grid Margin="0,8,0,0" IsEnabled="{Binding Bridge.CanSetWeather}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -600,6 +600,14 @@
                                 <Button Content="Back to the game's weather" Command="{Binding ResetWeatherCommand}" Style="{StaticResource PairButton}"
                                         ToolTip="Every setting back to the game (the settings are saved with the world until then)" />
                             </WrapPanel>
+                            <!-- time of day: bridge v7 -->
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <TextBlock Text="Time of day" VerticalAlignment="Center" />
+                                <TextBox Text="{Binding TimeOfDay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0"
+                                         ToolTip="Hours and minutes, like 8:30 or 21:00" />
+                                <Button Content="Set" Command="{Binding SetTimeCommand}"
+                                        ToolTip="Skips the clock forward to the next time it is that hour, for everyone (bridge v7): the game has no way back. Players see it within ten seconds" />
+                            </StackPanel>
                             <TextBlock Text="{Binding WeatherResult}" TextWrapping="Wrap" Margin="0,8,0,0"
                                        Visibility="{Binding WeatherResult, Converter={StaticResource NullToCollapsed}}" />
                             <TextBlock Text="{Binding WeatherStatus}" Opacity="0.75" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" />
@@ -1308,9 +1316,9 @@
                         <ListView ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" ItemContainerStyle="{StaticResource GridRow}" controls:PlayerMenu.Enabled="True">
                             <ListView.View>
                                 <GridView>
-                                    <GridViewColumn Header="Player" Width="150" DisplayMemberBinding="{Binding Username}" />
-                                    <GridViewColumn Header="Role" Width="80" DisplayMemberBinding="{Binding Role}" />
-                                    <GridViewColumn Header="Position" Width="130">
+                                    <GridViewColumn Header="Player" Width="125" DisplayMemberBinding="{Binding Username}" />
+                                    <GridViewColumn Header="Role" Width="70" DisplayMemberBinding="{Binding Role}" />
+                                    <GridViewColumn Header="Position" Width="120">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock FontFamily="{StaticResource MonoFont}" FontSize="12">
@@ -1320,9 +1328,12 @@
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
                                     <GridViewColumn Header="Health" Width="60" DisplayMemberBinding="{Binding Health}" />
-                                    <GridViewColumn Header="Vehicle" Width="140" DisplayMemberBinding="{Binding Vehicle}" />
-                                    <GridViewColumn Header="Hours" Width="60" DisplayMemberBinding="{Binding HoursSurvived}" />
-                                    <GridViewColumn Header="Kills" Width="55" DisplayMemberBinding="{Binding ZombieKills}" />
+                                    <GridViewColumn Width="72" DisplayMemberBinding="{Binding ZombiesNear}">
+                                        <GridViewColumnHeader Content="Zombies" ToolTip="Zombies within about 30 squares of the player (bridge v7)" />
+                                    </GridViewColumn>
+                                <GridViewColumn Header="Vehicle" Width="120" DisplayMemberBinding="{Binding Vehicle}" />
+                                <GridViewColumn Header="Hours" Width="55" DisplayMemberBinding="{Binding HoursSurvived}" />
+                                <GridViewColumn Header="Kills" Width="50" DisplayMemberBinding="{Binding ZombieKills}" />
                                 </GridView>
                             </ListView.View>
                         </ListView>
@@ -1335,11 +1346,18 @@
                                 <Button Content="To Players tab" Command="{Binding UseInPlayersTabCommand}" CommandParameter="{Binding SelectedPlayer}"
                                         ToolTip="Put this player and their position in the Players tab (teleport others here)" />
                             </WrapPanel>
+                            <!-- profession, traits, condition and skills: bridge v7 -->
+                            <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Padding="10,8" Margin="0,0,0,8"
+                                    Visibility="{Binding PlayerSheet, Converter={StaticResource NullToCollapsed}}">
+                                <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock Text="{Binding PlayerSheet}" TextWrapping="Wrap" FontSize="12" />
+                                </ScrollViewer>
+                            </Border>
                             <TextBlock DockPanel.Dock="Top" Text="{Binding InventoryTitle}" TextWrapping="Wrap" Margin="0,0,0,6" FontWeight="SemiBold" />
                             <ListView ItemsSource="{Binding Inventory}" ItemContainerStyle="{StaticResource GridRow}">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="Item" Width="160">
+                                        <GridViewColumn Header="Item" Width="120">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <TextBlock ToolTip="{Binding FullType}">
@@ -1354,8 +1372,14 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Header="#" Width="40" DisplayMemberBinding="{Binding Count}" />
-                                        <GridViewColumn Header="In" Width="100" DisplayMemberBinding="{Binding Container}" />
+                                        <GridViewColumn Header="#" Width="36" DisplayMemberBinding="{Binding Count}" />
+                                        <GridViewColumn Header="In" Width="150">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding ContainerShort}" ToolTip="{Binding Container}" TextTrimming="CharacterEllipsis" />
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
                                         <GridViewColumn Width="90">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
@@ -1393,10 +1417,14 @@
                                     </GridViewColumn>
                                     <GridViewColumn Header="Driver" Width="140" DisplayMemberBinding="{Binding Driver}" />
                                     <GridViewColumn Header="Engine on" Width="80" DisplayMemberBinding="{Binding EngineRunning}" />
-                                    <GridViewColumn Width="210">
+                                    <GridViewColumn Width="270">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
+                                                    <Button Content="Key" FontSize="11" Padding="8,1" MinHeight="0" Margin="0,0,4,0"
+                                                            ToolTip="Give a key of this vehicle to the player selected in the list above (bridge v7)"
+                                                            Command="{Binding DataContext.GiveVehicleKeyCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
                                                     <Button Content="Repair" FontSize="11" Padding="8,1" MinHeight="0"
                                                             Command="{Binding DataContext.RepairVehicleCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
                                                             CommandParameter="{Binding}" />
@@ -1436,7 +1464,10 @@
                                   ToolTip="The game's top-down image of the world instead of the map" />
                         <CheckBox Content="Vehicles" IsChecked="{Binding ShowVehicles}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="Vehicles in the loaded areas (blue; green when someone drives)" />
-                        <CheckBox Content="Follow the selected player" IsChecked="{Binding Follow}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center" />
+                        <CheckBox Content="Safehouses" IsChecked="{Binding ShowSafehouses}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center"
+                                  ToolTip="The players' safehouses as green areas, with the owner's name (bridge v7)" />
+                        <CheckBox Content="Follow" IsChecked="{Binding Follow}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center"
+                                  ToolTip="Keep the selected player in the middle of the map as they move" />
                         <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
                         <TextBlock Text="Right-click zombies" VerticalAlignment="Center" />
                         <TextBox Text="{Binding HordeCount, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
@@ -1460,7 +1491,7 @@
                     <!-- the map -->
                     <Border Grid.Row="1" CornerRadius="6" ClipToBounds="True" Background="#18808080">
                         <Grid>
-                            <controls:WorldMapView x:Name="MapView" ContextMenuOpening="MapView_ContextMenuOpening" Scene="{Binding Scene}" Players="{Binding Bridge.Players}" Vehicles="{Binding Bridge.Vehicles}"
+                            <controls:WorldMapView x:Name="MapView" ContextMenuOpening="MapView_ContextMenuOpening" Scene="{Binding Scene}" Players="{Binding Bridge.Players}" Vehicles="{Binding Bridge.Vehicles}" Safehouses="{Binding Bridge.Safehouses}" ShowSafehouses="{Binding ShowSafehouses}"
                                                    ShowVehicles="{Binding ShowVehicles}" Satellite="{Binding Satellite}" SelectedPlayer="{Binding SelectedPlayer}"
                                                    PointerText="{Binding PointerText}" ContextSquare="{Binding ContextSquare}">
                                 <controls:WorldMapView.ContextMenu>
@@ -1470,8 +1501,16 @@
                                         <Separator />
                                         <MenuItem Header="{Binding SpawnHordeText}" Command="{Binding SpawnHordeCommand}" />
                                         <MenuItem Header="{Binding RemoveZombiesText}" Command="{Binding RemoveZombiesCommand}" />
+                                        <Separator />
                                         <MenuItem Header="{Binding RemoveCorpsesText}" Command="{Binding RemoveCorpsesCommand}"
                                                   ToolTip="Zombie corpses on every floor, through the bridge (v6); the corpses of players and animals stay" />
+                                        <MenuItem Header="{Binding RemoveGroundItemsText}" Command="{Binding RemoveGroundItemsCommand}"
+                                                  ToolTip="Items lying on the ground, on every floor (bridge v7): counted first, then asked. Furniture, containers and safehouses are not touched" />
+                                        <MenuItem Header="{Binding StopFiresText}" Command="{Binding StopFiresCommand}"
+                                                  ToolTip="Every fire in the area, on every floor (bridge v7)" />
+                                        <Separator />
+                                        <MenuItem Header="{Binding RemoveSafehouseText}" Command="{Binding RemoveSafehouseCommand}" IsEnabled="{Binding HasContextSafehouse}"
+                                                  ToolTip="Right-click inside a safehouse (the green areas, bridge v7). What is in it stays, but it is no longer protected" />
                                     </ContextMenu>
                                 </controls:WorldMapView.ContextMenu>
                             </controls:WorldMapView>

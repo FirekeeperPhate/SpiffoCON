@@ -10,12 +10,19 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <!-- runs the bridge's Lua script against a mock of the game (BridgeScriptTests) -->
+    <PackageReference Include="MoonSharp" Version="2.0.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Bridge/GameMock.lua" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../bridge/SpiffoCONBridge/Contents/mods/SpiffoCONBridge/42/media/lua/server/SpiffoCONBridge.lua" Link="Bridge/SpiffoCONBridge.lua" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
