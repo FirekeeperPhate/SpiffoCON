@@ -122,7 +122,9 @@ instead.
   server code does it (with its client sync) and written to the admin log: full heal,
   remove items (not worn or attached ones; bridge v3 removes them from the container they
   are listed under), repair, refuel or remove a vehicle, all asked for confirmation. Bridge v5
-  sets the weather (Events tab). The bridge runs while the server runs a game: an empty server
+  sets the weather (Events tab); bridge v6 removes the zombie corpses within a radius of a spot
+  on the map or of a player, on every floor (the corpses of players and animals stay), as the
+  debug Horde Manager's *Remove bodies* does. The bridge runs while the server runs a game: an empty server
   with `PauseEmpty=true` is paused and the bridge waits.
 - Map tab: the game's world map (drawn like the in-game map from the game's own
   `worldmap.xml` and forest images, with building types in color and place names, or the
@@ -130,7 +132,8 @@ instead.
   each bridge refresh (every 15 s). Wheel zooms, dragging moves, clicking a player (on the map,
   or in the sidebar while the Map tab is open) selects and can follow them; right-click teleports
   the selected player there, copies the coordinates, spawns a horde there (`createhorde2`, number
-  and radius set in the toolbar) or removes the zombies around (`removezombies`). The server
+  and radius set in the toolbar), removes the zombies around (`removezombies`) or their corpses
+  (through the bridge). The server
   places zombies only where the map is loaded, that is near a player, and says "invalid
   location" elsewhere. The map files are read from a Project Zomboid or dedicated server install
   on this PC, or copied once from the server over SFTP (about 17 MB, 50 MB more for the satellite

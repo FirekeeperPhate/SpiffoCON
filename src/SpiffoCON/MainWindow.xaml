@@ -1443,7 +1443,7 @@
                                  ToolTip="How many zombies Spawn zombies here creates (1-500)" />
                         <TextBlock Text="radius" VerticalAlignment="Center" Margin="8,0,0,0" />
                         <TextBox Text="{Binding HordeRadius, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
-                                 ToolTip="Squares around the clicked spot where zombies are placed or removed (1-50)" />
+                                 ToolTip="Squares around the clicked spot where zombies are placed or removed (1-50), or their corpses removed (1-100)" />
                         <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
                         <Button Content="Download from server" Command="{Binding DownloadCommand}" Margin="0,0,8,0" VerticalAlignment="Center"
                                 Visibility="{Binding CanDownload, Converter={StaticResource BoolToVisibility}}"
@@ -1470,6 +1470,8 @@
                                         <Separator />
                                         <MenuItem Header="{Binding SpawnHordeText}" Command="{Binding SpawnHordeCommand}" />
                                         <MenuItem Header="{Binding RemoveZombiesText}" Command="{Binding RemoveZombiesCommand}" />
+                                        <MenuItem Header="{Binding RemoveCorpsesText}" Command="{Binding RemoveCorpsesCommand}"
+                                                  ToolTip="Zombie corpses on every floor, through the bridge (v6); the corpses of players and animals stay" />
                                     </ContextMenu>
                                 </controls:WorldMapView.ContextMenu>
                             </controls:WorldMapView>

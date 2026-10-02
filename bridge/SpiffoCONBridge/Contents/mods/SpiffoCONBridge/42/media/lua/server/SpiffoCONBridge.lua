@@ -1,6 +1,6 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
--- refuel or remove vehicles, set the weather). Server side only; it does nothing on clients.
+-- refuel or remove vehicles, set the weather, remove zombie corpses). Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
 --   spiffocon_in.txt   written by SpiffoCON:  "SEQ <n>", one request per line (id<TAB>action<TAB>arg...), "END <n>"
@@ -9,7 +9,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 5
+local VERSION = 6
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -426,7 +426,62 @@ local function setClimate(name, value)
 	return world()
 end
 
+-- ---- corpses (bridge v6) ----
+
+local MAX_CORPSE_RADIUS = 100
+
+-- a zombie's corpse only: a player's (their loot) and an animal's (butchering) stay
+local function isZombieCorpse(body)
+	if try(function() return body:isAnimal() end) then return false end
+	if try(function() return body:isPlayer() end) then return false end
+	return try(function() return body:isZombie() end) == true
+end
+
+-- removecorpses <x> <y> <radius>: the zombie corpses within radius squares, on every floor. As "Remove
+-- bodies" of the debug Horde Manager (IsoGridSquare.removeCorpse, which on a server also tells the
+-- clients nearby), with a real radius: in multiplayer that button clears the admin's whole loaded area.
+-- The server only has the squares near players: elsewhere nothing is loaded, so nothing is found.
+local function removeCorpses(x, y, radius)
+	x, y, radius = tonumber(x), tonumber(y), tonumber(radius)
+	if not x or not y or not radius then error("removecorpses needs x, y and a radius") end
+	x, y = math.floor(x), math.floor(y)
+	radius = math.max(1, math.min(MAX_CORPSE_RADIUS, math.floor(radius)))
+	local cell = getCell()
+	local removed, loaded = 0, 0
+	for sx = x - radius, x + radius do
+		for sy = y - radius, y + radius do
+			if (sx - x) * (sx - x) + (sy - y) * (sy - y) <= radius * radius then
+				local ground = cell:getGridSquare(sx, sy, 0)
+				if ground then
+					loaded = loaded + 1
+					-- basements and upper floors: the levels this chunk has
+					local chunk = try(function() return ground:getChunk() end)
+					local minZ = chunk and try(function() return chunk:getMinLevel() end) or -1
+					local maxZ = chunk and try(function() return chunk:getMaxLevel() end) or 7
+					for z = minZ, maxZ do
+						local sq = z == 0 and ground or cell:getGridSquare(sx, sy, z)
+						if sq then
+							local objects = sq:getStaticMovingObjects()
+							-- backwards: removing takes the body out of this list
+							for i = objects:size() - 1, 0, -1 do
+								local body = objects:get(i)
+								if instanceof(body, "IsoDeadBody") and isZombieCorpse(body) then
+									sq:removeCorpse(body, false)
+									removed = removed + 1
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	audit("removed " .. removed .. " zombie corpses within " .. radius .. " squares of " .. x .. ", " .. y)
+	return { removed = removed, loaded = loaded, radius = radius }
+end
+
 local actions = {
+	removecorpses = removeCorpses,
 	ping = function() return { version = VERSION, players = getOnlinePlayers():size() } end,
 	players = function() return listPlayers() end,
 	inventory = function(username) return inventory(username) end,

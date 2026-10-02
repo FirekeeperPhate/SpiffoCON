@@ -124,6 +124,20 @@ public sealed class PlayerActions(MainViewModel main)
             });
     }
 
+    /// <summary>Why the zombie corpses around a player can't be removed (null: they can).</summary>
+    public string? CorpsesProblem(string player) =>
+        main.Bridge.CorpsesProblem ?? (BridgeInfo(player)?.X is null ? "The bridge has no position for this player." : null);
+
+    public IReadOnlyList<int> CorpseRadii => [10, 25, 50, 100];
+
+    public async Task RemoveCorpsesAsync(string player, int radius)
+    {
+        if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)
+            return;
+        if (await main.Bridge.RemoveCorpsesAsync(x, y, radius, info.Username) is { } result)
+            main.StatusText = result;
+    }
+
     public async Task HealAsync(string player)
     {
         if (BridgeInfo(player) is not { } info)

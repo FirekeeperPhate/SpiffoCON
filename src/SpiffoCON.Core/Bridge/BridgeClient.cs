@@ -306,6 +306,22 @@ public sealed partial class BridgeClient(IBridgeFiles files)
 
     public Task RemoveVehicleAsync(int id, string? script = null) => VehicleAsync("removevehicle", id, script);
 
+    // ---- corpses (bridge v6) ----
+
+    /// <summary>The bridge clamps the radius to this.</summary>
+    public const int MaxCorpseRadius = 100;
+
+    /// <summary>
+    /// Removes the zombie corpses (not players' or animals') within a radius of a square, on every floor.
+    /// Returns how many, and how many of those squares the server had loaded (none: nobody is near).
+    /// </summary>
+    public async Task<(int Removed, int LoadedSquares)> RemoveCorpsesAsync(int x, int y, int radius)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var data = await SendAsync("removecorpses", x.ToString(inv), y.ToString(inv), radius.ToString(inv)).ConfigureAwait(false);
+        return (data.GetProperty("removed").GetInt32(), data.TryGetProperty("loaded", out var loaded) ? loaded.GetInt32() : 0);
+    }
+
     // ---- weather (bridge v5) ----
 
     /// <summary>The weather settings the bridge can set.</summary>

@@ -375,12 +375,28 @@ public sealed partial class MapViewModel : ObservableObject
     private string hordeCount = "20";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SpawnHordeText), nameof(RemoveZombiesText))]
+    [NotifyPropertyChangedFor(nameof(SpawnHordeText), nameof(RemoveZombiesText), nameof(RemoveCorpsesText))]
     private string hordeRadius = "5";
 
     public string SpawnHordeText => $"Spawn {HordeCount.Trim()} zombies here";
 
     public string RemoveZombiesText => $"Remove the zombies within {HordeRadius.Trim()} squares";
+
+    public string RemoveCorpsesText => $"Remove the zombie corpses within {HordeRadius.Trim()} squares";
+
+    /// <summary>Through the bridge (v6): RCON has no command for corpses.</summary>
+    [RelayCommand]
+    private async Task RemoveCorpsesAsync()
+    {
+        if (!int.TryParse(HordeRadius.Trim(), out var radius) || radius < 1 || radius > BridgeClient.MaxCorpseRadius)
+        {
+            StatusText = $"Radius: a whole number of squares from 1 to {BridgeClient.MaxCorpseRadius} for corpses.";
+            return;
+        }
+        int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
+        if (await Bridge.RemoveCorpsesAsync(x, y, radius, $"{x}, {y}") is { } result)
+            StatusText = result;
+    }
 
     bool ReadHorde(out int count, out int radius)
     {

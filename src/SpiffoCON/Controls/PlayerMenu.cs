@@ -96,6 +96,9 @@ public static class PlayerMenu
             ((object)(ev.Id == "horde" ? $"{ev.Name} ({actions.HordeSize} zombies)" : ev.Name), (Func<Task>)(() => actions.EventAsync(player, ev)))));
         Add(menu.Items, "Heal completely…", () => actions.HealAsync(player), online && actions.CanHeal(player),
             actions.CanHeal(player) ? null : "Needs bridge v2 (Bridge tab)");
+        Sub(menu.Items, "Remove zombie corpses around", online && actions.CorpsesProblem(player) is null,
+            actions.CorpseRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveCorpsesAsync(player, r)))),
+            actions.CorpsesProblem(player));
         menu.Items.Add(new Separator());
 
         Sub(menu.Items, "Powers", online,
@@ -137,9 +140,10 @@ public static class PlayerMenu
         items.Add(item);
     }
 
-    static void Sub(ItemCollection items, string header, bool enabled, IEnumerable<(object Header, Func<Task> Action)> children)
+    static void Sub(ItemCollection items, string header, bool enabled, IEnumerable<(object Header, Func<Task> Action)> children, string? tip = null)
     {
-        var parent = new MenuItem { Header = header, IsEnabled = enabled };
+        var parent = new MenuItem { Header = header, IsEnabled = enabled, ToolTip = tip };
+        ToolTipService.SetShowOnDisabled(parent, true);
         foreach (var (childHeader, action) in children)
         {
             var child = new MenuItem { Header = childHeader };

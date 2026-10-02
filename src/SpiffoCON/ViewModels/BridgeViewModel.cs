@@ -497,6 +497,39 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    // ---- zombie corpses (bridge v6), for the map and the player menu ----
+
+    /// <summary>Why corpses can't be removed now (null: they can).</summary>
+    public string? CorpsesProblem =>
+        _client is null || !IsConnected ? "Zombie corpses are removed through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 6 ? $"Removing corpses needs bridge v6 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>
+    /// Removes the zombie corpses within <paramref name="radius"/> squares of a spot, on every floor (players'
+    /// and animals' corpses stay), after asking. Returns what happened, to show where it was asked.
+    /// </summary>
+    internal async Task<string?> RemoveCorpsesAsync(int x, int y, int radius, string where)
+    {
+        if (CorpsesProblem is { } problem)
+            return problem;
+        if (_main.Confirm?.Invoke($"Remove the zombie corpses within {radius} squares of {where}?\n\n"
+                + "On every floor. The corpses of players and animals are left where they are. It can't be undone.") != true)
+            return null;
+        try
+        {
+            var (removed, loaded) = await _client!.RemoveCorpsesAsync(x, y, radius);
+            // the server only has the squares around players in memory
+            return loaded == 0 ? $"No corpses removed: the area around {where} is not loaded on the server (it only keeps the surroundings of players)."
+                : removed == 0 ? $"No zombie corpses within {radius} squares of {where}."
+                : $"{removed} zombie corpse{(removed == 1 ? "" : "s")} removed within {radius} squares of {where}.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not remove the corpses: " + ex.Message;
+        }
+    }
+
     bool _closed;
 
     public void Close()
