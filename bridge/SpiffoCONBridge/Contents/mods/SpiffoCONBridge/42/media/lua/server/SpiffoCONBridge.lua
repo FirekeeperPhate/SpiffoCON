@@ -1,7 +1,7 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
 -- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
--- put items on the ground).
+-- put items on the ground, remove wrecks) and keeps the deaths of players.
 -- Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
@@ -841,8 +841,141 @@ local function spawnItems(x, y, z, list)
 	return { spawned = spawned, unknown = unknown }
 end
 
+-- ---- deaths (bridge v8) ----
+-- IsoGameCharacter.DoDeath runs on the server for a player who dies (it writes "<name> died at" to the
+-- user log there) and begins with OnDeath, which fires OnCharacterDeath: kept here, the last
+-- MAX_DEATHS of them, and in a file of the Lua folder so that a restart does not lose them.
+
+local DEATHS_FILE = "spiffocon_deaths.txt"
+local MAX_DEATHS = 100
+local deaths = nil
+
+-- one death per line: time<TAB>username<TAB>x<TAB>y<TAB>z<TAB>killer<TAB>hoursSurvived<TAB>zombieKills
+local function loadDeaths()
+	deaths = {}
+	local reader = getFileReader(DEATHS_FILE, false)
+	if not reader then return end
+	local line = reader:readLine()
+	while line do
+		local p = {}
+		for part in (line .. "\t"):gmatch("([^\t]*)\t") do p[#p + 1] = part end
+		if #p >= 5 then
+			deaths[#deaths + 1] = { time = p[1], username = p[2], x = tonumber(p[3]), y = tonumber(p[4]), z = tonumber(p[5]),
+				killer = p[6] ~= "" and p[6] or nil, hoursSurvived = tonumber(p[7]), zombieKills = tonumber(p[8]) }
+		end
+		line = reader:readLine()
+	end
+	reader:close()
+end
+
+local function saveDeaths()
+	local lines = {}
+	for _, d in ipairs(deaths) do
+		lines[#lines + 1] = table.concat({ d.time, d.username, tostring(d.x), tostring(d.y), tostring(d.z), d.killer or "",
+			tostring(d.hoursSurvived or ""), tostring(d.zombieKills or "") }, "\t")
+	end
+	local writer = getFileWriter(DEATHS_FILE, true, false)
+	writer:write(table.concat(lines, "\n") .. "\n")
+	writer:close()
+end
+
+local function onCharacterDeath(character)
+	if not instanceof(character, "IsoPlayer") then return end
+	if not deaths then loadDeaths() end
+	local killer = try(function()
+		local by = character:getAttackedBy()
+		if by and by ~= character and instanceof(by, "IsoPlayer") then return by:getUsername() end
+		if by and instanceof(by, "IsoZombie") then return "zombie" end
+		return nil
+	end)
+	deaths[#deaths + 1] = {
+		-- milliseconds since 1970, as a string (a Java long through Lua loses digits as a number)
+		time = string.format("%.0f", getTimestampMs()),
+		username = tostring(try(function() return character:getUsername() end)),
+		x = try(function() return math.floor(character:getX()) end),
+		y = try(function() return math.floor(character:getY()) end),
+		z = try(function() return math.floor(character:getZ()) end),
+		killer = killer,
+		hoursSurvived = try(function() return math.floor(character:getHoursSurvived() * 10) / 10 end),
+		zombieKills = try(function() return character:getZombieKills() end),
+	}
+	while #deaths > MAX_DEATHS do table.remove(deaths, 1) end
+	try(saveDeaths)
+end
+
+local function listDeaths()
+	if not deaths then loadDeaths() end
+	local result = array()
+	for _, d in ipairs(deaths) do result[#result + 1] = d end
+	return result
+end
+
+-- ---- zombies on the map (bridge v8) ----
+
+-- zombiecells [size]: the zombies of the loaded areas, counted per square of size x size (10 by default),
+-- for a density layer on the map: { x, y, n } with x, y the corner of the square
+local function zombieCells(size)
+	size = math.floor(tonumber(size) or 10)
+	if not (size >= 2 and size <= 100) then size = 10 end
+	local counts, order = {}, array()
+	local zombies = getCell():getZombieList()
+	for i = 0, zombies:size() - 1 do
+		local zombie = zombies:get(i)
+		local cx, cy = math.floor(zombie:getX() / size) * size, math.floor(zombie:getY() / size) * size
+		local key = cx .. "," .. cy
+		local cell = counts[key]
+		if not cell then
+			cell = { x = cx, y = cy, n = 0 }
+			counts[key] = cell
+			order[#order + 1] = cell
+		end
+		cell.n = cell.n + 1
+	end
+	return order
+end
+
+-- ---- wrecks (bridge v8) ----
+
+-- the game's burnt and smashed vehicles (Base.CarNormalBurnt, Base.PickUpTruckSmashedFront...): shells
+-- that can't be driven or repaired into a car again
+local function isWreck(v)
+	local script = try(function() return v:getScript():getFullName() end) or ""
+	return script:find("Burnt", 1, true) ~= nil or script:find("Smashed", 1, true) ~= nil
+end
+
+-- removewrecks <x> <y> <radius> <apply: 0 | 1> [username]: the wrecks within the radius, counted, or with
+-- apply removed as Commands.remove does (permanentlyRemove). One with someone inside stays.
+local function removeWrecks(x, y, radius, apply, username)
+	x, y, radius = areaOf("removewrecks", x, y, radius, username)
+	apply = apply == "1"
+	local found, removed = 0, 0
+	local list = loadedVehicles()
+	for i = 0, list:size() - 1 do
+		local v = list:get(i)
+		local vx, vy = try(function() return v:getX() end), try(function() return v:getY() end)
+		if vx and vy and (vx - x) * (vx - x) + (vy - y) * (vy - y) <= radius * radius and isWreck(v)
+			and not try(function() return v:getDriver() end) then
+			found = found + 1
+			if apply then
+				v:permanentlyRemove()
+				removed = removed + 1
+			end
+		end
+	end
+	if apply then audit("removed " .. removed .. " wrecks within " .. radius .. " squares of " .. x .. ", " .. y) end
+	return { found = found, removed = removed, radius = radius }
+end
+
+-- after a Lua reload the previous copy's handler must go, or each death would be written twice
+if SpiffoCONBridgeDeath then Events.OnCharacterDeath.Remove(SpiffoCONBridgeDeath) end
+SpiffoCONBridgeDeath = onCharacterDeath
+Events.OnCharacterDeath.Add(onCharacterDeath)
+
 local actions = {
 	spawnitems = spawnItems,
+	deaths = listDeaths,
+	zombiecells = zombieCells,
+	removewrecks = removeWrecks,
 	removecorpses = removeCorpses,
 	removegrounditems = removeGroundItems,
 	stopfires = stopFires,

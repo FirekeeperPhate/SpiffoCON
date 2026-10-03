@@ -164,6 +164,9 @@ public sealed partial class BridgeViewModel : ObservableObject
         // would ask an older bridge for what it does not know), not its safehouses
         BridgeVersion = 0;
         Safehouses.Clear();
+        Deaths.Clear();
+        ZombieCells.Clear();
+        _lastDeath = null;
         _client = new BridgeClient(files);
         Source = files.Description;
         StatusText = "Asking the bridge...";
@@ -265,7 +268,7 @@ public sealed partial class BridgeViewModel : ObservableObject
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            var snapshot = await client.SnapshotAsync(timeout.Token, safehouses: BridgeVersion >= 7);
+            var snapshot = await client.SnapshotAsync(timeout.Token, safehouses: BridgeVersion >= 7, deathsAndZombies: BridgeVersion >= 8);
             // connected to another folder or server meanwhile: this answer is not for the lists any more
             if (!ReferenceEquals(client, _client))
                 return;
@@ -293,6 +296,14 @@ public sealed partial class BridgeViewModel : ObservableObject
                 foreach (var s in safehouses.OrderBy(s => s.Owner, StringComparer.CurrentCultureIgnoreCase))
                     Safehouses.Add(s);
             }
+            if (snapshot.ZombieCells is { } cells)
+            {
+                ZombieCells.Clear();
+                foreach (var cell in cells)
+                    ZombieCells.Add(cell);
+            }
+            if (snapshot.Deaths is { } deaths)
+                ShowDeaths(deaths);
             StatusText = $"Updated at {DateTime.Now:HH:mm:ss}" + (AutoRefresh ? " · every 15 s" : "")
                 + (snapshot.Problem is { } problem ? $" · not available: {problem}" + (BridgeVersion < 4 && problem.Contains("vehicles") ? " (fixed in bridge v4: upload it to the Workshop)" : "") : "");
         }
@@ -319,6 +330,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             SelectedPlayer = null;
             Players.Clear();
             Vehicles.Clear();
+            ZombieCells.Clear();
         }
         finally
         {
@@ -345,7 +357,10 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
         // nobody online: no area is loaded, so no vehicle is either
         if (online.Count == 0)
+        {
             Vehicles.Clear();
+            ZombieCells.Clear();
+        }
         else
             _ = WakeAsync();
     }
@@ -552,10 +567,64 @@ public sealed partial class BridgeViewModel : ObservableObject
         : BridgeVersion < 7 ? $"This needs bridge v7 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
         : null;
 
-    /// <summary>Why items can't be put on the ground now (null: they can): that came with bridge v8.</summary>
+    /// <summary>The last deaths of players the bridge keeps (v8), oldest first.</summary>
+    public ObservableCollection<BridgeDeath> Deaths { get; } = [];
+
+    /// <summary>The zombies of the loaded areas, per 10 x 10 squares (v8).</summary>
+    public ObservableCollection<BridgeZombieCell> ZombieCells { get; } = [];
+
+    /// <summary>The newest death seen (null: none read yet, so the first list is the past, not news).</summary>
+    long? _lastDeath;
+
+    void ShowDeaths(IReadOnlyList<BridgeDeath> deaths)
+    {
+        Deaths.Clear();
+        foreach (var d in deaths)
+            Deaths.Add(d);
+        long newest = deaths.Max(d => d.Time) ?? 0;
+        if (_lastDeath is { } last)
+            foreach (var d in deaths.Where(d => d.Time > last))
+                _main.Notify(NotificationKind.Deaths, $"{d.Username} died",
+                    $"At {d.X}, {d.Y}" + (d.Z is { } z and not 0 ? $", floor {z}" : "") + DescribeKiller(d.Killer)
+                    + (d.HoursSurvived is { } h ? $", after {h:0.#} hours" : "") + ".");
+        _lastDeath = Math.Max(_lastDeath ?? 0, newest);
+    }
+
+    internal static string DescribeKiller(string? killer) => killer switch
+    {
+        null or "" => "",
+        "zombie" => ", killed by zombies",
+        var player => $", killed by {player}",
+    };
+
+    /// <summary>Removes the wrecks (burnt and smashed vehicles) within a radius, after counting them and asking.</summary>
+    internal async Task<string?> RemoveWrecksAsync(int x, int y, int radius, string where, string? aroundPlayer = null)
+    {
+        if (V8Problem is { } problem)
+            return problem;
+        try
+        {
+            var count = await _client!.RemoveWrecksAsync(x, y, radius, apply: false, aroundPlayer);
+            if (count.Found == 0)
+                return $"No wrecks within {radius} squares of {where} (only the areas near players are loaded on the server).";
+            if (_main.Confirm?.Invoke($"Remove the {count.Found} wreck{(count.Found == 1 ? "" : "s")} (burnt or smashed vehicles) within {radius} squares of {where}?\n\n"
+                    + "Vehicles that can still be driven stay, and so does a wreck with someone inside. It can't be undone.") != true)
+                return null;
+            var done = await _client!.RemoveWrecksAsync(x, y, radius, apply: true, aroundPlayer);
+            _retryAt = default;
+            await RefreshAsync();
+            return $"{done.Removed} wreck{(done.Removed == 1 ? "" : "s")} removed within {radius} squares of {where}.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not remove the wrecks: " + ex.Message;
+        }
+    }
+
+    /// <summary>Why what came with bridge v8 (items on the ground, wrecks) can't be done now (null: it can).</summary>
     public string? V8Problem =>
-        _client is null || !IsConnected ? "Items are put on the ground through the SpiffoCON Bridge: connect it in the Bridge tab."
-        : BridgeVersion < 8 ? $"Putting items on the ground needs bridge v8 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 8 ? $"This needs bridge v8 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
         : null;
 
     /// <summary>

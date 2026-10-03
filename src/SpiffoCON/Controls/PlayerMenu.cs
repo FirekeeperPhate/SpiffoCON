@@ -109,6 +109,9 @@ public static class PlayerMenu
         Sub(cleanUp.Items, "Fires", actions.AreaProblem is null,
             actions.CorpseRadii.Select(r => ((object)$"{r} squares", (Func<Task>)(() => actions.StopFiresAsync(player, r)))),
             actions.AreaProblem ?? "Puts out every fire in the area (lit campfires are left)");
+        Sub(cleanUp.Items, "Wrecks", actions.WrecksProblem is null,
+            actions.CorpseRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveWrecksAsync(player, r)))),
+            actions.WrecksProblem ?? "Burnt and smashed vehicles: counted first, then asked. Cars that can still be driven stay");
         menu.Items.Add(cleanUp);
         menu.Items.Add(new Separator());
 

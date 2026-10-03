@@ -399,6 +399,14 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return data.Deserialize(BridgeJson.Default.BridgeSpawn) ?? new BridgeSpawn();
     }
 
+    /// <summary>The burnt and smashed vehicles within a radius: counted, or with <paramref name="apply"/> removed.</summary>
+    public async Task<BridgeWrecks> RemoveWrecksAsync(int x, int y, int radius, bool apply, string? aroundPlayer = null)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var data = await SendAsync("removewrecks", x.ToString(inv), y.ToString(inv), radius.ToString(inv), apply ? "1" : "0", aroundPlayer ?? "").ConfigureAwait(false);
+        return data.Deserialize(BridgeJson.Default.BridgeWrecks) ?? new BridgeWrecks();
+    }
+
     // ---- weather (bridge v5) ----
 
     /// <summary>The weather settings the bridge can set.</summary>
@@ -433,23 +441,32 @@ public sealed partial class BridgeClient(IBridgeFiles files)
 
     /// <summary>World, players and vehicles in one round trip.</summary>
     /// <param name="safehouses">Also the safehouses (bridge v7: an older bridge would answer "unknown action").</param>
-    public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default, bool safehouses = false)
+    /// <param name="deathsAndZombies">Also the deaths and the zombies per area (bridge v8).</param>
+    public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default, bool safehouses = false, bool deathsAndZombies = false)
     {
-        (string, string[])[] requests = safehouses
-            ? [("world", []), ("players", []), ("vehicles", []), ("safehouses", [])]
-            : [("world", []), ("players", []), ("vehicles", [])];
+        var requests = new List<(string, string[])> { ("world", []), ("players", []), ("vehicles", []) };
+        // always in these places: the replies are read by position
+        if (safehouses || deathsAndZombies)
+            requests.Add(safehouses ? ("safehouses", []) : ("ping", []));
+        if (deathsAndZombies)
+        {
+            requests.Add(("deaths", []));
+            requests.Add(("zombiecells", []));
+        }
         var replies = await SendAsync(requests, ct).ConfigureAwait(false);
         // one part failing (bridge v3 on B42 can't list vehicles) must not hide the others
         if (replies.All(r => !r.Ok))
             throw new BridgeException(replies[0].Error ?? "The bridge reported an error.");
-        var problems = new[] { "world", "players", "vehicles", "safehouses" }.Zip(replies)
+        var problems = new[] { "world", "players", "vehicles", safehouses ? "safehouses" : "ping", "deaths", "zombies" }.Zip(replies)
             .Where(p => !p.Second.Ok).Select(p => $"{p.First}: {p.Second.Error}").ToList();
         return new BridgeSnapshot(
             replies[0].Ok ? replies[0].Data.Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld() : new BridgeWorld(),
             replies[1].Ok ? Deserialize(replies[1].Data, BridgeJson.Default.ListBridgePlayer) : [],
             replies[2].Ok ? Deserialize(replies[2].Data, BridgeJson.Default.ListBridgeVehicle) : [])
         {
-            Safehouses = replies.Count > 3 && replies[3].Ok ? Deserialize(replies[3].Data, BridgeJson.Default.ListBridgeSafehouse) : null,
+            Safehouses = safehouses && replies.Count > 3 && replies[3].Ok ? Deserialize(replies[3].Data, BridgeJson.Default.ListBridgeSafehouse) : null,
+            Deaths = replies.Count > 4 && replies[4].Ok ? Deserialize(replies[4].Data, BridgeJson.Default.ListBridgeDeath) : null,
+            ZombieCells = replies.Count > 5 && replies[5].Ok ? Deserialize(replies[5].Data, BridgeJson.Default.ListBridgeZombieCell) : null,
             Problem = problems.Count == 0 ? null : string.Join("; ", problems),
         };
     }
@@ -465,6 +482,12 @@ public sealed record BridgeSnapshot(BridgeWorld World, IReadOnlyList<BridgePlaye
 
     /// <summary>Null when they were not asked for (or could not be read): what was known before stays.</summary>
     public IReadOnlyList<BridgeSafehouse>? Safehouses { get; init; }
+
+    /// <summary>The last deaths of players (bridge v8), oldest first; null when not asked for.</summary>
+    public IReadOnlyList<BridgeDeath>? Deaths { get; init; }
+
+    /// <summary>The zombies of the loaded areas per 10 x 10 squares (bridge v8); null when not asked for.</summary>
+    public IReadOnlyList<BridgeZombieCell>? ZombieCells { get; init; }
 }
 
 public sealed record BridgePlayer
@@ -534,6 +557,39 @@ public sealed record BridgeSafehouse
 
     /// <summary>Members online now.</summary>
     public int? Online { get; init; }
+}
+
+public sealed record BridgeDeath
+{
+    /// <summary>Milliseconds since 1970 (UTC), real time.</summary>
+    public long? Time { get; init; }
+    public string Username { get; init; } = "";
+    public int? X { get; init; }
+    public int? Y { get; init; }
+    public int? Z { get; init; }
+
+    /// <summary>The player who killed them, "zombie", or absent when the game does not say.</summary>
+    public string? Killer { get; init; }
+    public double? HoursSurvived { get; init; }
+    public int? ZombieKills { get; init; }
+
+    public DateTimeOffset? When => Time is { } ms ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null;
+}
+
+public sealed record BridgeZombieCell
+{
+    /// <summary>The corner of the area (squares).</summary>
+    public int X { get; init; }
+    public int Y { get; init; }
+
+    /// <summary>Zombies in it.</summary>
+    public int N { get; init; }
+}
+
+public sealed record BridgeWrecks
+{
+    public int Found { get; init; }
+    public int Removed { get; init; }
 }
 
 public sealed record BridgeSpawn
@@ -632,4 +688,7 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgePlayerDetails))]
 [JsonSerializable(typeof(BridgeGroundItems))]
 [JsonSerializable(typeof(BridgeSpawn))]
+[JsonSerializable(typeof(List<BridgeDeath>))]
+[JsonSerializable(typeof(List<BridgeZombieCell>))]
+[JsonSerializable(typeof(BridgeWrecks))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

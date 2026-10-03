@@ -6,7 +6,8 @@ local function note(text) LOG[#LOG + 1] = text end
 
 function isServer() return true end
 function getTimestampMs() return NOW end
-Events = { OnTick = { Add = function() end, Remove = function() end } }
+Events = { OnTick = { Add = function() end, Remove = function() end },
+	OnCharacterDeath = { Add = function(f) DEATH_HANDLER = f end, Remove = function() DEATH_HANDLER = nil end } }
 
 function getFileReader(name)
 	local text = FILES[name]
@@ -80,7 +81,8 @@ CharacterTraitDefinition = { getCharacterTraitDefinition = function(trait)
 end }
 
 local function player(username, x, y, z)
-	local p = { username = username, x = x, y = y, z = z, inventory = container("inventory of " .. username) }
+	local p = { class = "IsoPlayer", username = username, x = x, y = y, z = z, inventory = container("inventory of " .. username) }
+	p.getAttackedBy = function() return p.attackedBy end
 	p.getUsername = function() return username end
 	p.getDisplayName = function() return username end
 	p.getX = function() return p.x end
@@ -204,28 +206,44 @@ table.insert(at(100, 107, 0).fires, fire(false))
 table.insert(at(99, 100, 0).fires, fire(true))    -- a lit campfire
 
 local zombies = {}
-local function zombie(x, y) zombies[#zombies + 1] = { getX = function() return x end, getY = function() return y end } end
+local function zombie(x, y) zombies[#zombies + 1] = { class = "IsoZombie", getX = function() return x end, getY = function() return y end } end
 for i = 1, 5 do zombie(100 + i, 100) end   -- near rj
 zombie(140, 140)                           -- near nobody
 zombie(510, 510)                           -- near kate
+A_ZOMBIE = zombies[1]
 
 -- ---- vehicles ----
-local car = { id = 7 }
-car.getId = function() return 7 end
-car.getScript = function() return { getFullName = function() return "Base.PickUpTruck" end } end
-car.getX = function() return 105 end
-car.getY = function() return 100 end
-car.getZ = function() return 0 end
-car.getDriver = function() return nil end
-car.isEngineRunning = function() return false end
+VEHICLES = {}
+local function vehicle(id, script, x, y, driver)
+	local v = { id = id }
+	v.getId = function() return id end
+	v.getScript = function() return { getFullName = function() return script end } end
+	v.getX = function() return x end
+	v.getY = function() return y end
+	v.getZ = function() return 0 end
+	v.getDriver = function() return driver end
+	v.isEngineRunning = function() return false end
+	v.permanentlyRemove = function()
+		for i, other in ipairs(VEHICLES) do if other == v then table.remove(VEHICLES, i) end end
+		note("removeVehicle " .. script .. " #" .. id)
+	end
+	VEHICLES[#VEHICLES + 1] = v
+	return v
+end
+local car = vehicle(7, "Base.PickUpTruck", 105, 100, nil)
 car.createVehicleKey = function() return item("Base.CarKey", "Pick-up Truck Key") end
-function getVehicleById(id) if id == 7 then return car end return nil end
+-- wrecks: burnt and smashed shells of the game
+vehicle(8, "Base.CarNormalBurnt", 102, 101, nil)
+vehicle(9, "Base.PickUpTruckSmashedFront", 98, 99, nil)
+vehicle(10, "Base.OffRoadBurnt", 99, 101, { getUsername = function() return "kate" end })   -- someone inside
+vehicle(11, "Base.ModernCarBurnt", 140, 140, nil)                                          -- far away
+function getVehicleById(id) for _, v in ipairs(VEHICLES) do if v.id == id then return v end end return nil end
 
 function getCell()
 	return {
 		getGridSquare = function(self, x, y, z) return world[key(x, y, z)] end,
 		getZombieList = function() return list(zombies) end,
-		getVehicles = function() return list({ car }) end,
+		getVehicles = function() return list(VEHICLES) end,
 	}
 end
 

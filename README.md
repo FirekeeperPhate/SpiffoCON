@@ -138,9 +138,15 @@ instead.
   - a key of a vehicle for the selected player;
   - two bags of the same name in one inventory told apart ("School Bag #2").
 
-  Bridge v8 puts items on the ground: right-click a spot of the map for the item and quantity
-  chosen in the Catalog tab, or for a whole kit of the Kits tab (at most 500 objects at once; only
-  where the server has the map loaded, that is near a player).
+  Bridge v8 adds:
+  - items on the ground: right-click a spot of the map for the item and quantity chosen in the
+    Catalog tab, or for a whole kit of the Kits tab (at most 500 objects at once; only where the
+    server has the map loaded, that is near a player);
+  - the deaths of players: the last 100, kept by the bridge across restarts, with where and by
+    whom (zombies or a player), as red crosses on the map and as desktop notifications;
+  - the zombies of the loaded areas on the map, red, deeper where there are more;
+  - wrecks (burnt and smashed vehicles) removed within a radius, counted first, then asked;
+    cars that can still be driven, and a wreck with someone inside, stay.
 
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to

@@ -81,6 +81,44 @@ public sealed class WorldMapView : FrameworkElement
         set => SetValue(ShowSafehousesProperty, value);
     }
 
+    /// <summary>Where players died (bridge v8): a red cross each.</summary>
+    public static readonly DependencyProperty DeathsProperty = DependencyProperty.Register(
+        nameof(Deaths), typeof(IEnumerable), typeof(WorldMapView), new PropertyMetadata(null, OnCollectionChanged));
+
+    public IEnumerable? Deaths
+    {
+        get => (IEnumerable?)GetValue(DeathsProperty);
+        set => SetValue(DeathsProperty, value);
+    }
+
+    public static readonly DependencyProperty ShowDeathsProperty = DependencyProperty.Register(
+        nameof(ShowDeaths), typeof(bool), typeof(WorldMapView), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public bool ShowDeaths
+    {
+        get => (bool)GetValue(ShowDeathsProperty);
+        set => SetValue(ShowDeathsProperty, value);
+    }
+
+    /// <summary>The zombies of the loaded areas per 10 x 10 squares (bridge v8): red, deeper where there are more.</summary>
+    public static readonly DependencyProperty ZombieCellsProperty = DependencyProperty.Register(
+        nameof(ZombieCells), typeof(IEnumerable), typeof(WorldMapView), new PropertyMetadata(null, OnCollectionChanged));
+
+    public IEnumerable? ZombieCells
+    {
+        get => (IEnumerable?)GetValue(ZombieCellsProperty);
+        set => SetValue(ZombieCellsProperty, value);
+    }
+
+    public static readonly DependencyProperty ShowZombiesProperty = DependencyProperty.Register(
+        nameof(ShowZombies), typeof(bool), typeof(WorldMapView), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public bool ShowZombies
+    {
+        get => (bool)GetValue(ShowZombiesProperty);
+        set => SetValue(ShowZombiesProperty, value);
+    }
+
     public static readonly DependencyProperty ShowVehiclesProperty = DependencyProperty.Register(
         nameof(ShowVehicles), typeof(bool), typeof(WorldMapView), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
 
@@ -320,8 +358,13 @@ public sealed class WorldMapView : FrameworkElement
             text += $" · {Describe(p)}";
         else if (ShowVehicles && VehicleAt(screen) is { } v)
             text += $" · {v.Script} #{v.Id}" + (v.Driver is { } driver ? $", driven by {driver}" : "") + (v.EngineRunning == true ? ", engine on" : "");
+        else if (ShowDeaths && DeathAt(screen) is { } death)
+            text += $" · {death.Username} died here" + (death.When is { } when ? $" {DescribeWhen(when)}" : "")
+                + ViewModels.BridgeViewModel.DescribeKiller(death.Killer);
         else if (ShowSafehouses && SafehouseAt(world) is { } safehouse)
             text += " · " + ViewModels.BridgeViewModel.Describe(safehouse);
+        if (ShowZombies && ZombieCellAt(world) is { } cell)
+            text += $" · {cell.N} zombie{(cell.N == 1 ? "" : "s")} in this area";
         PointerText = text;
     }
 
@@ -329,6 +372,16 @@ public sealed class WorldMapView : FrameworkElement
         p.Username + (p.Dead == true ? " (dead)" : p.Health is { } h ? $" (health {h})" : "")
         + (p.Vehicle is { Length: > 0 } car ? $", in {car}" : "") + (p.Z is { } z and not 0 ? $", floor {z}" : "")
         + (p.ZombiesNear is > 0 and var near ? $", {near} zombie{(near == 1 ? "" : "s")} near" : "");
+
+    static string DescribeWhen(DateTimeOffset when)
+    {
+        var local = when.ToLocalTime();
+        var ago = DateTimeOffset.Now - when;
+        return ago.TotalMinutes < 1 ? "just now"
+            : ago.TotalHours < 1 ? $"{(int)ago.TotalMinutes} min ago ({local:HH:mm})"
+            : local.Date == DateTime.Today ? $"at {local:HH:mm}"
+            : $"on {local:d MMM} at {local:HH:mm}";
+    }
 
     /// <summary>The safehouse a square is in.</summary>
     BridgeSafehouse? SafehouseAt(Point world) =>
@@ -388,13 +441,82 @@ public sealed class WorldMapView : FrameworkElement
         }
         dc.Pop();
 
+        if (ShowZombies)
+            DrawZombies(dc);
         if (ShowSafehouses)
             DrawSafehouses(dc);
         DrawLabels(dc, scene, satellite);
+        if (ShowDeaths)
+            DrawDeaths(dc);
         if (ShowVehicles)
             DrawVehicles(dc);
         DrawPlayers(dc);
     }
+
+    const int ZombieCellSize = 10;
+
+    void DrawZombies(DrawingContext dc)
+    {
+        if (ZombieCells is null)
+            return;
+        foreach (var cell in ZombieCells.OfType<BridgeZombieCell>())
+        {
+            var rect = new Rect(ToScreen(cell.X, cell.Y), ToScreen(cell.X + ZombieCellSize, cell.Y + ZombieCellSize));
+            if (rect.Right < 0 || rect.Bottom < 0 || rect.Left > ActualWidth || rect.Top > ActualHeight)
+                continue;
+            // far out an area is a dot: kept visible
+            if (rect.Width < 3)
+                rect.Inflate((3 - rect.Width) / 2, (3 - rect.Height) / 2);
+            // 1 zombie: faint; 20 or more: deep
+            dc.DrawRectangle(ZombieShades[Math.Clamp(cell.N, 1, ZombieShades.Length) - 1], null, rect);
+        }
+    }
+
+    static readonly Brush[] ZombieShades = Enumerable.Range(1, 20)
+        .Select(n => (Brush)Frozen(Color.FromArgb((byte)(40 + n * 8), 0xD0, 0x30, 0x30))).ToArray();
+
+    static readonly Pen DeathPen = Frozen(new Pen(Frozen(Color.FromRgb(0xE0, 0x3A, 0x3A)), 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
+    static readonly Pen DeathHalo = Frozen(new Pen(Frozen(Color.FromArgb(0xC0, 0x10, 0x10, 0x10)), 5.5) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
+
+    void DrawDeaths(DrawingContext dc)
+    {
+        if (Deaths is null)
+            return;
+        double dip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        foreach (var d in Deaths.OfType<BridgeDeath>())
+        {
+            if (d.X is not { } x || d.Y is not { } y)
+                continue;
+            var at = ToScreen(x + 0.5, y + 0.5);
+            if (!OnScreen(at))
+                continue;
+            const double r = 5;
+            foreach (var pen in new[] { DeathHalo, DeathPen })
+            {
+                dc.DrawLine(pen, new Point(at.X - r, at.Y - r), new Point(at.X + r, at.Y + r));
+                dc.DrawLine(pen, new Point(at.X - r, at.Y + r), new Point(at.X + r, at.Y - r));
+            }
+            // the name once there is room for it (zoomed in)
+            if (_scale < 1.5)
+                continue;
+            var text = new FormattedText(d.Username, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, Brushes.White, dip);
+            var box = new Rect(Math.Round(at.X + r + 4), Math.Round(at.Y - text.Height / 2 - 1), text.Width + 6, text.Height + 2);
+            dc.DrawRoundedRectangle(NameBackground, null, box, 3, 3);
+            dc.DrawText(text, new Point(box.X + 3, box.Y + 1));
+        }
+    }
+
+    /// <summary>The death marked at a point of the view.</summary>
+    BridgeDeath? DeathAt(Point screen) =>
+        Deaths?.OfType<BridgeDeath>()
+            .Where(d => d.X is not null && d.Y is not null)
+            .Select(d => (d, dist: (ToScreen(d.X!.Value + 0.5, d.Y!.Value + 0.5) - screen).Length))
+            .Where(t => t.dist <= 8)
+            .OrderBy(t => t.dist).ThenByDescending(t => t.d.Time).Select(t => t.d).FirstOrDefault();
+
+    /// <summary>The zombies counted in the area of a square.</summary>
+    BridgeZombieCell? ZombieCellAt(Point world) =>
+        ZombieCells?.OfType<BridgeZombieCell>().FirstOrDefault(c => world.X >= c.X && world.X < c.X + ZombieCellSize && world.Y >= c.Y && world.Y < c.Y + ZombieCellSize);
 
     static readonly Brush SatelliteBackground = Frozen(Color.FromRgb(0x2B, 0x33, 0x22));
 

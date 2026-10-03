@@ -149,6 +149,17 @@ public sealed class PlayerActions(MainViewModel main)
             main.StatusText = result;
     }
 
+    /// <summary>Why wrecks can't be removed (null: they can): bridge v8.</summary>
+    public string? WrecksProblem => main.Bridge.V8Problem;
+
+    public async Task RemoveWrecksAsync(string player, int radius)
+    {
+        if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)
+            return;
+        if (await main.Bridge.RemoveWrecksAsync(x, y, radius, info.Username, aroundPlayer: info.Username) is { } result)
+            main.StatusText = result;
+    }
+
     public async Task StopFiresAsync(string player, int radius)
     {
         if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)

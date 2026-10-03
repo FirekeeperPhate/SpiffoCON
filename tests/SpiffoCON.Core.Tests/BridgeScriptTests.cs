@@ -251,6 +251,53 @@ public sealed class BridgeScriptTests
     }
 
     [Fact]
+    public async Task Deaths_of_players_are_kept_with_where_and_by_whom_and_survive_a_restart()
+    {
+        // the game fires OnCharacterDeath for every character: zombies are not kept
+        _game.DoString("rj.attackedBy = A_ZOMBIE; DEATH_HANDLER(rj)");
+        _game.DoString("NOW = NOW + 60000; kate.attackedBy = rj; DEATH_HANDLER(kate)");
+        _game.DoString("DEATH_HANDLER(A_ZOMBIE)");
+        var deaths = await _client.SendAsync("deaths");
+        var snapshot = await _client.SnapshotAsync(deathsAndZombies: true);
+        Assert.Null(snapshot.Problem);
+        Assert.Equal([("rj", 100, 102, 0, "zombie"), ("kate", 500, 500, 1, "rj")],
+            snapshot.Deaths!.Select(d => (d.Username, d.X!.Value, d.Y!.Value, d.Z!.Value, d.Killer)));
+        Assert.Equal(60000, snapshot.Deaths[1].Time - snapshot.Deaths[0].Time);
+        Assert.Equal(12.3, snapshot.Deaths[0].HoursSurvived);
+
+        // a restart of the server: a new script finds them in its file
+        var restarted = new Script();
+        var folder = Path.Combine(AppContext.BaseDirectory, "Bridge");
+        restarted.DoString(File.ReadAllText(Path.Combine(folder, "GameMock.lua")));
+        restarted.Globals.Get("FILES").Table.Set("spiffocon_deaths.txt", _game.Globals.Get("FILES").Table.Get("spiffocon_deaths.txt"));
+        restarted.DoString(File.ReadAllText(Path.Combine(folder, "SpiffoCONBridge.lua")));
+        var files = new GameFiles(restarted);
+        files.Tick();
+        var again = new BridgeClient(files) { PollInterval = TimeSpan.FromMilliseconds(2), Timeout = TimeSpan.FromSeconds(2) };
+        Assert.Equal(["rj", "kate"], (await again.SnapshotAsync(deathsAndZombies: true)).Deaths!.Select(d => d.Username));
+    }
+
+    [Fact]
+    public async Task Zombies_are_counted_per_area_of_ten_squares()
+    {
+        var cells = (await _client.SnapshotAsync(safehouses: true, deathsAndZombies: true)).ZombieCells!;
+        Assert.Equal([(100, 100, 5), (140, 140, 1), (510, 510, 1)], cells.Select(c => (c.X, c.Y, c.N)).OrderBy(c => c.X));
+    }
+
+    [Fact]
+    public async Task Wrecks_are_counted_then_removed_and_cars_and_occupied_wrecks_stay()
+    {
+        // the burnt car and the smashed pick-up: not the working truck, not the wreck kate sits in, not the far one
+        Assert.Equal((2, 0), ((await _client.RemoveWrecksAsync(100, 100, 5, apply: false)).Found, 0));
+        Assert.Empty(Told());
+        var done = await _client.RemoveWrecksAsync(100, 100, 5, apply: true);
+        Assert.Equal(2, done.Removed);
+        Assert.Equal(["removeVehicle Base.CarNormalBurnt #8", "removeVehicle Base.PickUpTruckSmashedFront #9"], Told());
+        Assert.Equal(0, (await _client.RemoveWrecksAsync(100, 100, 5, apply: false)).Found);
+        Assert.Equal([7, 10, 11], (await _client.SnapshotAsync()).Vehicles.Select(v => v.Id!.Value).Order());
+    }
+
+    [Fact]
     public async Task A_vehicle_key_goes_into_the_players_inventory()
     {
         Assert.Equal("Pick-up Truck Key", await _client.GiveVehicleKeyAsync(7, "Base.PickUpTruck", "kate"));

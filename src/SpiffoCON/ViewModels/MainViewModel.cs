@@ -18,7 +18,7 @@ public sealed record ConsoleLine(DateTime Time, ConsoleKind Kind, string Text)
     public string TimeText => Time.ToString("HH:mm:ss");
 }
 
-public enum NotificationKind { Players, Chat, Connection, Test }
+public enum NotificationKind { Players, Chat, Connection, Deaths, Test }
 
 /// <summary>A desktop notification; <paramref name="OnlyWhenInactive"/> skips it while SpiffoCON is the active window.</summary>
 public sealed record AppNotification(NotificationKind Kind, string Title, string Text, bool OnlyWhenInactive);
@@ -86,6 +86,7 @@ public sealed partial class MainViewModel : ObservableObject
         NotifyChat = notifications.Chat;
         NotifyChatWords = notifications.ChatWords;
         NotifyConnection = notifications.Connection;
+        NotifyDeaths = notifications.Deaths;
         NotifyOnlyWhenInactive = notifications.OnlyWhenInactive;
 
         UpdateMessagePreview();
@@ -456,12 +457,14 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool notifyChat;
     [ObservableProperty] private string notifyChatWords = "";
     [ObservableProperty] private bool notifyConnection;
+    [ObservableProperty] private bool notifyDeaths;
     [ObservableProperty] private bool notifyOnlyWhenInactive;
 
     partial void OnNotifyPlayerJoinsChanged(bool value) => _book.Notifications.PlayerJoins = value;
     partial void OnNotifyChatChanged(bool value) => _book.Notifications.Chat = value;
     partial void OnNotifyChatWordsChanged(string value) => _book.Notifications.ChatWords = value;
     partial void OnNotifyConnectionChanged(bool value) => _book.Notifications.Connection = value;
+    partial void OnNotifyDeathsChanged(bool value) => _book.Notifications.Deaths = value;
     partial void OnNotifyOnlyWhenInactiveChanged(bool value) => _book.Notifications.OnlyWhenInactive = value;
 
     internal void Notify(NotificationKind kind, string title, string text)
@@ -474,6 +477,7 @@ public sealed partial class MainViewModel : ObservableObject
             NotificationKind.Players => NotifyPlayerJoins,
             NotificationKind.Chat => NotifyChat,
             NotificationKind.Connection => NotifyConnection,
+            NotificationKind.Deaths => NotifyDeaths,
             _ => true,
         };
         if (wanted)

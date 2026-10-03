@@ -115,6 +115,9 @@ public sealed class NotificationSettings
 
     public bool Connection { get; set; } = true;
 
+    /// <summary>A player died (bridge v8).</summary>
+    public bool Deaths { get; set; } = true;
+
     public bool OnlyWhenInactive { get; set; } = true;
 }
 

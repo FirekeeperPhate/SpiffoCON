@@ -1468,14 +1468,18 @@
                                 ToolTip="Read the server's Map= again and copy its mod maps again (after a map mod update)" />
                         <CheckBox Content="Satellite" IsChecked="{Binding Satellite}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="The game's top-down image of the world instead of the map" />
-                        <CheckBox Content="Vehicles" IsChecked="{Binding ShowVehicles}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center"
+                        <CheckBox Content="Vehicles" IsChecked="{Binding ShowVehicles}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="Vehicles in the loaded areas (blue; green when someone drives)" />
-                        <CheckBox Content="Safehouses" IsChecked="{Binding ShowSafehouses}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center"
+                        <CheckBox Content="Zombies" IsChecked="{Binding ShowZombies}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
+                                  ToolTip="Where the zombies of the loaded areas are, red, deeper where there are more (bridge v8)" />
+                        <CheckBox Content="Deaths" IsChecked="{Binding ShowDeaths}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
+                                  ToolTip="Where players died, a red cross each: the last 100 the bridge keeps (bridge v8)" />
+                        <CheckBox Content="Safehouses" IsChecked="{Binding ShowSafehouses}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="The players' safehouses as green areas, with the owner's name (bridge v7)" />
-                        <CheckBox Content="Follow" IsChecked="{Binding Follow}" Margin="16,0,0,0" MinWidth="0" VerticalAlignment="Center"
+                        <CheckBox Content="Follow" IsChecked="{Binding Follow}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="Keep the selected player in the middle of the map as they move" />
                         <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
-                        <TextBlock Text="Right-click zombies" VerticalAlignment="Center" />
+                        <TextBlock Text="Horde" VerticalAlignment="Center" ToolTip="For the right-click menu: how many zombies to spawn, and the radius of the spawn and of the clean-ups" />
                         <TextBox Text="{Binding HordeCount, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
                                  ToolTip="How many zombies Spawn zombies here creates (1-500)" />
                         <TextBlock Text="radius" VerticalAlignment="Center" Margin="8,0,0,0" />
@@ -1488,8 +1492,8 @@
                         <Button Content="Download satellite view" Command="{Binding DownloadSatelliteCommand}" Margin="0,0,8,0" VerticalAlignment="Center"
                                 Visibility="{Binding CanDownloadSatellite, Converter={StaticResource BoolToVisibility}}"
                                 ToolTip="Copy the game's pyramid.zip from the server over SFTP (about 50 MB, once)" />
-                        <Button Content="Game folder…" Command="{Binding ChooseFolderCommand}" VerticalAlignment="Center"
-                                ToolTip="Read the map from a Project Zomboid (or dedicated server) install on this PC" />
+                        <Button Content="&#xE8B7;" FontFamily="{StaticResource IconFont}" Command="{Binding ChooseFolderCommand}" VerticalAlignment="Center"
+                                ToolTip="Game folder: read the map from a Project Zomboid (or dedicated server) install on this PC" />
                         <ProgressBar Width="80" Height="4" Margin="12,0,0,0" IsIndeterminate="True" VerticalAlignment="Center"
                                      Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
                     </WrapPanel>
@@ -1498,6 +1502,7 @@
                     <Border Grid.Row="1" CornerRadius="6" ClipToBounds="True" Background="#18808080">
                         <Grid>
                             <controls:WorldMapView x:Name="MapView" ContextMenuOpening="MapView_ContextMenuOpening" Scene="{Binding Scene}" Players="{Binding Bridge.Players}" Vehicles="{Binding Bridge.Vehicles}" Safehouses="{Binding Bridge.Safehouses}" ShowSafehouses="{Binding ShowSafehouses}"
+                                                   Deaths="{Binding Bridge.Deaths}" ShowDeaths="{Binding ShowDeaths}" ZombieCells="{Binding Bridge.ZombieCells}" ShowZombies="{Binding ShowZombies}"
                                                    ShowVehicles="{Binding ShowVehicles}" Satellite="{Binding Satellite}" SelectedPlayer="{Binding SelectedPlayer}"
                                                    PointerText="{Binding PointerText}" ContextSquare="{Binding ContextSquare}">
                                 <controls:WorldMapView.ContextMenu>
@@ -1514,6 +1519,8 @@
                                                   ToolTip="Items lying on the floor, on every floor (bridge v7): counted first, then asked. What is in containers, on tables and shelves, or inside a safehouse is not touched" />
                                         <MenuItem Header="{Binding StopFiresText}" Command="{Binding StopFiresCommand}"
                                                   ToolTip="Every fire in the area, on every floor (bridge v7); lit campfires are left" />
+                                        <MenuItem Header="{Binding RemoveWrecksText}" Command="{Binding RemoveWrecksCommand}"
+                                                  ToolTip="Burnt and smashed vehicles (bridge v8): counted first, then asked. Cars that can still be driven stay" />
                                         <Separator />
                                         <MenuItem Header="{Binding SpawnItemText}" Command="{Binding SpawnItemCommand}" IsEnabled="{Binding HasSpawnItem}"
                                                   ToolTipService.ShowOnDisabled="True"
@@ -1767,6 +1774,8 @@
                                     <TextBlock Text="Words separated by commas, empty for every message. Chat comes from the Logs tab, while it follows the chat log."
                                                Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="28,4,0,0" />
                                     <CheckBox Content="Connection lost and server back" IsChecked="{Binding NotifyConnection}" Margin="0,6,0,0" />
+                                    <CheckBox Content="A player dies" IsChecked="{Binding NotifyDeaths}" Margin="0,6,0,0"
+                                              ToolTip="Where and, when the game says, by whom (bridge v8)" />
                                     <CheckBox Content="Only while SpiffoCON is in the background" IsChecked="{Binding NotifyOnlyWhenInactive}" Margin="0,6,0,0" />
                                     <Button Content="Try one" Command="{Binding TestNotificationCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
                                 </StackPanel>

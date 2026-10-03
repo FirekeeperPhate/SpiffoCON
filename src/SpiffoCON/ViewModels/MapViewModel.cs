@@ -391,7 +391,7 @@ public sealed partial class MapViewModel : ObservableObject
     private string hordeCount = "20";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SpawnHordeText), nameof(RemoveZombiesText), nameof(RemoveCorpsesText), nameof(RemoveGroundItemsText), nameof(StopFiresText))]
+    [NotifyPropertyChangedFor(nameof(SpawnHordeText), nameof(RemoveZombiesText), nameof(RemoveCorpsesText), nameof(RemoveGroundItemsText), nameof(StopFiresText), nameof(RemoveWrecksText))]
     private string hordeRadius = "5";
 
     public string SpawnHordeText => $"Spawn {HordeCount.Trim()} zombies here";
@@ -433,6 +433,22 @@ public sealed partial class MapViewModel : ObservableObject
         if (await Bridge.RemoveGroundItemsAsync(x, y, radius, $"{x}, {y}") is { } result)
             StatusText = result;
     }
+
+    public string RemoveWrecksText => $"Remove the wrecks within {HordeRadius.Trim()} squares…";
+
+    /// <summary>Burnt and smashed vehicles (bridge v8): counted first, then asked.</summary>
+    [RelayCommand]
+    private async Task RemoveWrecksAsync()
+    {
+        if (!ReadAreaRadius(out var radius))
+            return;
+        int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
+        if (await Bridge.RemoveWrecksAsync(x, y, radius, $"{x}, {y}") is { } result)
+            StatusText = result;
+    }
+
+    [ObservableProperty] private bool showDeaths = true;
+    [ObservableProperty] private bool showZombies = true;
 
     [RelayCommand]
     private async Task StopFiresAsync()
