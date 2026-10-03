@@ -1515,6 +1515,20 @@
                                         <MenuItem Header="{Binding StopFiresText}" Command="{Binding StopFiresCommand}"
                                                   ToolTip="Every fire in the area, on every floor (bridge v7); lit campfires are left" />
                                         <Separator />
+                                        <MenuItem Header="{Binding SpawnItemText}" Command="{Binding SpawnItemCommand}" IsEnabled="{Binding HasSpawnItem}"
+                                                  ToolTipService.ShowOnDisabled="True"
+                                                  ToolTip="The item and quantity chosen in the Catalog tab, on the ground of this square (bridge v8; only near a player)" />
+                                        <MenuItem Header="Put a kit here" ItemsSource="{Binding Kits}" IsEnabled="{Binding HasKits}" ToolTipService.ShowOnDisabled="True"
+                                                  ToolTip="Every item of a kit of the Kits tab, on the ground of this square (bridge v8; only near a player)">
+                                            <MenuItem.ItemContainerStyle>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                    <Setter Property="Header" Value="{Binding Name}" />
+                                                    <Setter Property="Command" Value="{Binding DataContext.SpawnKitCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                    <Setter Property="CommandParameter" Value="{Binding}" />
+                                                </Style>
+                                            </MenuItem.ItemContainerStyle>
+                                        </MenuItem>
+                                        <Separator />
                                         <MenuItem Header="{Binding RemoveSafehouseText}" Command="{Binding RemoveSafehouseCommand}" IsEnabled="{Binding HasContextSafehouse}" ToolTipService.ShowOnDisabled="True"
                                                   ToolTip="Right-click inside a safehouse (the green areas, bridge v7). What is in it stays, but it is no longer protected" />
                                     </ContextMenu>

@@ -140,6 +140,8 @@ for i = 1, 2 do duffelB.inner:AddItem(item("Base.Screws", "Screws")) end
 local world = {}
 local function key(x, y, z) return x .. "," .. y .. "," .. z end
 SAFE_SQUARES = {}
+KNOWN_TYPES = { ["Base.Axe"] = true, ["Base.Nails"] = true, ["Base.WaterBottle"] = true }
+SPAWNED_AT = {}
 local function square(x, y, z)
 	local sq = { x = x, y = y, z = z, corpses = {}, ground = {}, fires = {} }
 	sq.getStaticMovingObjects = function() return list(sq.corpses) end
@@ -155,6 +157,16 @@ local function square(x, y, z)
 	end
 	-- as the game: any IsoFire counts, the permanent flame of a lit campfire too
 	sq.haveFire = function() return #sq.fires > 0 end
+	-- as the game with a type name: null for a type it does not know, else the item on the floor
+	sq.AddWorldInventoryItem = function(self, fullType, ox, oy, oz)
+		assert(type(fullType) == "string" and type(ox) == "number" and type(oy) == "number" and type(oz) == "number")
+		if not KNOWN_TYPES[fullType] then return nil end
+		local object = { name = fullType, getOffZ = function() return oz end, removeFromWorld = function() end, removeFromSquare = function() end, setSquare = function() end }
+		sq.ground[#sq.ground + 1] = object
+		SPAWNED_AT[#SPAWNED_AT + 1] = ox .. "/" .. oy
+		note("spawn " .. fullType)
+		return { getFullType = function() return fullType end }
+	end
 	sq.getObjects = function() return list(sq.fires) end
 	world[key(x, y, z)] = sq
 	return sq

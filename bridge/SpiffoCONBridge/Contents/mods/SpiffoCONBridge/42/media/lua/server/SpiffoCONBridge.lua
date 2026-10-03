@@ -1,6 +1,7 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
--- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse).
+-- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
+-- put items on the ground).
 -- Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
@@ -10,7 +11,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 7
+local VERSION = 8
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -794,7 +795,54 @@ local function vehicleKey(id, script, username)
 	return { given = true, name = try(function() return key:getDisplayName() end) }
 end
 
+-- ---- items put on the ground (bridge v8) ----
+
+-- at most this many objects in one request: each one is an object of its own on the ground
+local MAX_SPAWN = 500
+
+-- spawnitems <x> <y> <z> <Type=count,Type=count,...>: the items on the floor of that square, as the
+-- game's own server code drops things (IsoGridSquare.AddWorldInventoryItem with a type name: on a
+-- server it sends each new object to the clients). Spread a little over the square, not in one pile.
+-- A type the game does not know is skipped and named in the reply. The square must be loaded, that
+-- is near a player.
+local function spawnItems(x, y, z, list)
+	x, y, z = tonumber(x), tonumber(y), tonumber(z) or 0
+	-- written this way round so that "nan" fails too
+	if not (x and y and math.abs(x) < 1e7 and math.abs(y) < 1e7 and math.abs(z) < 64) then error("spawnitems needs x, y and z") end
+	if not list or list == "" then error("spawnitems needs the items: Type=count,Type=count") end
+	local wanted, total = {}, 0
+	for entry in (list .. ","):gmatch("([^,]*),") do
+		local fullType, count = entry:match("^%s*([^=%s]+)%s*=%s*(%d+)%s*$")
+		count = tonumber(count)
+		if not fullType or not count or count < 1 then error("spawnitems: \"" .. entry .. "\" is not Type=count") end
+		wanted[#wanted + 1] = { fullType = fullType, count = count }
+		total = total + count
+	end
+	if total > MAX_SPAWN then error("spawnitems: " .. total .. " objects at once, more than " .. MAX_SPAWN) end
+	local sq = getCell():getGridSquare(math.floor(x), math.floor(y), math.floor(z))
+	if not sq then error("the square " .. math.floor(x) .. ", " .. math.floor(y) .. " is not loaded on the server (it only keeps the surroundings of players)") end
+	local spawned, unknown, n = 0, array(), 0
+	for _, w in ipairs(wanted) do
+		for i = 1, w.count do
+			-- a 4 x 4 grid of places on the square, round and round
+			local ox, oy = 0.2 + (n % 4) * 0.2, 0.2 + (math.floor(n / 4) % 4) * 0.2
+			-- an unknown type gives no item; an error must not lose the count of what was already put down
+			local item = try(function() return sq:AddWorldInventoryItem(w.fullType, ox, oy, 0) end)
+			if not item then
+				unknown[#unknown + 1] = w.fullType
+				break
+			end
+			spawned = spawned + 1
+			n = n + 1
+		end
+	end
+	audit("put " .. spawned .. " items on the ground at " .. math.floor(x) .. ", " .. math.floor(y) .. ", " .. math.floor(z)
+		.. (#unknown > 0 and (" (unknown: " .. table.concat(unknown, ", ") .. ")") or ""))
+	return { spawned = spawned, unknown = unknown }
+end
+
 local actions = {
+	spawnitems = spawnItems,
 	removecorpses = removeCorpses,
 	removegrounditems = removeGroundItems,
 	stopfires = stopFires,

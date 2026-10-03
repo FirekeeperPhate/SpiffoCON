@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using SpiffoCON.Controls;
 using SpiffoCON.Core.Commands;
 using SpiffoCON.Core.Bridge;
+using SpiffoCON.Core.Catalog;
 using SpiffoCON.Core.Files;
 using SpiffoCON.Core.Map;
 using SpiffoCON.Core.Steam;
@@ -42,6 +43,8 @@ public sealed partial class MapViewModel : ObservableObject
         _main.PropertyChanged += OnMainChanged;
         Bridge.Players.CollectionChanged += OnPlayersChanged;
         Bridge.Safehouses.CollectionChanged += OnSafehousesChanged;
+        _main.Catalog.PropertyChanged += OnCatalogChanged;
+        _main.Kits.Kits.CollectionChanged += OnKitsChanged;
         Bridge.PropertyChanged += OnBridgeChanged;
     }
 
@@ -441,6 +444,58 @@ public sealed partial class MapViewModel : ObservableObject
             StatusText = result;
     }
 
+    // ---- items put on the ground (bridge v8) ----
+
+    /// <summary>The item and quantity chosen in the Catalog tab (its Give item uses the same).</summary>
+    public string SpawnItemText => _main.Catalog.Selected is { Kind: CatalogKind.Item } item
+        ? $"Put {Math.Max(1, _main.Catalog.Quantity)} × {MenuText(item.DisplayName)} here"
+        : "Put an item here (choose it in the Catalog tab first)";
+
+    public bool HasSpawnItem => _main.Catalog.Selected is { Kind: CatalogKind.Item };
+
+    /// <summary>The kits of the Kits tab, for the "Put a kit here" submenu.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<KitView> Kits => _main.Kits.Kits;
+
+    public bool HasKits => Kits.Count > 0;
+
+    void OnKitsChanged(object? sender, NotifyCollectionChangedEventArgs e) => OnPropertyChanged(nameof(HasKits));
+
+    void OnCatalogChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(CatalogViewModel.Selected) or nameof(CatalogViewModel.Quantity))
+        {
+            OnPropertyChanged(nameof(SpawnItemText));
+            OnPropertyChanged(nameof(HasSpawnItem));
+        }
+    }
+
+    [RelayCommand]
+    private async Task SpawnItemAsync()
+    {
+        if (_main.Catalog.Selected is not { Kind: CatalogKind.Item } item)
+            return;
+        int count = Math.Max(1, _main.Catalog.Quantity);
+        int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
+        if (await Bridge.SpawnItemsAsync(x, y, [(item.FullType, count)], $"{count} × {item.DisplayName}") is { } result)
+            StatusText = result;
+    }
+
+    [RelayCommand]
+    private async Task SpawnKitAsync(KitView? kit)
+    {
+        if (kit is null)
+            return;
+        if (kit.Items.Count == 0)
+        {
+            StatusText = $"The kit \"{kit.Name}\" is empty.";
+            return;
+        }
+        int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
+        var items = kit.Items.Select(i => (i.FullType, Math.Max(1, i.Count))).ToList();
+        if (await Bridge.SpawnItemsAsync(x, y, items, $"the kit \"{kit.Name}\" ({string.Join(", ", kit.Items.Select(i => $"{Math.Max(1, i.Count)} × {i.Name}"))})") is { } result)
+            StatusText = result;
+    }
+
     // ---- safehouses (bridge v7) ----
 
     [ObservableProperty]
@@ -555,6 +610,8 @@ public sealed partial class MapViewModel : ObservableObject
         _work?.Cancel();
         Bridge.Players.CollectionChanged -= OnPlayersChanged;
         Bridge.Safehouses.CollectionChanged -= OnSafehousesChanged;
+        _main.Catalog.PropertyChanged -= OnCatalogChanged;
+        _main.Kits.Kits.CollectionChanged -= OnKitsChanged;
         Bridge.PropertyChanged -= OnBridgeChanged;
         _main.PropertyChanged -= OnMainChanged;
         Scene?.Dispose();

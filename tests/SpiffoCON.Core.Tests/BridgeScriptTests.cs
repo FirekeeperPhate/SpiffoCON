@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(7, await _client.PingAsync());
+        Assert.Equal(8, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -223,6 +223,30 @@ public sealed class BridgeScriptTests
         await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("stopfires", "1e300", "0", "5"));
         await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("removecorpses", "nan", "0", "5"));
         await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("removegrounditems", "0", "inf", "5", "1", "0"));
+        Assert.Empty(Told());
+    }
+
+    [Fact]
+    public async Task Items_and_kits_are_put_on_the_floor_of_a_loaded_square()
+    {
+        var done = await _client.SpawnItemsAsync(100, 100, 0, [("Base.Axe", 2), ("Mod.Unknown", 3), ("Base.Nails", 3)]);
+        Assert.Equal(5, done.Spawned);
+        // a type the server does not know (a mod it lacks) is named once, and the rest still goes down
+        Assert.Equal(["Mod.Unknown"], done.Unknown);
+        Assert.Equal(["spawn Base.Axe", "spawn Base.Axe", "spawn Base.Nails", "spawn Base.Nails", "spawn Base.Nails"], Told());
+        // on the floor (no height), spread over the square rather than in one pile
+        // (radius 1 also takes in the can on this square and the plank upstairs next to it, which were there)
+        Assert.Equal(5 + 2, (await _client.RemoveGroundItemsAsync(100, 100, 1, apply: false, safehouses: false)).Found);
+        Assert.Equal(5, _game.DoString("local seen = {} for _, p in ipairs(SPAWNED_AT) do seen[p] = true end local n = 0 for _ in pairs(seen) do n = n + 1 end return n").Number);
+
+        // nobody near: the square is not loaded, nothing is put down
+        var ex = await Assert.ThrowsAsync<BridgeException>(() => _client.SpawnItemsAsync(9000, 9000, 0, [("Base.Axe", 1)]));
+        Assert.Contains("not loaded", ex.Message);
+        // too many at once, or not a list the bridge can read
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SpawnItemsAsync(100, 100, 0, [("Base.Nails", 400), ("Base.Axe", 101)]));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("spawnitems", "100", "100", "0", "Base.Axe"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("spawnitems", "nan", "100", "0", "Base.Axe=1"));
+        await Assert.ThrowsAsync<ArgumentException>(() => _client.SpawnItemsAsync(100, 100, 0, [("Base.Axe,Base.Gun", 1)]));
         Assert.Empty(Told());
     }
 

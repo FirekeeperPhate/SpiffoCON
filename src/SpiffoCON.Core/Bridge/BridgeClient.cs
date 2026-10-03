@@ -379,6 +379,26 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return data.TryGetProperty("name", out var name) ? name.GetString() : null;
     }
 
+    // ---- items put on the ground (bridge v8) ----
+
+    /// <summary>The bridge puts at most this many objects down in one request.</summary>
+    public const int MaxSpawn = 500;
+
+    /// <summary>
+    /// Puts items on the floor of a square (it must be loaded: near a player). Types the server does not
+    /// know are skipped and named in the reply.
+    /// </summary>
+    public async Task<BridgeSpawn> SpawnItemsAsync(int x, int y, int z, IReadOnlyList<(string FullType, int Count)> items)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        foreach (var (fullType, count) in items)
+            if (fullType.Length == 0 || fullType.Any(c => c is ',' or '=' || char.IsWhiteSpace(c)) || count < 1)
+                throw new ArgumentException($"Not an item to put down: \"{fullType}\" x {count}.");
+        var list = string.Join(",", items.Select(i => i.FullType + "=" + i.Count.ToString(inv)));
+        var data = await SendAsync("spawnitems", x.ToString(inv), y.ToString(inv), z.ToString(inv), list).ConfigureAwait(false);
+        return data.Deserialize(BridgeJson.Default.BridgeSpawn) ?? new BridgeSpawn();
+    }
+
     // ---- weather (bridge v5) ----
 
     /// <summary>The weather settings the bridge can set.</summary>
@@ -516,6 +536,14 @@ public sealed record BridgeSafehouse
     public int? Online { get; init; }
 }
 
+public sealed record BridgeSpawn
+{
+    public int Spawned { get; init; }
+
+    /// <summary>Types the server does not know (a mod it does not have), skipped.</summary>
+    public List<string> Unknown { get; init; } = [];
+}
+
 public sealed record BridgeGroundItems
 {
     /// <summary>Items that would be (or were) removed.</summary>
@@ -603,4 +631,5 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(List<BridgeSafehouse>))]
 [JsonSerializable(typeof(BridgePlayerDetails))]
 [JsonSerializable(typeof(BridgeGroundItems))]
+[JsonSerializable(typeof(BridgeSpawn))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

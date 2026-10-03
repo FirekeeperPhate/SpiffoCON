@@ -552,6 +552,40 @@ public sealed partial class BridgeViewModel : ObservableObject
         : BridgeVersion < 7 ? $"This needs bridge v7 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
         : null;
 
+    /// <summary>Why items can't be put on the ground now (null: they can): that came with bridge v8.</summary>
+    public string? V8Problem =>
+        _client is null || !IsConnected ? "Items are put on the ground through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 8 ? $"Putting items on the ground needs bridge v8 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>
+    /// Puts items on the floor of a square (ground floor), after asking; <paramref name="what"/> says it in
+    /// the question ("5 × Axe", "the kit Starter").
+    /// </summary>
+    internal async Task<string?> SpawnItemsAsync(int x, int y, IReadOnlyList<(string FullType, int Count)> items, string what)
+    {
+        if (V8Problem is { } problem)
+            return problem;
+        int total = items.Sum(i => i.Count);
+        if (total == 0)
+            return "Nothing to put down.";
+        if (total > BridgeClient.MaxSpawn)
+            return $"{total} items at once is too many: at most {BridgeClient.MaxSpawn} (each one is an object of its own on the ground).";
+        if (_main.Confirm?.Invoke($"Put {what} on the ground at {x}, {y}?"
+                + (total > 50 ? $"\n\nThat is {total} objects of their own on the ground: many in one place slow the game down for the players nearby." : "")) != true)
+            return null;
+        try
+        {
+            var done = await _client!.SpawnItemsAsync(x, y, 0, items);
+            return $"{done.Spawned} item{(done.Spawned == 1 ? "" : "s")} put on the ground at {x}, {y}."
+                + (done.Unknown.Count > 0 ? $" Not known to the server (a mod it does not have?): {string.Join(", ", done.Unknown)}." : "");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not put the items down: " + ex.Message;
+        }
+    }
+
     /// <summary>Why corpses can't be removed now (null: they can): that came with bridge v6.</summary>
     public string? CorpsesProblem =>
         _client is null || !IsConnected ? "Zombie corpses are removed through the SpiffoCON Bridge: connect it in the Bridge tab."

@@ -138,6 +138,10 @@ instead.
   - a key of a vehicle for the selected player;
   - two bags of the same name in one inventory told apart ("School Bag #2").
 
+  Bridge v8 puts items on the ground: right-click a spot of the map for the item and quantity
+  chosen in the Catalog tab, or for a whole kit of the Kits tab (at most 500 objects at once; only
+  where the server has the map loaded, that is near a player).
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.
