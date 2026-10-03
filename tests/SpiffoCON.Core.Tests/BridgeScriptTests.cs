@@ -262,7 +262,7 @@ public sealed class BridgeScriptTests
         Assert.Null(snapshot.Problem);
         Assert.Equal([("rj", 100, 102, 0, "zombie"), ("kate", 500, 500, 1, "rj")],
             snapshot.Deaths!.Select(d => (d.Username, d.X!.Value, d.Y!.Value, d.Z!.Value, d.Killer)));
-        Assert.Equal(60000, snapshot.Deaths[1].Time - snapshot.Deaths[0].Time);
+        Assert.Equal(60000, snapshot.Deaths![1].Time - snapshot.Deaths[0].Time);
         Assert.Equal(12.3, snapshot.Deaths[0].HoursSurvived);
 
         // a restart of the server: a new script finds them in its file
