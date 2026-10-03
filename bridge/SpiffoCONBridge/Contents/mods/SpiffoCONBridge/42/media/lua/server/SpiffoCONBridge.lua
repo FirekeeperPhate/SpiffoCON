@@ -1,7 +1,7 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
 -- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
--- put items on the ground, remove wrecks) and keeps the deaths of players.
+-- put items on the ground, remove wrecks, set a hair style) and keeps the deaths of players.
 -- Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
@@ -11,7 +11,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 8
+local VERSION = 9
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -966,12 +966,67 @@ local function removeWrecks(x, y, radius, apply, username)
 	return { found = found, removed = removed, radius = radius }
 end
 
+-- ---- hair style (bridge v9) ----
+
+local function hairStylesOf(p)
+	local styles = getHairStylesInstance()
+	return p:isFemale() and styles:getAllFemaleStyles() or styles:getAllMaleStyles()
+end
+
+-- hairstyles <username>: the hair styles a player of that gender can have (not the variants drawn under
+-- hats), with the game's names, and the one they have now
+local function hairStyles(username)
+	local p = requirePlayer(username)
+	local list = hairStylesOf(p)
+	local result, seen = array(), {}
+	for i = 0, list:size() - 1 do
+		local s = list:get(i)
+		local name = s:getName()
+		if name and name ~= "" and not seen[name] and not s:isNoChoose() then
+			seen[name] = true
+			result[#result + 1] = {
+				name = name,
+				label = try(function() return getTextOrNull("IGUI_Hair_" .. name) end),
+				level = try(function() return s:getLevel() end),
+			}
+		end
+	end
+	local current = try(function() return p:getHumanVisual():getHairModel() end)
+	return { female = p:isFemale(), current = current, styles = result }
+end
+
+-- sethair <username> <style>: gives the player that hair style, on the server's copy of the player (the
+-- one that is saved) and to every client near them, as the game's own hair cut does (ISCutHair:complete
+-- then sendHumanVisual, which on a server is GameServer.syncHumanVisual)
+local function setHair(username, style)
+	local p = requirePlayer(username)
+	local found = nil
+	local list = hairStylesOf(p)
+	for i = 0, list:size() - 1 do
+		local s = list:get(i)
+		if s:getName() == style and not s:isNoChoose() then found = s end
+	end
+	if not found then
+		error("\"" .. tostring(style) .. "\" is not a hair style for " .. (p:isFemale() and "women" or "men"))
+	end
+	local visual = p:getHumanVisual()
+	local before = visual:getHairModel()
+	visual:setHairModel(style)
+	visual:setNonAttachedHair(nil)
+	p:resetModelNextFrame()
+	sendHumanVisual(p)
+	audit("set the hair style of " .. username .. " to " .. style .. " (was " .. tostring(before) .. ")")
+	return { hair = visual:getHairModel(), before = before }
+end
+
 -- after a Lua reload the previous copy's handler must go, or each death would be written twice
 if SpiffoCONBridgeDeath then Events.OnCharacterDeath.Remove(SpiffoCONBridgeDeath) end
 SpiffoCONBridgeDeath = onCharacterDeath
 Events.OnCharacterDeath.Add(onCharacterDeath)
 
 local actions = {
+	hairstyles = hairStyles,
+	sethair = setHair,
 	spawnitems = spawnItems,
 	deaths = listDeaths,
 	zombiecells = zombieCells,

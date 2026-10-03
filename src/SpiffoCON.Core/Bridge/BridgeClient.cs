@@ -407,6 +407,22 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return data.Deserialize(BridgeJson.Default.BridgeWrecks) ?? new BridgeWrecks();
     }
 
+    // ---- hair style (bridge v9) ----
+
+    /// <summary>The hair styles an online player can be given (not the variants drawn under hats), and theirs now.</summary>
+    public async Task<BridgeHairStyles> HairStylesAsync(string username) =>
+        (await SendAsync("hairstyles", username).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeHairStyles) ?? new BridgeHairStyles();
+
+    /// <summary>
+    /// Gives an online player a hair style: on the server's copy of the player, which is the one saved, and
+    /// to the players near them. Returns the style they had before.
+    /// </summary>
+    public async Task<string?> SetHairAsync(string username, string style)
+    {
+        var data = await SendAsync("sethair", username, style).ConfigureAwait(false);
+        return data.TryGetProperty("before", out var before) && before.ValueKind == JsonValueKind.String ? before.GetString() : null;
+    }
+
     // ---- weather (bridge v5) ----
 
     /// <summary>The weather settings the bridge can set.</summary>
@@ -586,6 +602,28 @@ public sealed record BridgeZombieCell
     public int N { get; init; }
 }
 
+public sealed record BridgeHairStyles
+{
+    public bool Female { get; init; }
+
+    /// <summary>The style now: empty or "Bald" for no hair.</summary>
+    public string? Current { get; init; }
+
+    public List<BridgeHairStyle> Styles { get; init; } = [];
+}
+
+public sealed record BridgeHairStyle
+{
+    /// <summary>The game's id of the style, as in hairStyles.xml.</summary>
+    public string Name { get; init; } = "";
+
+    /// <summary>The name players see, when the server has a translation for it.</summary>
+    public string? Label { get; init; }
+
+    /// <summary>Length: 0 bald, then longer.</summary>
+    public int? Level { get; init; }
+}
+
 public sealed record BridgeWrecks
 {
     public int Found { get; init; }
@@ -691,4 +729,5 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(List<BridgeDeath>))]
 [JsonSerializable(typeof(List<BridgeZombieCell>))]
 [JsonSerializable(typeof(BridgeWrecks))]
+[JsonSerializable(typeof(BridgeHairStyles))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

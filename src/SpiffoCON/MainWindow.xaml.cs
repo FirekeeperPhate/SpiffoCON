@@ -98,6 +98,11 @@ public partial class MainWindow : Window
         _vm.NotificationRaised += (_, n) => ShowNotification(n);
         _vm.Confirm = question =>
             MessageBox.Show(this, question, "SpiffoCON", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        _vm.ChooseHairStyle = (player, styles) =>
+        {
+            var dialog = new HairWindow(player, styles) { Owner = this };
+            return dialog.ShowDialog() == true ? dialog.Chosen : null;
+        };
 
         _vm.Sandbox.PickFile = () =>
         {

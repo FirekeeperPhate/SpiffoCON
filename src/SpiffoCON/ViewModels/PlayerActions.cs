@@ -160,6 +160,18 @@ public sealed class PlayerActions(MainViewModel main)
             main.StatusText = result;
     }
 
+    /// <summary>Why a player's hair style can't be set (null: it can): bridge v9, player online in the bridge.</summary>
+    public string? HairProblem(string player) =>
+        main.Bridge.V9Problem ?? (BridgeInfo(player) is null ? "The bridge does not list this player (online?)." : null);
+
+    public async Task SetHairAsync(string player)
+    {
+        if (BridgeInfo(player) is not { } info || main.ChooseHairStyle is not { } choose)
+            return;
+        if (await main.Bridge.SetHairAsync(info.Username, styles => choose(info.Username, styles)) is { } result)
+            main.StatusText = result;
+    }
+
     public async Task StopFiresAsync(string player, int radius)
     {
         if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)

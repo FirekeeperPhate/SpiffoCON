@@ -621,6 +621,45 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    /// <summary>Why a hair style can't be set now (null: it can): that came with bridge v9.</summary>
+    public string? V9Problem =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 9 ? $"This needs bridge v9 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>
+    /// Lists the hair styles for an online player, lets the user pick one (<paramref name="choose"/>, null when
+    /// cancelled) and gives it to them. Returns what happened, for the status bar.
+    /// </summary>
+    internal async Task<string?> SetHairAsync(string username, Func<BridgeHairStyles, string?> choose)
+    {
+        if (V9Problem is { } problem)
+            return problem;
+        BridgeHairStyles styles;
+        try
+        {
+            styles = await _client!.HairStylesAsync(username);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not list the hair styles: " + ex.Message;
+        }
+        if (choose(styles) is not { } style)
+            return null;
+        try
+        {
+            await _client!.SetHairAsync(username, style);
+            return $"{username} now has the hair style {HairWindowText(styles, style)}.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not set the hair style: " + ex.Message;
+        }
+    }
+
+    static string HairWindowText(BridgeHairStyles styles, string style) =>
+        styles.Styles.FirstOrDefault(s => s.Name == style) is { Label: { Length: > 0 } label } && label != style ? $"{label} ({style})" : style;
+
     /// <summary>Why what came with bridge v8 (items on the ground, wrecks) can't be done now (null: it can).</summary>
     public string? V8Problem =>
         _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."

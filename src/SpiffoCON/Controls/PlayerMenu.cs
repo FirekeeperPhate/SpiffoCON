@@ -113,6 +113,8 @@ public static class PlayerMenu
             actions.CorpseRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveWrecksAsync(player, r)))),
             actions.WrecksProblem ?? "Burnt and smashed vehicles: counted first, then asked. Cars that can still be driven stay");
         menu.Items.Add(cleanUp);
+        Add(menu.Items, "Hair style…", () => actions.SetHairAsync(player), online && actions.HairProblem(player) is null,
+            actions.HairProblem(player) ?? "Gives the character a hair style, saved with them: for a character gone bald by mistake");
         menu.Items.Add(new Separator());
 
         Sub(menu.Items, "Powers", online,

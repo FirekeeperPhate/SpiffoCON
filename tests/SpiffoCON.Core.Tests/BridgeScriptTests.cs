@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(8, await _client.PingAsync());
+        Assert.Equal(9, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -308,6 +308,34 @@ public sealed class BridgeScriptTests
         await Assert.ThrowsAsync<BridgeException>(() => _client.GiveVehicleKeyAsync(7, "Base.Van", "kate"));
         await Assert.ThrowsAsync<BridgeException>(() => _client.GiveVehicleKeyAsync(7, "Base.PickUpTruck", "ghost"));
         Assert.Empty(Told());
+    }
+
+    [Fact]
+    public async Task A_hair_style_is_listed_for_the_players_gender_then_given_and_sent()
+    {
+        var kate = await _client.HairStylesAsync("kate");
+        Assert.True(kate.Female);
+        Assert.Equal("", kate.Current);
+        Assert.Equal(["Bald", "Hat", "Long2", "BunCurly"], kate.Styles.Select(s => s.Name));
+        Assert.Equal(("Long", 3), (kate.Styles[2].Label, kate.Styles[2].Level));
+        Assert.Null(kate.Styles[1].Label);
+
+        // the variants drawn under hats are not offered, and a name comes once
+        var rj = await _client.HairStylesAsync("rj");
+        Assert.False(rj.Female);
+        Assert.Equal(["Bald", "Messy", "Donny"], rj.Styles.Select(s => s.Name));
+
+        Assert.Equal("", await _client.SetHairAsync("kate", "Long2"));
+        Assert.Equal(["resetModel kate", "sendHumanVisual kate Long2"], Told());
+        Assert.Equal("Long2", (await _client.HairStylesAsync("kate")).Current);
+        Assert.Equal(DynValue.Nil, _game.DoString("return kate.visual.nonAttached"));
+
+        // a style of the other gender, a hat variant, a player who left: nothing changes
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetHairAsync("rj", "Long2"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetHairAsync("rj", "HatPunkHat"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetHairAsync("ghost", "Messy"));
+        Assert.Empty(Told());
+        Assert.Equal("Messy", (await _client.HairStylesAsync("rj")).Current);
     }
 
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>

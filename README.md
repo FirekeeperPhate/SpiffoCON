@@ -148,6 +148,10 @@ instead.
   - wrecks (burnt and smashed vehicles) removed within a radius, counted first, then asked;
     cars that can still be driven, and a wreck with someone inside, stay.
 
+  Bridge v9 sets a player's hair style (right-click a player, *Hair style…*): any style of their
+  gender the server knows, mods included, saved with the character and shown to the players near
+  them, as the game's own hair cut does. For characters gone bald by mistake.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.

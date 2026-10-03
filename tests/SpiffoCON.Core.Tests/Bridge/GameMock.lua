@@ -320,3 +320,27 @@ function getGameTime()
 	}
 end
 function getClimateManager() return {} end
+
+-- ---- hair styles (bridge v9) ----
+local function hairStyle(name, level, noChoose)
+	return { getName = function() return name end, getLevel = function() return level end, isNoChoose = function() return noChoose == true end }
+end
+MALE_STYLES = { hairStyle("Bald", 0), hairStyle("Messy", 1), hairStyle("Donny", 2), hairStyle("HatPunkHat", 2, true), hairStyle("Messy", 1) }
+FEMALE_STYLES = { hairStyle("Bald", 0), hairStyle("Hat", 1), hairStyle("Long2", 3), hairStyle("BunCurly", 2) }
+function getHairStylesInstance()
+	return { getAllMaleStyles = function() return list(MALE_STYLES) end, getAllFemaleStyles = function() return list(FEMALE_STYLES) end }
+end
+TRANSLATIONS = { IGUI_Hair_Messy = "Messy", IGUI_Hair_Long2 = "Long" }
+function getTextOrNull(key) return TRANSLATIONS[key] end
+function sendHumanVisual(p) note("sendHumanVisual " .. p:getUsername() .. " " .. tostring(p.visual.hair)) end
+for _, p in ipairs(PLAYERS) do
+	p.female = p.username == "kate"
+	p.visual = { hair = p.female and "" or "Messy", nonAttached = "x" }
+	p.isFemale = function() return p.female end
+	p.getHumanVisual = function() return {
+		getHairModel = function() return p.visual.hair end,
+		setHairModel = function(self, h) p.visual.hair = h end,
+		setNonAttachedHair = function(self, h) p.visual.nonAttached = h end,
+	} end
+	p.resetModelNextFrame = function() note("resetModel " .. p.username) end
+end
