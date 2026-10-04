@@ -313,9 +313,17 @@ local function requirePlayer(username)
 	return p
 end
 
+-- for what only makes sense on a living character (heal, cure, a new look): one who just died is still
+-- listed online until they make a new character
+local function requireLivingPlayer(username)
+	local p = requirePlayer(username)
+	if try(function() return p:isDead() end) then error(tostring(username) .. " is dead") end
+	return p
+end
+
 -- as the health cheat "healthFullBody" in server/ClientCommands.lua
 local function heal(username)
-	local p = requirePlayer(username)
+	local p = requireLivingPlayer(username)
 	local parts = p:getBodyDamage():getBodyParts()
 	for i = 0, parts:size() - 1 do
 		local part = parts:get(i)
@@ -910,8 +918,6 @@ local function loadDeaths()
 				dropped = dropped + 1
 			else
 				local killer = p[6] ~= "" and p[6] or nil
-				-- an animal that killed a player was "Bob" too for the older bridges
-				if clean and killer == "Bob" then killer = "animal" end
 				deaths[#deaths + 1] = { time = p[1], username = p[2], x = tonumber(p[3]), y = tonumber(p[4]), z = tonumber(p[5]),
 					killer = killer, hoursSurvived = tonumber(p[7]), zombieKills = tonumber(p[8]),
 					characterName = p[9] ~= "" and p[9] or nil }
@@ -921,11 +927,14 @@ local function loadDeaths()
 	end
 	reader:close()
 	if old then
-		try(saveDeaths)
-		if clean then
+		-- marked only once the cleaned file is saved, or the next start would keep the "Bob" lines for good
+		if pcall(saveDeaths) and clean then
 			try(markDeathsCleaned)
 			if dropped > 0 then print("SpiffoCON bridge: dropped " .. dropped .. " deaths of animals kept by an older bridge") end
 		end
+	elseif not deathsCleaned() then
+		-- a v10 file from before the marker existed
+		try(markDeathsCleaned)
 	end
 end
 
@@ -1100,7 +1109,7 @@ end
 -- one that is saved) and to every client near them, as the game's own hair cut does (ISCutHair:complete
 -- then sendHumanVisual, which on a server is GameServer.syncHumanVisual)
 local function setHair(username, style)
-	local p = requirePlayer(username)
+	local p = requireLivingPlayer(username)
 	local found = nil
 	local list = hairStylesOf(p)
 	for i = 0, list:size() - 1 do
@@ -1115,11 +1124,26 @@ local function setHair(username, style)
 	-- as ISCutHair:complete: a tied style (ponytail, bun) remembers the loose hair "Untie" gives back, any
 	-- other style forgets it
 	if try(function() return found:isAttachedHair() end) then
-		if not visual:getNonAttachedHair() and before and before ~= "" and string.lower(before) ~= "bald" then
-			visual:setNonAttachedHair(before)
+		-- only loose hair at least as long as the tied style: a tied one would make "Untie" tie again forever,
+		-- a shorter one would turn a long ponytail into a short cut. Otherwise nil, and the game's character
+		-- screen fills it in itself (the grow reference of that length) when the player unties
+		if not visual:getNonAttachedHair() then
+			local loose = nil
+			for i = 0, list:size() - 1 do
+				local s = list:get(i)
+				if s:getName() == before then loose = s end
+			end
+			if loose and not try(function() return loose:isAttachedHair() end)
+				and (try(function() return loose:getLevel() end) or 0) >= (try(function() return found:getLevel() end) or 0) then
+				visual:setNonAttachedHair(before)
+			end
 		end
 	else
 		visual:setNonAttachedHair(nil)
+	end
+	-- as the game's hair cut: shaved, the hair is its natural colour again (a dye is gone)
+	if string.lower(style) == "bald" then
+		try(function() visual:setHairColor(visual:getNaturalHairColor()) end)
 	end
 	visual:setHairModel(style)
 	p:resetModelNextFrame()
@@ -1130,7 +1154,7 @@ end
 
 -- setbeard <username> <style>: a man's beard, "" for none (bridge v10), as setHair
 local function setBeard(username, style)
-	local p = requirePlayer(username)
+	local p = requireLivingPlayer(username)
 	style = style or ""
 	-- a woman can lose one she got somehow (debug), not get one
 	if p:isFemale() and style ~= "" then error(username .. " can't have a beard") end
@@ -1144,6 +1168,10 @@ local function setBeard(username, style)
 	end
 	local visual = p:getHumanVisual()
 	local before = visual:getBeardModel()
+	-- as the game's beard trim (ISTrimBeard): shaved off, the beard is its natural colour again
+	if style == "" then
+		try(function() visual:setBeardColor(visual:getNaturalBeardColor()) end)
+	end
 	visual:setBeardModel(style)
 	p:resetModelNextFrame()
 	sendHumanVisual(p)
@@ -1154,7 +1182,7 @@ end
 -- sethaircolor <username> <r> <g> <b>: the colour (0 to 1 each) of hair and beard, also as their natural colour,
 -- as the game does when a character is made (bridge v10)
 local function setHairColor(username, r, g, b)
-	local p = requirePlayer(username)
+	local p = requireLivingPlayer(username)
 	local function channel(v)
 		v = tonumber(v)
 		if not v or not (v >= 0 and v <= 1) then error("a colour is three numbers from 0 to 1") end
@@ -1176,18 +1204,21 @@ end
 -- ---- zombie infection (bridge v10) ----
 
 -- cureinfection <username>: the zombie infection gone. The server simulates the body in multiplayer
--- (BodyDamage.Update returns at once on a client); there the infection is a flag of the whole body that
--- stays once set, even when every part is healed (the heal above does not touch it), and turns any infected
--- part back into it at the next update. So: the parts, then the body (time and mortality back to -1, as a
--- new character), the infection and fever stats, each sent to the player.
+-- (BodyDamage.Update returns at once on a client). The infection is a flag of the whole body that
+-- BodyDamage.Update sets from any infected part and never clears by itself, nor does a heal (the one above,
+-- as the game's own). So: the parts first (or the next update infects the body again), then the body
+-- (infection time and mortality back to -1, as a new character: a later bite starts its own countdown), the
+-- infection and fever stats, each sent to the player.
 local function cureInfection(username)
-	local p = requirePlayer(username)
+	local p = requireLivingPlayer(username)
 	local body = p:getBodyDamage()
 	local was = body:IsInfected()
 	local parts = body:getBodyParts()
 	for i = 0, parts:size() - 1 do
 		local part = parts:get(i)
 		if part:IsInfected() or part:IsFakeInfected() then
+			-- a bite of this very tick may not have reached the body flag yet
+			if part:IsInfected() then was = true end
 			part:SetInfected(false)
 			part:SetFakeInfected(false)
 			syncBodyPart(part, 0xFFFFFFFFFFF)

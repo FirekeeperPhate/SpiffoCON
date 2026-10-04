@@ -1,7 +1,7 @@
 <Window x:Class="SpiffoCON.HairWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Hair and beard" Width="440" Height="640" MinWidth="360" MinHeight="420"
+        Title="Hair and beard" Width="440" Height="660" MinWidth="360" MinHeight="560"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False" PreviewKeyDown="Window_PreviewKeyDown">
     <Grid Margin="20,16,20,16">
         <Grid.RowDefinitions>
@@ -9,30 +9,36 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="*" MinHeight="120" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TextBlock x:Name="TitleText" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <TextBlock x:Name="TitleText" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
         <TextBlock x:Name="CurrentText" Grid.Row="1" Margin="0,6,0,0" TextWrapping="Wrap" Opacity="0.8" />
         <TextBlock Grid.Row="2" Margin="0,12,0,0" Text="Hair style" FontWeight="SemiBold" />
         <TextBox x:Name="FilterBox" Grid.Row="3" Margin="0,6,0,0" TextChanged="FilterBox_TextChanged"
-                 ToolTip="Filter by name" />
-        <ListBox x:Name="StyleList" Grid.Row="4" Margin="0,8,0,0" DisplayMemberPath="Text"
+                 ToolTip="Filter by name; Enter picks the only match" />
+        <ListBox x:Name="StyleList" Grid.Row="4" Margin="0,8,0,0" DisplayMemberPath="Text" MinHeight="120"
                  SelectionChanged="StyleList_SelectionChanged" MouseDoubleClick="StyleList_MouseDoubleClick" />
-        <DockPanel x:Name="BeardPanel" Grid.Row="5" Margin="0,12,0,0" Visibility="Collapsed">
+        <TextBlock x:Name="PickedText" Grid.Row="5" Margin="0,6,0,0" TextWrapping="Wrap" Opacity="0.8" Visibility="Collapsed" />
+        <DockPanel x:Name="BeardPanel" Grid.Row="6" Margin="0,12,0,0" Visibility="Collapsed">
             <TextBlock Text="Beard" FontWeight="SemiBold" VerticalAlignment="Center" Width="70" />
             <ComboBox x:Name="BeardBox" DisplayMemberPath="Text" SelectionChanged="Choice_Changed" />
         </DockPanel>
-        <StackPanel x:Name="ColorPanel" Grid.Row="6" Margin="0,12,0,0" Visibility="Collapsed">
-            <TextBlock Text="Colour of hair and beard" FontWeight="SemiBold" />
-            <WrapPanel x:Name="ColorSwatches" Margin="0,6,0,0" />
+        <StackPanel x:Name="ColorPanel" Grid.Row="7" Margin="0,12,0,0" Visibility="Collapsed">
+            <TextBlock x:Name="ColorHeading" Text="Colour of hair and beard" FontWeight="SemiBold" />
+            <WrapPanel x:Name="ColorSwatches" Margin="0,6,0,0" KeyboardNavigation.TabNavigation="Once"
+                       KeyboardNavigation.DirectionalNavigation="Cycle" />
         </StackPanel>
-        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button Content="Cancel" MinWidth="96" IsCancel="True" />
-            <Button x:Name="SetButton" Content="Apply" MinWidth="140" Margin="8,0,0,0" IsEnabled="False"
-                    IsDefault="True" Click="Set_Click" Style="{StaticResource AccentButtonStyle}" />
-        </StackPanel>
+        <DockPanel Grid.Row="8" Margin="0,14,0,0" LastChildFill="False">
+            <TextBlock x:Name="NoteText" DockPanel.Dock="Left" VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.7"
+                       MaxWidth="150" FontSize="11" />
+            <Button x:Name="SetButton" DockPanel.Dock="Right" Content="Apply" MinWidth="110" Margin="8,0,0,0" IsEnabled="False"
+                    IsDefault="True" Click="Set_Click" Style="{StaticResource AccentButtonStyle}"
+                    ToolTip="Saved with the character and shown to the players near them; hair can still be cut and grows as usual" />
+            <Button Content="Cancel" DockPanel.Dock="Right" MinWidth="90" IsCancel="True" />
+        </DockPanel>
     </Grid>
 </Window>

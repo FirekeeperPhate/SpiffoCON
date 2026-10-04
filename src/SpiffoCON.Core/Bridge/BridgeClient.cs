@@ -568,11 +568,15 @@ public sealed record BridgePlayerDetails
     /// <summary>Bridge v10: the character's own name ("John Smith").</summary>
     public string? CharacterName { get; init; }
     public string? Profession { get; init; }
-    public List<string> Traits { get; init; } = [];
-    public List<BridgeSkill> Skills { get; init; } = [];
+    // a bridge that leaves a list out gets an empty one: the generated deserializer would set null
+    public List<string> Traits { get => _traits ?? []; init => _traits = value; }
+    readonly List<string>? _traits;
+    public List<BridgeSkill> Skills { get => _skills ?? []; init => _skills = value; }
+    readonly List<BridgeSkill>? _skills;
 
     /// <summary>hunger, thirst, fatigue, endurance, stress, panic...: each 0 to 1 of its own range.</summary>
-    public Dictionary<string, double?> Stats { get; init; } = [];
+    public Dictionary<string, double?> Stats { get => _stats ?? []; init => _stats = value; }
+    readonly Dictionary<string, double?>? _stats;
     public bool? Infected { get; init; }
 
     /// <summary>Body parts bitten.</summary>
@@ -596,7 +600,8 @@ public sealed record BridgeSafehouse
     public string Id { get; init; } = "";
     public string? Title { get; init; }
     public string? Owner { get; init; }
-    public List<string> Members { get; init; } = [];
+    public List<string> Members { get => _members ?? []; init => _members = value; }
+    readonly List<string>? _members;
     public int? X { get; init; }
     public int? Y { get; init; }
     public int? W { get; init; }
@@ -649,7 +654,8 @@ public sealed record BridgeHairStyles
     /// <summary>The style now: empty or "Bald" for no hair.</summary>
     public string? Current { get; init; }
 
-    public List<BridgeHairStyle> Styles { get; init; } = [];
+    public List<BridgeHairStyle> Styles { get => _styles ?? []; init => _styles = value; }
+    readonly List<BridgeHairStyle>? _styles;
 
     /// <summary>Bridge v10: the hair colour now.</summary>
     public BridgeColor? HairColor { get; init; }
@@ -697,7 +703,8 @@ public sealed record BridgeSpawn
     public int Spawned { get; init; }
 
     /// <summary>Types the server does not know (a mod it does not have), skipped.</summary>
-    public List<string> Unknown { get; init; } = [];
+    public List<string> Unknown { get => _unknown ?? []; init => _unknown = value; }
+    readonly List<string>? _unknown;
 }
 
 public sealed record BridgeGroundItems

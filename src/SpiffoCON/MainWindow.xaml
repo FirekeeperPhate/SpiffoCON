@@ -1323,7 +1323,6 @@
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="Player" Width="125" DisplayMemberBinding="{Binding Username}" />
-                                    <GridViewColumn Header="Character" Width="120" DisplayMemberBinding="{Binding CharacterName}" />
                                     <GridViewColumn Header="Role" Width="70" DisplayMemberBinding="{Binding Role}" />
                                     <GridViewColumn Header="Position" Width="120">
                                         <GridViewColumn.CellTemplate>
@@ -1341,6 +1340,14 @@
                                 <GridViewColumn Header="Vehicle" Width="120" DisplayMemberBinding="{Binding Vehicle}" />
                                 <GridViewColumn Header="Hours" Width="55" DisplayMemberBinding="{Binding HoursSurvived}" />
                                 <GridViewColumn Header="Kills" Width="50" DisplayMemberBinding="{Binding ZombieKills}" />
+                                <!-- the character's own name (bridge v10): last, so position and health stay in sight -->
+                                <GridViewColumn Header="Character" Width="130">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding CharacterName}" ToolTip="{Binding CharacterName}" TextTrimming="CharacterEllipsis" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 </GridView>
                             </ListView.View>
                         </ListView>
@@ -1348,7 +1355,7 @@
                         <DockPanel Grid.Column="1" Margin="10,0,0,0">
                             <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="{Binding HasPlayer, Converter={StaticResource BoolToVisibility}}">
                                 <Button Content="Heal" Command="{Binding HealCommand}" CommandParameter="{Binding SelectedPlayer}"
-                                        ToolTip="Full heal: wounds, fractures, bites (bridge v2)" Margin="0,0,6,0" />
+                                        ToolTip="Full heal: wounds, fractures, bites (bridge v2); a zombie infection stays (Cure zombie infection, in the player's menu)" Margin="0,0,6,0" />
                                 <Button Content="Copy x,y,z" Command="{Binding CopyPositionCommand}" CommandParameter="{Binding SelectedPlayer}" Margin="0,0,6,0" />
                                 <Button Content="To Players tab" Command="{Binding UseInPlayersTabCommand}" CommandParameter="{Binding SelectedPlayer}"
                                         ToolTip="Put this player and their position in the Players tab (teleport others here)" />

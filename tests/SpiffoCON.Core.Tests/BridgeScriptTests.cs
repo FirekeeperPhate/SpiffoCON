@@ -308,12 +308,13 @@ public sealed class BridgeScriptTests
             return (new BridgeClient(gameFiles) { PollInterval = TimeSpan.FromMilliseconds(2), Timeout = TimeSpan.FromSeconds(2) }, game);
         }
 
-        // a file of bridge v8/v9: no header, the deaths of animals as "Bob", and a player an animal killed
+        // a file of bridge v8/v9: no header, the deaths of animals as "Bob", and a player killed by "Bob": a
+        // real player most likely (an animal's attack does not name it), so that one stays as it is
         var (client, game) = await StartAsync(null,
             "1790000000000\tBob\t300\t300\t0\t\t0\t0\n1790000060000\trj\t100\t102\t0\tzombie\t12.3\t7\n"
             + "1790000120000\tBob\t310\t305\t0\t\t0\t0\n1790000180000\tkate\t320\t300\t0\tBob\t30\t2\n");
         var deaths = (await client.SnapshotAsync(deathsAndZombies: true)).Deaths!;
-        Assert.Equal([("rj", "zombie"), ("kate", "animal")], deaths.Select(d => (d.Username, d.Killer)));
+        Assert.Equal([("rj", "zombie"), ("kate", "Bob")], deaths.Select(d => (d.Username, d.Killer)));
         Assert.StartsWith("# SpiffoCON bridge deaths v10\n", game.Globals.Get("FILES").Table.Get("spiffocon_deaths.txt").String);
 
         // once cleaned, a player really named Bob stays: after a restart...
@@ -325,6 +326,23 @@ public sealed class BridgeScriptTests
         var v9File = string.Join("\n", game.Globals.Get("FILES").Table.Get("spiffocon_deaths.txt").String.Split('\n').Skip(1));
         (client, _) = await StartAsync(game.Globals.Get("FILES").Table, v9File);
         Assert.Equal(["rj", "kate", "Bob"], (await client.SnapshotAsync(deathsAndZombies: true)).Deaths!.Select(d => d.Username));
+    }
+
+    [Fact]
+    public async Task The_Bob_clean_up_is_not_marked_done_when_the_cleaned_file_could_not_be_saved()
+    {
+        var folder = Path.Combine(AppContext.BaseDirectory, "Bridge");
+        var game = new Script();
+        game.DoString(File.ReadAllText(Path.Combine(folder, "GameMock.lua")));
+        game.Globals.Get("FILES").Table.Set("spiffocon_deaths.txt", DynValue.NewString("1790000000000\tBob\t300\t300\t0\t\t0\t0\n"));
+        // the deaths file can't be written (a full disk, say)
+        game.DoString("local write = getFileWriter; getFileWriter = function(name, ...) if name == 'spiffocon_deaths.txt' then error('disk full') end return write(name, ...) end");
+        game.DoString(File.ReadAllText(Path.Combine(folder, "SpiffoCONBridge.lua")));
+        var files = new GameFiles(game);
+        files.Tick();
+        var client = new BridgeClient(files) { PollInterval = TimeSpan.FromMilliseconds(2), Timeout = TimeSpan.FromSeconds(2) };
+        Assert.Empty((await client.SnapshotAsync(deathsAndZombies: true)).Deaths!);
+        Assert.True(game.Globals.Get("FILES").Table.Get("spiffocon_deaths_v10.txt").IsNil());
     }
 
     [Fact]
@@ -387,6 +405,17 @@ public sealed class BridgeScriptTests
         await _client.SetHairAsync("kate", "Long2");
         Told();
         Assert.Equal(DynValue.Nil, _game.DoString("return kate.visual.nonAttached"));
+        // from hair shorter than the tied style: nothing remembered (the game's character screen picks one)
+        await _client.SetHairAsync("kate", "Hat");
+        await _client.SetHairAsync("kate", "BunCurly");
+        Told();
+        Assert.Equal(DynValue.Nil, _game.DoString("return kate.visual.nonAttached"));
+
+        // a player who just died is still online: no new look for them, no heal, no cure
+        _game.DoString("kate.isDead = function() return true end");
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetHairAsync("kate", "Long2"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.CureInfectionAsync("kate"));
+        Assert.Empty(Told());
 
         // a style of the other gender, a hat variant, a player who left: nothing changes
         await Assert.ThrowsAsync<BridgeException>(() => _client.SetHairAsync("rj", "Long2"));

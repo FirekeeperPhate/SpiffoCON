@@ -478,8 +478,16 @@ public sealed partial class BridgeViewModel : ObservableObject
             await LoadInventoryAsync(p.Username);
     }
 
+    Task SetStatus(string text)
+    {
+        StatusText = text;
+        return Task.CompletedTask;
+    }
+
     [RelayCommand]
-    private Task HealAsync(BridgePlayer? player) => player is null ? Task.CompletedTask : ActAsync(
+    private Task HealAsync(BridgePlayer? player) => player is null ? Task.CompletedTask
+        : player.Dead == true ? SetStatus($"{player.Username} is dead: nothing to heal.")
+        : ActAsync(
         $"Heal {player.Username} completely (all wounds, fractures and bites)?\n\n"
             + "A zombie infection stays, as with the game's own heal: \"Cure zombie infection\" in the player's menu ends it"
             + (BridgeVersion < 10 ? " (with bridge v10)." : "."),
@@ -586,15 +594,21 @@ public sealed partial class BridgeViewModel : ObservableObject
         long newest = deaths.Max(d => d.Time) ?? 0;
         if (_lastDeath is { } last)
             foreach (var d in deaths.Where(d => d.Time > last))
-                _main.Notify(NotificationKind.Deaths, $"{WithCharacter(d.Username, d.CharacterName)} died",
-                    $"At {d.X}, {d.Y}" + (d.Z is { } z and not 0 ? $", floor {z}" : "") + DescribeKiller(d.Killer)
-                    + (d.HoursSurvived is { } h ? $", after {h:0.#} hours" : "") + ".");
+            {
+                // the character's name in the text: the title is cut short in the notification area
+                var at = $"at {d.X}, {d.Y}" + (d.Z is { } z and not 0 ? $", floor {z}" : "");
+                _main.Notify(NotificationKind.Deaths, $"{d.Username} died",
+                    (d.CharacterName is { Length: > 0 } name && !name.Equals(d.Username, StringComparison.OrdinalIgnoreCase) ? $"{name}, {at}" : char.ToUpperInvariant(at[0]) + at[1..])
+                    + DescribeKiller(d.Killer)
+                    // English text: "12.3 hours", whatever the PC's culture
+                    + (d.HoursSurvived is { } h ? ", after " + h.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " hours" : "") + ".");
+            }
         _lastDeath = Math.Max(_lastDeath ?? 0, newest);
     }
 
     /// <summary>"rj (Ray Jones)": the account and, when the bridge gives it, the character's own name.</summary>
     internal static string WithCharacter(string username, string? character) =>
-        character is { Length: > 0 } && character != username ? $"{username} ({character})" : username;
+        character is { Length: > 0 } && !character.Equals(username, StringComparison.OrdinalIgnoreCase) ? $"{username} ({character})" : username;
 
     internal static string DescribeKiller(string? killer) => killer switch
     {

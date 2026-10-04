@@ -21,7 +21,16 @@ public sealed class PlayerActions(MainViewModel main)
     public BridgePlayer? BridgeInfo(string player) =>
         main.Bridge.Players.FirstOrDefault(p => p.Username.Equals(player, StringComparison.OrdinalIgnoreCase));
 
-    public bool CanHeal(string player) => main.Bridge.CanAct && BridgeInfo(player) is { Dead: not true };
+    /// <summary>Why a player can't be healed (null: they can): the bridge connected, v2 or later, the player listed and alive.</summary>
+    public string? HealProblem(string player) =>
+        !main.Bridge.IsConnected ? "Needs the bridge (Bridge tab)"
+        : !main.Bridge.CanAct ? "Needs bridge v2 (Bridge tab)"
+        : PlayerProblem(player);
+
+    /// <summary>The tooltip of Hair and beard: what the bridge on the server can do.</summary>
+    public string HairTip => main.Bridge.BridgeVersion >= 10
+        ? "Hair style, beard and colour, saved with the character: for one gone bald by mistake"
+        : "Hair style, saved with the character: for one gone bald by mistake (beard and colour need bridge v10)";
 
     public IReadOnlyList<KitView> Kits => main.Kits.Kits;
 

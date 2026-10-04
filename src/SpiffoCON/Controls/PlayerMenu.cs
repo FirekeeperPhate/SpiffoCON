@@ -94,10 +94,12 @@ public static class PlayerMenu
             actions.Kits.Select(k => ((object)$"{k.Name} ({k.Summary})", (Func<Task>)(() => actions.GiveKitAsync(player, k)))));
         Sub(menu.Items, "Event", online, actions.PlayerEvents.Select(ev =>
             ((object)(ev.Id == "horde" ? $"{ev.Name} ({actions.HordeSize} zombies)" : ev.Name), (Func<Task>)(() => actions.EventAsync(player, ev)))));
-        Add(menu.Items, "Heal completely…", () => actions.HealAsync(player), online && actions.CanHeal(player),
-            actions.CanHeal(player) ? null : bridge?.Dead == true ? "This player is dead." : "Needs bridge v2 (Bridge tab)");
+        // why a bridge action is off: the player not online for RCON first, then what the bridge says
+        string? Tip(string? problem, string? what) => !online ? "Needs the player online (connect RCON)" : problem ?? what;
+        Add(menu.Items, "Heal completely…", () => actions.HealAsync(player), online && actions.HealProblem(player) is null,
+            Tip(actions.HealProblem(player), null));
         Add(menu.Items, "Cure zombie infection…", () => actions.CureInfectionAsync(player), online && actions.CureProblem(player) is null,
-            actions.CureProblem(player) ?? "Ends the zombie infection of a bite or scratch, which Heal completely does not");
+            Tip(actions.CureProblem(player), "Ends the zombie infection of a bite or scratch, which Heal completely does not"));
         // through the bridge (corpses: v6, the rest: v7): what RCON has no command for, within a radius
         // of where the player is now
         var cleanUp = new MenuItem { Header = "Clean up around", IsEnabled = online && actions.CorpsesProblem(player) is null, ToolTip = actions.CorpsesProblem(player) };
@@ -116,7 +118,7 @@ public static class PlayerMenu
             actions.WrecksProblem ?? "Burnt and smashed vehicles: counted first, then asked. Cars that can still be driven stay");
         menu.Items.Add(cleanUp);
         Add(menu.Items, "Hair and beard…", () => actions.SetHairAsync(player), online && actions.HairProblem(player) is null,
-            actions.HairProblem(player) ?? "Hair style, beard and colour, saved with the character: for one gone bald by mistake");
+            Tip(actions.HairProblem(player), actions.HairTip));
         menu.Items.Add(new Separator());
 
         Sub(menu.Items, "Powers", online,
