@@ -143,7 +143,8 @@ instead.
     Catalog tab, or for a whole kit of the Kits tab (at most 500 objects at once; only where the
     server has the map loaded, that is near a player);
   - the deaths of players: the last 100, kept by the bridge across restarts, with where and by
-    whom (zombies or a player), as red crosses on the map and as desktop notifications;
+    whom (zombies or a player), as red crosses on the map and as desktop notifications (right-click
+    the map to clear the crosses on your PC: the bridge keeps its list, new deaths show as usual);
   - the zombies of the loaded areas on the map, red, deeper where there are more;
   - wrecks (burnt and smashed vehicles) removed within a radius, counted first, then asked;
     cars that can still be driven, and a wreck with someone inside, stay.

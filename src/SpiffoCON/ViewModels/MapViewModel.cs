@@ -43,6 +43,7 @@ public sealed partial class MapViewModel : ObservableObject
         _main.PropertyChanged += OnMainChanged;
         Bridge.Players.CollectionChanged += OnPlayersChanged;
         Bridge.Safehouses.CollectionChanged += OnSafehousesChanged;
+        Bridge.Deaths.CollectionChanged += OnDeathsChanged;
         _main.Catalog.PropertyChanged += OnCatalogChanged;
         _main.Kits.Kits.CollectionChanged += OnKitsChanged;
         Bridge.PropertyChanged += OnBridgeChanged;
@@ -434,6 +435,28 @@ public sealed partial class MapViewModel : ObservableObject
             StatusText = result;
     }
 
+    // ---- the death marks: cleared on this PC only (the bridge keeps its list) ----
+
+    public string ClearDeathMarksText =>
+        Bridge.Deaths.Count == 1 ? "Clear the death mark" : $"Clear the {Bridge.Deaths.Count} death marks";
+
+    public bool HasDeathMarks => Bridge.Deaths.Count > 0;
+
+    public bool HasClearedDeathMarks => Bridge.ClearedDeaths > 0;
+
+    void OnDeathsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(ClearDeathMarksText));
+        OnPropertyChanged(nameof(HasDeathMarks));
+        OnPropertyChanged(nameof(HasClearedDeathMarks));
+    }
+
+    [RelayCommand]
+    private void ClearDeathMarks() => StatusText = Bridge.ClearDeathMarks();
+
+    [RelayCommand]
+    private void RestoreDeathMarks() => StatusText = Bridge.RestoreDeathMarks();
+
     public string RemoveWrecksText => $"Remove the wrecks within {HordeRadius.Trim()} squares…";
 
     /// <summary>Burnt and smashed vehicles (bridge v8): counted first, then asked.</summary>
@@ -626,6 +649,7 @@ public sealed partial class MapViewModel : ObservableObject
         _work?.Cancel();
         Bridge.Players.CollectionChanged -= OnPlayersChanged;
         Bridge.Safehouses.CollectionChanged -= OnSafehousesChanged;
+        Bridge.Deaths.CollectionChanged -= OnDeathsChanged;
         _main.Catalog.PropertyChanged -= OnCatalogChanged;
         _main.Kits.Kits.CollectionChanged -= OnKitsChanged;
         Bridge.PropertyChanged -= OnBridgeChanged;

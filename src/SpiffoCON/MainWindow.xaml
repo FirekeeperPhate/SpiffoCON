@@ -1546,6 +1546,12 @@
                                         <Separator />
                                         <MenuItem Header="{Binding RemoveSafehouseText}" Command="{Binding RemoveSafehouseCommand}" IsEnabled="{Binding HasContextSafehouse}" ToolTipService.ShowOnDisabled="True"
                                                   ToolTip="Right-click inside a safehouse (the green areas, bridge v7). What is in it stays, but it is no longer protected" />
+                                        <Separator />
+                                        <MenuItem Header="{Binding ClearDeathMarksText}" Command="{Binding ClearDeathMarksCommand}" IsEnabled="{Binding HasDeathMarks}"
+                                                  ToolTipService.ShowOnDisabled="True"
+                                                  ToolTip="Takes the red crosses off the map on this PC, for this server. The bridge keeps its list (the last 100 deaths); new deaths show as usual" />
+                                        <MenuItem Header="Show the cleared death marks again" Command="{Binding RestoreDeathMarksCommand}"
+                                                  Visibility="{Binding HasClearedDeathMarks, Converter={StaticResource BoolToVisibility}}" />
                                     </ContextMenu>
                                 </controls:WorldMapView.ContextMenu>
                             </controls:WorldMapView>

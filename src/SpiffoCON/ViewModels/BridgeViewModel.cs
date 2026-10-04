@@ -164,6 +164,7 @@ public sealed partial class BridgeViewModel : ObservableObject
         // would ask an older bridge for what it does not know), not its safehouses
         BridgeVersion = 0;
         Safehouses.Clear();
+        _allDeaths = [];
         Deaths.Clear();
         ZombieCells.Clear();
         _lastDeath = null;
@@ -586,11 +587,47 @@ public sealed partial class BridgeViewModel : ObservableObject
     /// <summary>The newest death seen (null: none read yet, so the first list is the past, not news).</summary>
     long? _lastDeath;
 
+    // every death the bridge has; Deaths shows those after the marks the user cleared
+    List<BridgeDeath> _allDeaths = [];
+
+    void FilterDeaths()
+    {
+        long hiddenBefore = _main.DeathsHiddenBefore;
+        Deaths.Clear();
+        foreach (var d in _allDeaths.Where(d => (d.Time ?? long.MaxValue) > hiddenBefore))
+            Deaths.Add(d);
+    }
+
+    /// <summary>Death marks the user cleared from the map that the bridge still has.</summary>
+    public int ClearedDeaths => _allDeaths.Count - Deaths.Count;
+
+    /// <summary>
+    /// Clears the death marks from the map of this PC: the bridge keeps its list (the last 100), and deaths
+    /// from now on show as usual. Returns what happened, for the status bar.
+    /// </summary>
+    internal string ClearDeathMarks()
+    {
+        int n = Deaths.Count;
+        if (n == 0)
+            return "No death marks to clear.";
+        // the bridge's own clock, not this PC's: the newest death it has
+        _main.DeathsHiddenBefore = _allDeaths.Max(d => d.Time) ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        FilterDeaths();
+        return $"{n} death mark{(n == 1 ? "" : "s")} cleared from the map on this PC; new deaths show as usual.";
+    }
+
+    /// <summary>Shows the cleared death marks again.</summary>
+    internal string RestoreDeathMarks()
+    {
+        _main.DeathsHiddenBefore = 0;
+        FilterDeaths();
+        return $"The map shows every death the bridge has again ({Deaths.Count}).";
+    }
+
     void ShowDeaths(IReadOnlyList<BridgeDeath> deaths)
     {
-        Deaths.Clear();
-        foreach (var d in deaths)
-            Deaths.Add(d);
+        _allDeaths = deaths.ToList();
+        FilterDeaths();
         long newest = deaths.Max(d => d.Time) ?? 0;
         if (_lastDeath is { } last)
             foreach (var d in deaths.Where(d => d.Time > last))

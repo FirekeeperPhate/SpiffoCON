@@ -913,6 +913,17 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string SftpPassword { get; set; }
 
+    /// <summary>Death marks up to this time are cleared from the map (the Map tab's menu), kept with the server.</summary>
+    internal long DeathsHiddenBefore
+    {
+        get => _profile.DeathsHiddenBefore;
+        set
+        {
+            _profile.DeathsHiddenBefore = value;
+            SaveProfile();
+        }
+    }
+
     /// <summary>Asks the user a yes/no question; set by the view.</summary>
     public Func<string, bool>? Confirm { get; set; }
 

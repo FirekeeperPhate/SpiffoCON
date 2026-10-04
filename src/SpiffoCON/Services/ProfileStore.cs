@@ -40,6 +40,12 @@ public sealed class ServerProfile : INotifyPropertyChanged
 
     public bool SftpEnabled { get; set; }
 
+    /// <summary>
+    /// Death marks up to this time (milliseconds since 1970, the bridge's clock) are cleared from the map on
+    /// this PC; 0: none.
+    /// </summary>
+    public long DeathsHiddenBefore { get; set; }
+
     /// <summary>On connect, also connect the bridge and follow the logs over SFTP.</summary>
     public bool AutoConnectFiles { get; set; } = true;
 
