@@ -355,3 +355,82 @@ AN_ANIMAL.getY = function() return AN_ANIMAL.y end
 AN_ANIMAL.getZ = function() return AN_ANIMAL.z end
 AN_ANIMAL.getAttackedBy = function() return nil end
 for _, p in ipairs(PLAYERS) do p.isAnimal = function() return false end end
+
+-- ---- bridge v10: character names, beards and colours, the zombie infection ----
+local function color(r, g, b)
+	return { r = r, g = g, b = b, getRedFloat = function() return r end, getGreenFloat = function() return g end, getBlueFloat = function() return b end }
+end
+ImmutableColor = { new = function(r, g, b, a) return color(r, g, b) end }
+COMMON_HAIR_COLORS = { color(0.83, 0.67, 0.27), color(0.1, 0.08, 0.05), color(0.6, 0.3, 0.1) }
+BEARD_STYLES = { hairStyle("Moustache", 1), hairStyle("Full", 2) }
+function getBeardStylesInstance() return { getAllStyles = function() return list(BEARD_STYLES) end } end
+CharacterStat.ZOMBIE_INFECTION = stat(0, 100)
+CharacterStat.ZOMBIE_FEVER = stat(0, 100)
+SyncPlayerStatsPacket = { getBitMaskForStat = function(s)
+	if s == CharacterStat.ZOMBIE_INFECTION then return 4096 end
+	if s == CharacterStat.ZOMBIE_FEVER then return 8192 end
+	return 0
+end }
+function syncBodyPart(part, flags) note("syncBodyPart " .. part.name) end
+function syncPlayerStats(p, mask) note("syncPlayerStats " .. p.username .. " " .. mask) end
+
+local names = { rj = { "Ray", "Jones" }, kate = { "Kate", "" } }
+for _, p in ipairs(PLAYERS) do
+	local name = names[p.username]
+	local profession = { getName = function() return "Carpenter" end }
+	p.getDescriptor = function() return {
+		getCharacterProfession = function() return profession end,
+		getForename = function() return name[1] end,
+		getSurname = function() return name[2] end,
+		getCommonHairColor = function() return list(COMMON_HAIR_COLORS) end,
+	} end
+
+	p.visual.hairColor = color(0.5, 0.5, 0.5)
+	p.visual.beard = p.female and "" or "Moustache"
+	p.visual.beardColor = color(0.5, 0.5, 0.5)
+	local visual = p.getHumanVisual()
+	visual.getHairColor = function() return p.visual.hairColor end
+	visual.setHairColor = function(self, c) p.visual.hairColor = c end
+	visual.setNaturalHairColor = function(self, c) p.visual.naturalHair = c end
+	visual.getBeardModel = function() return p.visual.beard end
+	visual.setBeardModel = function(self, b) p.visual.beard = b end
+	visual.getBeardColor = function() return p.visual.beardColor end
+	visual.setBeardColor = function(self, c) p.visual.beardColor = c end
+	visual.setNaturalBeardColor = function(self, c) p.visual.naturalBeard = c end
+	p.getHumanVisual = function() return visual end
+
+	-- kate: bitten on the hand, infected, the infection under way
+	local infected = p.username == "kate"
+	local function part(name, isInfected)
+		local bp = { name = name, infected = isInfected, fake = false }
+		bp.IsInfected = function() return bp.infected end
+		bp.IsFakeInfected = function() return bp.fake end
+		bp.SetInfected = function(self, v) bp.infected = v end
+		bp.SetFakeInfected = function(self, v) bp.fake = v end
+		return bp
+	end
+	local parts = { part("Hand_L", infected), part("Torso_Upper", false) }
+	local body = { infected = infected, time = infected and 30 or -1, mortality = infected and 48 or -1, fake = false }
+	p.body = body
+	p.parts = parts
+	body.getOverallBodyHealth = function() return 87.6 end
+	body.IsInfected = function() return body.infected end
+	body.getNumPartsBitten = function() return infected and 1 or 0 end
+	body.IsOnFire = function() return false end
+	body.getBodyParts = function() return list(parts) end
+	body.setInfected = function(self, v) body.infected = v end
+	body.setIsFakeInfected = function(self, v) body.fake = v end
+	body.setReduceFakeInfection = function(self, v) end
+	body.setInfectionTime = function(self, v) body.time = v end
+	body.setInfectionMortalityDuration = function(self, v) body.mortality = v end
+	p.getBodyDamage = function() return body end
+
+	local values = { [CharacterStat.HUNGER] = 0.256, [CharacterStat.PANIC] = 50, [CharacterStat.ENDURANCE] = 1,
+		[CharacterStat.ZOMBIE_INFECTION] = infected and 40 or 0, [CharacterStat.ZOMBIE_FEVER] = infected and 20 or 0 }
+	p.stats = values
+	local stats = {
+		get = function(self, s) return values[s] or 0 end,
+		reset = function(self, s) values[s] = 0 end,
+	}
+	p.getStats = function() return stats end
+end

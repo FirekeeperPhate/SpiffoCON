@@ -1323,6 +1323,7 @@
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="Player" Width="125" DisplayMemberBinding="{Binding Username}" />
+                                    <GridViewColumn Header="Character" Width="120" DisplayMemberBinding="{Binding CharacterName}" />
                                     <GridViewColumn Header="Role" Width="70" DisplayMemberBinding="{Binding Role}" />
                                     <GridViewColumn Header="Position" Width="120">
                                         <GridViewColumn.CellTemplate>

@@ -423,6 +423,34 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return data.TryGetProperty("before", out var before) && before.ValueKind == JsonValueKind.String ? before.GetString() : null;
     }
 
+    /// <summary>Gives a man a beard ("" for none), as <see cref="SetHairAsync"/> (bridge v10).</summary>
+    public async Task SetBeardAsync(string username, string style) =>
+        await SendAsync("setbeard", username, style).ConfigureAwait(false);
+
+    /// <summary>
+    /// Colours hair and beard (and their natural colour, as when a character is made), each channel 0 to 1
+    /// (bridge v10).
+    /// </summary>
+    public async Task SetHairColorAsync(string username, BridgeColor color)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        await SendAsync("sethaircolor", username, color.R.ToString("0.####", inv), color.G.ToString("0.####", inv), color.B.ToString("0.####", inv))
+            .ConfigureAwait(false);
+    }
+
+    // ---- zombie infection (bridge v10) ----
+
+    /// <summary>
+    /// Cures an online player's zombie infection, which a heal does not. Returns whether they were infected
+    /// and whether the server still says so after the cure.
+    /// </summary>
+    public async Task<(bool WasInfected, bool Infected)> CureInfectionAsync(string username)
+    {
+        var data = await SendAsync("cureinfection", username).ConfigureAwait(false);
+        static bool Flag(JsonElement d, string name) => d.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+        return (Flag(data, "wasInfected"), Flag(data, "infected"));
+    }
+
     // ---- weather (bridge v5) ----
 
     /// <summary>The weather settings the bridge can set.</summary>
@@ -525,6 +553,9 @@ public sealed record BridgePlayer
     public string? SteamId { get; init; }
     public string? Vehicle { get; init; }
 
+    /// <summary>Bridge v10: the character's own name ("John Smith"), absent with an older bridge.</summary>
+    public string? CharacterName { get; init; }
+
     /// <summary>Bridge v7: the zombies within about 30 squares (absent with an older bridge).</summary>
     public int? ZombiesNear { get; init; }
 }
@@ -533,6 +564,9 @@ public sealed record BridgePlayer
 public sealed record BridgePlayerDetails
 {
     public string Username { get; init; } = "";
+
+    /// <summary>Bridge v10: the character's own name ("John Smith").</summary>
+    public string? CharacterName { get; init; }
     public string? Profession { get; init; }
     public List<string> Traits { get; init; } = [];
     public List<BridgeSkill> Skills { get; init; } = [];
@@ -592,6 +626,9 @@ public sealed record BridgeDeath
     public double? HoursSurvived { get; init; }
     public int? ZombieKills { get; init; }
 
+    /// <summary>Bridge v10: the character's own name ("John Smith"), absent for older deaths.</summary>
+    public string? CharacterName { get; init; }
+
     public DateTimeOffset? When => Time is { } ms ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null;
 }
 
@@ -613,6 +650,25 @@ public sealed record BridgeHairStyles
     public string? Current { get; init; }
 
     public List<BridgeHairStyle> Styles { get; init; } = [];
+
+    /// <summary>Bridge v10: the hair colour now.</summary>
+    public BridgeColor? HairColor { get; init; }
+
+    /// <summary>Bridge v10, men only: the beard now ("" for none), its colour and the beards there are.</summary>
+    public string? Beard { get; init; }
+    public BridgeColor? BeardColor { get; init; }
+    public List<BridgeHairStyle>? Beards { get; init; }
+
+    /// <summary>Bridge v10: the hair colours the game offers when a character is made.</summary>
+    public List<BridgeColor> Colors { get; init; } = [];
+}
+
+/// <summary>A colour, each channel 0 to 1.</summary>
+public sealed record BridgeColor
+{
+    public double R { get; init; }
+    public double G { get; init; }
+    public double B { get; init; }
 }
 
 public sealed record BridgeHairStyle

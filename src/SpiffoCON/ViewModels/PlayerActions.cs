@@ -164,6 +164,18 @@ public sealed class PlayerActions(MainViewModel main)
     public string? HairProblem(string player) =>
         main.Bridge.V9Problem ?? (BridgeInfo(player) is null ? "The bridge does not list this player (online?)." : null);
 
+    /// <summary>Why a player's zombie infection can't be cured (null: it can): bridge v10, player online in the bridge.</summary>
+    public string? CureProblem(string player) =>
+        main.Bridge.V10Problem ?? (BridgeInfo(player) is null ? "The bridge does not list this player (online?)." : null);
+
+    public async Task CureInfectionAsync(string player)
+    {
+        if (BridgeInfo(player) is not { } info)
+            return;
+        if (await main.Bridge.CureInfectionAsync(info.Username) is { } result)
+            main.StatusText = result;
+    }
+
     public async Task SetHairAsync(string player)
     {
         if (BridgeInfo(player) is not { } info || main.ChooseHairStyle is not { } choose)

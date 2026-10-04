@@ -359,7 +359,7 @@ public sealed class WorldMapView : FrameworkElement
         else if (ShowVehicles && VehicleAt(screen) is { } v)
             text += $" · {v.Script} #{v.Id}" + (v.Driver is { } driver ? $", driven by {driver}" : "") + (v.EngineRunning == true ? ", engine on" : "");
         else if (ShowDeaths && DeathAt(screen) is { } death)
-            text += $" · {death.Username} died here" + (death.When is { } when ? $" {DescribeWhen(when)}" : "")
+            text += $" · {ViewModels.BridgeViewModel.WithCharacter(death.Username, death.CharacterName)} died here" + (death.When is { } when ? $" {DescribeWhen(when)}" : "")
                 + ViewModels.BridgeViewModel.DescribeKiller(death.Killer);
         else if (ShowSafehouses && SafehouseAt(world) is { } safehouse)
             text += " · " + ViewModels.BridgeViewModel.Describe(safehouse);
@@ -369,7 +369,7 @@ public sealed class WorldMapView : FrameworkElement
     }
 
     static string Describe(BridgePlayer p) =>
-        p.Username + (p.Dead == true ? " (dead)" : p.Health is { } h ? $" (health {h})" : "")
+        ViewModels.BridgeViewModel.WithCharacter(p.Username, p.CharacterName) + (p.Dead == true ? ", dead" : p.Health is { } h ? $", health {h}" : "")
         + (p.Vehicle is { Length: > 0 } car ? $", in {car}" : "") + (p.Z is { } z and not 0 ? $", floor {z}" : "")
         + (p.ZombiesNear is > 0 and var near ? $", {near} zombie{(near == 1 ? "" : "s")} near" : "");
 

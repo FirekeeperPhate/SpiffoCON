@@ -1,7 +1,8 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
 -- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
--- put items on the ground, remove wrecks, set a hair style) and keeps the deaths of players.
+-- put items on the ground, remove wrecks, set hair and beard, cure the zombie infection) and keeps the
+-- deaths of players.
 -- Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
@@ -92,10 +93,20 @@ local function findPlayer(username)
 	return nil
 end
 
+-- the character's own name, as made in the character creation ("John Smith"); bridge v10
+local function characterName(p)
+	local name = try(function()
+		local d = p:getDescriptor()
+		return ((d:getForename() or "") .. " " .. (d:getSurname() or "")):gsub("^%s+", ""):gsub("%s+$", "")
+	end)
+	return name ~= "" and name or nil
+end
+
 local function playerInfo(p)
 	local info = {
 		username = try(function() return p:getUsername() end),
 		displayName = try(function() return p:getDisplayName() end),
+		characterName = characterName(p),
 		x = try(function() return math.floor(p:getX()) end),
 		y = try(function() return math.floor(p:getY()) end),
 		z = try(function() return math.floor(p:getZ()) end),
@@ -861,7 +872,8 @@ end
 
 local saveDeaths
 
--- one death per line: time<TAB>username<TAB>x<TAB>y<TAB>z<TAB>killer<TAB>hoursSurvived<TAB>zombieKills
+-- one death per line: time<TAB>username<TAB>x<TAB>y<TAB>z<TAB>killer<TAB>hoursSurvived<TAB>zombieKills<TAB>characterName
+-- (the character's name since bridge v10)
 local function loadDeaths()
 	deaths = {}
 	local reader = getFileReader(DEATHS_FILE, false)
@@ -877,7 +889,8 @@ local function loadDeaths()
 				dropped = dropped + 1
 			else
 				deaths[#deaths + 1] = { time = p[1], username = p[2], x = tonumber(p[3]), y = tonumber(p[4]), z = tonumber(p[5]),
-					killer = p[6] ~= "" and p[6] or nil, hoursSurvived = tonumber(p[7]), zombieKills = tonumber(p[8]) }
+					killer = p[6] ~= "" and p[6] or nil, hoursSurvived = tonumber(p[7]), zombieKills = tonumber(p[8]),
+					characterName = p[9] ~= "" and p[9] or nil }
 			end
 		end
 		line = reader:readLine()
@@ -893,7 +906,7 @@ saveDeaths = function()
 	local lines = { DEATHS_HEADER }
 	for _, d in ipairs(deaths) do
 		lines[#lines + 1] = table.concat({ d.time, d.username, tostring(d.x), tostring(d.y), tostring(d.z), d.killer or "",
-			tostring(d.hoursSurvived or ""), tostring(d.zombieKills or "") }, "\t")
+			tostring(d.hoursSurvived or ""), tostring(d.zombieKills or ""), ((d.characterName or ""):gsub("[\t\r\n]", " ")) }, "\t")
 	end
 	local writer = getFileWriter(DEATHS_FILE, true, false)
 	writer:write(table.concat(lines, "\n") .. "\n")
@@ -923,6 +936,7 @@ local function onCharacterDeath(character)
 		killer = killer,
 		hoursSurvived = try(function() return math.floor(character:getHoursSurvived() * 10) / 10 end),
 		zombieKills = try(function() return character:getZombieKills() end),
+		characterName = characterName(character),
 	}
 	while #deaths > MAX_DEATHS do table.remove(deaths, 1) end
 	try(saveDeaths)
@@ -1017,7 +1031,39 @@ local function hairStyles(username)
 		end
 	end
 	local current = try(function() return p:getHumanVisual():getHairModel() end)
-	return { female = p:isFemale(), current = current, styles = result }
+	local reply = { female = p:isFemale(), current = current, styles = result }
+
+	-- bridge v10: the beards (men only), the colours the game offers when a character is made, and theirs now
+	local function rgb(c)
+		return c and { r = try(function() return c:getRedFloat() end), g = try(function() return c:getGreenFloat() end),
+			b = try(function() return c:getBlueFloat() end) } or nil
+	end
+	local visual = p:getHumanVisual()
+	reply.hairColor = try(function() return rgb(visual:getHairColor()) end)
+	if not p:isFemale() then
+		reply.beard = try(function() return visual:getBeardModel() end)
+		reply.beardColor = try(function() return rgb(visual:getBeardColor()) end)
+		local beards = array()
+		try(function()
+			local all = getBeardStylesInstance():getAllStyles()
+			for i = 0, all:size() - 1 do
+				local s = all:get(i)
+				local name = s:getName()
+				if name and name ~= "" then
+					beards[#beards + 1] = { name = name, label = try(function() return getTextOrNull("IGUI_Beard_" .. name) end),
+						level = try(function() return s:getLevel() end) }
+				end
+			end
+		end)
+		reply.beards = beards
+	end
+	local colors = array()
+	try(function()
+		local common = p:getDescriptor():getCommonHairColor()
+		for i = 0, common:size() - 1 do colors[#colors + 1] = rgb(common:get(i)) end
+	end)
+	reply.colors = colors
+	return reply
 end
 
 -- sethair <username> <style>: gives the player that hair style, on the server's copy of the player (the
@@ -1044,6 +1090,85 @@ local function setHair(username, style)
 	return { hair = visual:getHairModel(), before = before }
 end
 
+-- setbeard <username> <style>: a man's beard, "" for none (bridge v10), as setHair
+local function setBeard(username, style)
+	local p = requirePlayer(username)
+	if p:isFemale() then error(username .. " can't have a beard") end
+	style = style or ""
+	if style ~= "" then
+		local found = false
+		local all = getBeardStylesInstance():getAllStyles()
+		for i = 0, all:size() - 1 do
+			if all:get(i):getName() == style then found = true end
+		end
+		if not found then error("\"" .. style .. "\" is not a beard style") end
+	end
+	local visual = p:getHumanVisual()
+	local before = visual:getBeardModel()
+	visual:setBeardModel(style)
+	p:resetModelNextFrame()
+	sendHumanVisual(p)
+	audit("set the beard of " .. username .. " to " .. (style == "" and "none" or style) .. " (was " .. tostring(before) .. ")")
+	return { beard = visual:getBeardModel(), before = before }
+end
+
+-- sethaircolor <username> <r> <g> <b>: the colour (0 to 1 each) of hair and beard, also as their natural colour,
+-- as the game does when a character is made (bridge v10)
+local function setHairColor(username, r, g, b)
+	local p = requirePlayer(username)
+	local function channel(v)
+		v = tonumber(v)
+		if not v or not (v >= 0 and v <= 1) then error("a colour is three numbers from 0 to 1") end
+		return v
+	end
+	r, g, b = channel(r), channel(g), channel(b)
+	local color = ImmutableColor.new(r, g, b, 1)
+	local visual = p:getHumanVisual()
+	visual:setHairColor(color)
+	visual:setNaturalHairColor(color)
+	visual:setBeardColor(color)
+	visual:setNaturalBeardColor(color)
+	p:resetModelNextFrame()
+	sendHumanVisual(p)
+	audit(string.format("set the hair colour of %s to %.2f, %.2f, %.2f", username, r, g, b))
+	return { r = r, g = g, b = b }
+end
+
+-- ---- zombie infection (bridge v10) ----
+
+-- cureinfection <username>: the zombie infection gone. The server simulates the body in multiplayer
+-- (BodyDamage.Update returns at once on a client); there the infection is a flag of the whole body that
+-- stays once set, even when every part is healed (the heal above does not touch it), and turns any infected
+-- part back into it at the next update. So: the parts, then the body (time and mortality back to -1, as a
+-- new character), the infection and fever stats, each sent to the player.
+local function cureInfection(username)
+	local p = requirePlayer(username)
+	local body = p:getBodyDamage()
+	local was = body:IsInfected()
+	local parts = body:getBodyParts()
+	for i = 0, parts:size() - 1 do
+		local part = parts:get(i)
+		if part:IsInfected() or part:IsFakeInfected() then
+			part:SetInfected(false)
+			part:SetFakeInfected(false)
+			syncBodyPart(part, 0xFFFFFFFFFFF)
+		end
+	end
+	body:setInfected(false)
+	body:setIsFakeInfected(false)
+	body:setReduceFakeInfection(false)
+	body:setInfectionTime(-1)
+	body:setInfectionMortalityDuration(-1)
+	local stats = p:getStats()
+	stats:reset(CharacterStat.ZOMBIE_INFECTION)
+	stats:reset(CharacterStat.ZOMBIE_FEVER)
+	local mask = (try(function() return SyncPlayerStatsPacket.getBitMaskForStat(CharacterStat.ZOMBIE_INFECTION) end) or 0)
+		+ (try(function() return SyncPlayerStatsPacket.getBitMaskForStat(CharacterStat.ZOMBIE_FEVER) end) or 0)
+	if mask > 0 then syncPlayerStats(p, mask) end
+	audit("cured the zombie infection of " .. username .. (was and "" or " (was not infected)"))
+	return { wasInfected = was, infected = body:IsInfected() }
+end
+
 -- after a Lua reload the previous copy's handler must go, or each death would be written twice
 if SpiffoCONBridgeDeath then Events.OnCharacterDeath.Remove(SpiffoCONBridgeDeath) end
 SpiffoCONBridgeDeath = onCharacterDeath
@@ -1051,6 +1176,9 @@ Events.OnCharacterDeath.Add(onCharacterDeath)
 
 local actions = {
 	hairstyles = hairStyles,
+	setbeard = setBeard,
+	sethaircolor = setHairColor,
+	cureinfection = cureInfection,
 	sethair = setHair,
 	spawnitems = spawnItems,
 	deaths = listDeaths,

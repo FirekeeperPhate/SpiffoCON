@@ -376,6 +376,74 @@ public sealed class BridgeScriptTests
         Assert.Equal("Messy", (await _client.HairStylesAsync("rj")).Current);
     }
 
+    [Fact]
+    public async Task Beards_and_colours_are_listed_and_set_for_men_and_colours_for_women()
+    {
+        var rj = await _client.HairStylesAsync("rj");
+        Assert.Equal("Moustache", rj.Beard);
+        Assert.Equal(["Moustache", "Full"], rj.Beards!.Select(b => b.Name));
+        Assert.Equal(3, rj.Colors.Count);
+        Assert.Equal((0.83, 0.67, 0.27), (rj.Colors[0].R, rj.Colors[0].G, rj.Colors[0].B));
+        Assert.Equal(0.5, rj.HairColor!.R);
+        var kate = await _client.HairStylesAsync("kate");
+        Assert.Null(kate.Beards);
+        Assert.Null(kate.Beard);
+        Assert.Equal(3, kate.Colors.Count);
+
+        await _client.SetBeardAsync("rj", "Full");
+        Assert.Equal(["resetModel rj", "sendHumanVisual rj Messy"], Told());
+        Assert.Equal("Full", (await _client.HairStylesAsync("rj")).Beard);
+        await _client.SetBeardAsync("rj", "");
+        Told();
+        Assert.Equal("", (await _client.HairStylesAsync("rj")).Beard);
+
+        await _client.SetHairColorAsync("kate", new BridgeColor { R = 0.1, G = 0.08, B = 0.05 });
+        Assert.Equal(["resetModel kate", "sendHumanVisual kate "], Told());
+        var colored = await _client.HairStylesAsync("kate");
+        Assert.Equal((0.1, 0.08, 0.05), (colored.HairColor!.R, colored.HairColor.G, colored.HairColor.B));
+        // natural colours too, as when a character is made: a cut to bald goes back to it
+        Assert.Equal(0.1, _game.DoString("return kate.visual.naturalHair.r").Number);
+
+        // a beard for a woman, an unknown beard, a colour out of range: nothing changes
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetBeardAsync("kate", "Full"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetBeardAsync("rj", "Braids"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetHairColorAsync("rj", new BridgeColor { R = 2, G = 0, B = 0 }));
+        Assert.Empty(Told());
+    }
+
+    [Fact]
+    public async Task The_zombie_infection_is_cured_on_the_body_and_its_parts_and_sent()
+    {
+        Assert.True((await _client.PlayerDetailsAsync("kate")).Infected);
+        Assert.Equal((true, false), await _client.CureInfectionAsync("kate"));
+        Assert.Equal(["syncBodyPart Hand_L", "syncPlayerStats kate 12288"], Told());
+        // as a new character: no time or mortality, no infection or fever
+        Assert.Equal((-1, -1), (Lua("kate.body.time"), Lua("kate.body.mortality")));
+        Assert.Equal((0, 0), (Lua("kate.stats[CharacterStat.ZOMBIE_INFECTION]"), Lua("kate.stats[CharacterStat.ZOMBIE_FEVER]")));
+        Assert.False(_game.DoString("return kate.parts[1].infected").Boolean);
+        Assert.False((await _client.PlayerDetailsAsync("kate")).Infected);
+
+        // someone not infected: nothing to send for the parts, and the reply says so
+        Assert.Equal((false, false), await _client.CureInfectionAsync("rj"));
+        Assert.Equal(["syncPlayerStats rj 12288"], Told());
+        await Assert.ThrowsAsync<BridgeException>(() => _client.CureInfectionAsync("ghost"));
+    }
+
+    [Fact]
+    public async Task The_characters_name_is_with_the_player_and_their_death()
+    {
+        var players = (await _client.SnapshotAsync()).Players;
+        Assert.Equal("Ray Jones", players.Single(p => p.Username == "rj").CharacterName);
+        // no surname: no trailing space
+        Assert.Equal("Kate", players.Single(p => p.Username == "kate").CharacterName);
+        Assert.Equal("Ray Jones", (await _client.PlayerDetailsAsync("rj")).CharacterName);
+
+        _game.DoString("rj.attackedBy = A_ZOMBIE; DEATH_HANDLER(rj)");
+        Assert.Equal("Ray Jones", Assert.Single((await _client.SnapshotAsync(deathsAndZombies: true)).Deaths!).CharacterName);
+        // kept in the file as a ninth column
+        Assert.Contains("\t7\tRay Jones\n", _game.Globals.Get("FILES").Table.Get("spiffocon_deaths.txt").String);
+    }
+
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>
     sealed class GameFiles(Script game) : IBridgeFiles
     {

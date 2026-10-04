@@ -148,13 +148,21 @@ instead.
   - wrecks (burnt and smashed vehicles) removed within a radius, counted first, then asked;
     cars that can still be driven, and a wreck with someone inside, stay.
 
-  Bridge v9 sets a player's hair style (right-click a player, *Hair style…*): any style of their
+  Bridge v9 sets a player's hair style (right-click a player, *Hair and beard…*): any style of their
   gender the server knows, mods included, saved with the character and shown to the players near
   them, as the game's own hair cut does. For characters gone bald by mistake.
 
-  Bridge v10 keeps animals out of the deaths: in Build 42 an animal is a kind of player for the
-  game, named "Bob", so bridges v8 and v9 kept every dead animal as a death of "Bob" (v10 drops
-  those once from the file they left). A player killed by an animal now says so.
+  Bridge v10 adds:
+  - curing a player's zombie infection (right-click a player, *Cure zombie infection…*): *Heal
+    completely*, as the game's own heal, mends every body part but leaves the infection of the
+    whole body, and the player still turns;
+  - beard and colour of hair and beard in the same window as the hair style (*Hair and beard…*),
+    with the colours the game offers when a character is made;
+  - the character's own name ("Ray Jones") next to the account: in the Bridge tab, the player's
+    sheet, on the map and in the deaths;
+  - animals kept out of the deaths: in Build 42 an animal is a kind of player for the game, named
+    "Bob", so bridges v8 and v9 kept every dead animal as a death of "Bob" (v10 drops those once from
+    the file they left). A player killed by an animal now says so.
 
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to

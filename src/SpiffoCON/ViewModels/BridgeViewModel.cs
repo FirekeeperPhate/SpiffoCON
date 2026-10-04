@@ -480,7 +480,9 @@ public sealed partial class BridgeViewModel : ObservableObject
 
     [RelayCommand]
     private Task HealAsync(BridgePlayer? player) => player is null ? Task.CompletedTask : ActAsync(
-        $"Heal {player.Username} completely (all wounds, fractures and bites)?",
+        $"Heal {player.Username} completely (all wounds, fractures and bites)?\n\n"
+            + "A zombie infection stays, as with the game's own heal: \"Cure zombie infection\" in the player's menu ends it"
+            + (BridgeVersion < 10 ? " (with bridge v10)." : "."),
         async c => $"{player.Username} healed" + (await c.HealAsync(player.Username) is { } h ? $": health {h}." : "."));
 
     [RelayCommand]
@@ -584,11 +586,15 @@ public sealed partial class BridgeViewModel : ObservableObject
         long newest = deaths.Max(d => d.Time) ?? 0;
         if (_lastDeath is { } last)
             foreach (var d in deaths.Where(d => d.Time > last))
-                _main.Notify(NotificationKind.Deaths, $"{d.Username} died",
+                _main.Notify(NotificationKind.Deaths, $"{WithCharacter(d.Username, d.CharacterName)} died",
                     $"At {d.X}, {d.Y}" + (d.Z is { } z and not 0 ? $", floor {z}" : "") + DescribeKiller(d.Killer)
                     + (d.HoursSurvived is { } h ? $", after {h:0.#} hours" : "") + ".");
         _lastDeath = Math.Max(_lastDeath ?? 0, newest);
     }
+
+    /// <summary>"rj (Ray Jones)": the account and, when the bridge gives it, the character's own name.</summary>
+    internal static string WithCharacter(string username, string? character) =>
+        character is { Length: > 0 } && character != username ? $"{username} ({character})" : username;
 
     internal static string DescribeKiller(string? killer) => killer switch
     {
@@ -623,6 +629,35 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    /// <summary>Why the zombie infection can't be cured, nor beards and colours set, now (null: they can): bridge v10.</summary>
+    public string? V10Problem =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 10 ? $"This needs bridge v10 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>Cures an online player's zombie infection, after asking. Returns what happened, for the status bar.</summary>
+    internal async Task<string?> CureInfectionAsync(string username)
+    {
+        if (V10Problem is { } problem)
+            return problem;
+        if (_main.Confirm?.Invoke($"Cure {username}'s zombie infection?\n\nThe infection, its fever and its countdown end; "
+                + "wounds and bites stay as they are (Heal completely heals them).") != true)
+            return null;
+        try
+        {
+            var (was, still) = await _client!.CureInfectionAsync(username);
+            _retryAt = default;
+            await RefreshAsync();
+            return still ? $"The server still says {username} is infected: the cure did not take."
+                : was ? $"{username} is no longer infected."
+                : $"{username} was not infected (nothing to cure; any fake infection of a hypochondriac is gone too).";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not cure the infection: " + ex.Message;
+        }
+    }
+
     /// <summary>Why a hair style can't be set now (null: it can): that came with bridge v9.</summary>
     public string? V9Problem =>
         _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
@@ -630,10 +665,11 @@ public sealed partial class BridgeViewModel : ObservableObject
         : null;
 
     /// <summary>
-    /// Lists the hair styles for an online player, lets the user pick one (<paramref name="choose"/>, null when
-    /// cancelled) and gives it to them. Returns what happened, for the status bar.
+    /// Lists the hair styles (and with bridge v10 beards and colours) for an online player, lets the user pick
+    /// (<paramref name="choose"/>, null when cancelled) and gives them what changed. Returns what happened,
+    /// for the status bar.
     /// </summary>
-    internal async Task<string?> SetHairAsync(string username, Func<BridgeHairStyles, string?> choose)
+    internal async Task<string?> SetHairAsync(string username, Func<BridgeHairStyles, HairChoice?> choose)
     {
         if (V9Problem is { } problem)
             return problem;
@@ -646,21 +682,37 @@ public sealed partial class BridgeViewModel : ObservableObject
         {
             return "The bridge could not list the hair styles: " + ex.Message;
         }
-        if (choose(styles) is not { } style)
+        if (choose(styles) is not { IsEmpty: false } choice)
             return null;
+        var done = new List<string>();
         try
         {
-            await _client!.SetHairAsync(username, style);
-            return $"{username} now has the hair style {HairWindowText(styles, style)}.";
+            if (choice.Hair is { } hair)
+            {
+                await _client!.SetHairAsync(username, hair);
+                done.Add("hair style " + Label(styles.Styles, hair));
+            }
+            if (choice.Beard is { } beard)
+            {
+                await _client!.SetBeardAsync(username, beard);
+                done.Add(beard == "" ? "no beard" : "beard " + Label(styles.Beards ?? [], beard));
+            }
+            if (choice.Color is { } color)
+            {
+                await _client!.SetHairColorAsync(username, color);
+                done.Add("a new hair colour");
+            }
+            return $"{username} now has " + string.Join(", ", done) + ".";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            return "The bridge could not set the hair style: " + ex.Message;
+            return (done.Count > 0 ? $"{username} now has " + string.Join(", ", done) + ", but " : "")
+                + "the bridge could not change the rest: " + ex.Message;
         }
     }
 
-    static string HairWindowText(BridgeHairStyles styles, string style) =>
-        styles.Styles.FirstOrDefault(s => s.Name == style) is { Label: { Length: > 0 } label } && label != style ? $"{label} ({style})" : style;
+    static string Label(IEnumerable<BridgeHairStyle> styles, string name) =>
+        styles.FirstOrDefault(s => s.Name == name) is { Label: { Length: > 0 } label } && label != name ? $"{label} ({name})" : name;
 
     /// <summary>Why what came with bridge v8 (items on the ground, wrecks) can't be done now (null: it can).</summary>
     public string? V8Problem =>
@@ -858,7 +910,8 @@ public sealed partial class BridgeViewModel : ObservableObject
     {
         static string Percent(double? v) => v is { } x ? $"{x:P0}" : "?";
         var lines = new List<string>();
-        lines.Add((d.Profession ?? "No profession") + (d.Traits.Count > 0 ? " · " + string.Join(", ", d.Traits) : ""));
+        lines.Add((d.CharacterName is { Length: > 0 } name ? name + " · " : "") + (d.Profession ?? "No profession")
+            + (d.Traits.Count > 0 ? " · " + string.Join(", ", d.Traits) : ""));
 
         var condition = new List<string>();
         if (d.Infected == true)
@@ -917,4 +970,10 @@ public sealed partial class BridgeViewModel : ObservableObject
         _timer.Stop();
         _client?.Files.Dispose();
     }
+}
+
+/// <summary>What was picked in the hair window: a null field stays as it is ("" beard: none).</summary>
+public sealed record HairChoice(string? Hair, string? Beard, BridgeColor? Color)
+{
+    public bool IsEmpty => Hair is null && Beard is null && Color is null;
 }

@@ -916,8 +916,8 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Asks the user a yes/no question; set by the view.</summary>
     public Func<string, bool>? Confirm { get; set; }
 
-    /// <summary>Lets the user pick a hair style for a player (null: cancelled); set by the view.</summary>
-    public Func<string, SpiffoCON.Core.Bridge.BridgeHairStyles, string?>? ChooseHairStyle { get; set; }
+    /// <summary>Lets the user pick hair, beard and colour for a player (null: cancelled); set by the view.</summary>
+    public Func<string, SpiffoCON.Core.Bridge.BridgeHairStyles, HairChoice?>? ChooseHairStyle { get; set; }
 
     [RelayCommand]
     private async Task TestSftpAsync()
