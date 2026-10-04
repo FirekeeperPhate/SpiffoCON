@@ -594,6 +594,8 @@ public sealed partial class BridgeViewModel : ObservableObject
     {
         null or "" => "",
         "zombie" => ", killed by zombies",
+        "animal" => ", killed by an animal",
+        var animal when animal.StartsWith("animal:", StringComparison.Ordinal) => $", killed by an animal ({animal["animal:".Length..]})",
         var player => $", killed by {player}",
     };
 

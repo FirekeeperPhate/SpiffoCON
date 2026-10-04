@@ -584,7 +584,10 @@ public sealed record BridgeDeath
     public int? Y { get; init; }
     public int? Z { get; init; }
 
-    /// <summary>The player who killed them, "zombie", or absent when the game does not say.</summary>
+    /// <summary>
+    /// The player who killed them, "zombie", "animal" or "animal:&lt;type&gt;" (bridge v10), or absent when the game
+    /// does not say.
+    /// </summary>
     public string? Killer { get; init; }
     public double? HoursSurvived { get; init; }
     public int? ZombieKills { get; init; }

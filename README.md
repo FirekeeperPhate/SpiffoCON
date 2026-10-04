@@ -152,6 +152,10 @@ instead.
   gender the server knows, mods included, saved with the character and shown to the players near
   them, as the game's own hair cut does. For characters gone bald by mistake.
 
+  Bridge v10 keeps animals out of the deaths: in Build 42 an animal is a kind of player for the
+  game, named "Bob", so bridges v8 and v9 kept every dead animal as a death of "Bob" (v10 drops
+  those once from the file they left). A player killed by an animal now says so.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.

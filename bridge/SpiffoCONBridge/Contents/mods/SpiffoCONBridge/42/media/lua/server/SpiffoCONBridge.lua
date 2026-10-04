@@ -11,7 +11,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 9
+local VERSION = 10
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -850,26 +850,47 @@ local DEATHS_FILE = "spiffocon_deaths.txt"
 local MAX_DEATHS = 100
 local deaths = nil
 
+-- first line of the file since bridge v10. In B42 an animal is an IsoPlayer too (IsoAnimal), named "Bob"
+-- as every IsoPlayer is at first: bridges v8 and v9 kept every dead animal as a death of "Bob". A file
+-- without this line comes from them, and its "Bob" lines are dropped once.
+local DEATHS_HEADER = "# SpiffoCON bridge deaths v10"
+
+local function isAnimal(character)
+	return try(function() return character:isAnimal() end) or instanceof(character, "IsoAnimal")
+end
+
+local saveDeaths
+
 -- one death per line: time<TAB>username<TAB>x<TAB>y<TAB>z<TAB>killer<TAB>hoursSurvived<TAB>zombieKills
 local function loadDeaths()
 	deaths = {}
 	local reader = getFileReader(DEATHS_FILE, false)
 	if not reader then return end
 	local line = reader:readLine()
+	local old = line ~= nil and line ~= DEATHS_HEADER
+	local dropped = 0
 	while line do
 		local p = {}
 		for part in (line .. "\t"):gmatch("([^\t]*)\t") do p[#p + 1] = part end
-		if #p >= 5 then
-			deaths[#deaths + 1] = { time = p[1], username = p[2], x = tonumber(p[3]), y = tonumber(p[4]), z = tonumber(p[5]),
-				killer = p[6] ~= "" and p[6] or nil, hoursSurvived = tonumber(p[7]), zombieKills = tonumber(p[8]) }
+		if #p >= 5 and line:sub(1, 1) ~= "#" then
+			if old and p[2] == "Bob" then
+				dropped = dropped + 1
+			else
+				deaths[#deaths + 1] = { time = p[1], username = p[2], x = tonumber(p[3]), y = tonumber(p[4]), z = tonumber(p[5]),
+					killer = p[6] ~= "" and p[6] or nil, hoursSurvived = tonumber(p[7]), zombieKills = tonumber(p[8]) }
+			end
 		end
 		line = reader:readLine()
 	end
 	reader:close()
+	if old then
+		try(saveDeaths)
+		if dropped > 0 then print("SpiffoCON bridge: dropped " .. dropped .. " deaths of animals kept by an older bridge") end
+	end
 end
 
-local function saveDeaths()
-	local lines = {}
+saveDeaths = function()
+	local lines = { DEATHS_HEADER }
 	for _, d in ipairs(deaths) do
 		lines[#lines + 1] = table.concat({ d.time, d.username, tostring(d.x), tostring(d.y), tostring(d.z), d.killer or "",
 			tostring(d.hoursSurvived or ""), tostring(d.zombieKills or "") }, "\t")
@@ -880,10 +901,14 @@ local function saveDeaths()
 end
 
 local function onCharacterDeath(character)
-	if not instanceof(character, "IsoPlayer") then return end
+	if not instanceof(character, "IsoPlayer") or isAnimal(character) then return end
 	if not deaths then loadDeaths() end
 	local killer = try(function()
 		local by = character:getAttackedBy()
+		if by and isAnimal(by) then
+			local kind = try(function() return by:getAnimalType() end)
+			return kind and ("animal:" .. kind) or "animal"
+		end
 		if by and by ~= character and instanceof(by, "IsoPlayer") then return by:getUsername() end
 		if by and instanceof(by, "IsoZombie") then return "zombie" end
 		return nil

@@ -344,3 +344,14 @@ for _, p in ipairs(PLAYERS) do
 	} end
 	p.resetModelNextFrame = function() note("resetModel " .. p.username) end
 end
+
+-- ---- animals (bridge v10): in B42 an animal is an IsoPlayer too, named "Bob" as every IsoPlayer at first ----
+AN_ANIMAL = { class = "IsoPlayer", x = 300.5, y = 300.5, z = 0 }
+AN_ANIMAL.isAnimal = function() return true end
+AN_ANIMAL.getAnimalType = function() return "bull" end
+AN_ANIMAL.getUsername = function() return "Bob" end
+AN_ANIMAL.getX = function() return AN_ANIMAL.x end
+AN_ANIMAL.getY = function() return AN_ANIMAL.y end
+AN_ANIMAL.getZ = function() return AN_ANIMAL.z end
+AN_ANIMAL.getAttackedBy = function() return nil end
+for _, p in ipairs(PLAYERS) do p.isAnimal = function() return false end end

@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(9, await _client.PingAsync());
+        Assert.Equal(10, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -253,10 +253,11 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task Deaths_of_players_are_kept_with_where_and_by_whom_and_survive_a_restart()
     {
-        // the game fires OnCharacterDeath for every character: zombies are not kept
+        // the game fires OnCharacterDeath for every character: zombies are not kept, nor animals (IsoPlayers too)
         _game.DoString("rj.attackedBy = A_ZOMBIE; DEATH_HANDLER(rj)");
         _game.DoString("NOW = NOW + 60000; kate.attackedBy = rj; DEATH_HANDLER(kate)");
         _game.DoString("DEATH_HANDLER(A_ZOMBIE)");
+        _game.DoString("DEATH_HANDLER(AN_ANIMAL)");
         var deaths = await _client.SendAsync("deaths");
         var snapshot = await _client.SnapshotAsync(deathsAndZombies: true);
         Assert.Null(snapshot.Problem);
@@ -275,6 +276,43 @@ public sealed class BridgeScriptTests
         files.Tick();
         var again = new BridgeClient(files) { PollInterval = TimeSpan.FromMilliseconds(2), Timeout = TimeSpan.FromSeconds(2) };
         Assert.Equal(["rj", "kate"], (await again.SnapshotAsync(deathsAndZombies: true)).Deaths!.Select(d => d.Username));
+    }
+
+    [Fact]
+    public async Task A_player_killed_by_an_animal_says_so()
+    {
+        _game.DoString("rj.attackedBy = AN_ANIMAL; DEATH_HANDLER(rj)");
+        var death = Assert.Single((await _client.SnapshotAsync(deathsAndZombies: true)).Deaths!);
+        Assert.Equal(("rj", "animal:bull"), (death.Username, death.Killer));
+    }
+
+    [Fact]
+    public async Task The_animals_older_bridges_kept_as_deaths_of_Bob_are_dropped_once()
+    {
+        // a file of bridge v8/v9: no header, the deaths of animals as "Bob"
+        var game = new Script();
+        var folder = Path.Combine(AppContext.BaseDirectory, "Bridge");
+        game.DoString(File.ReadAllText(Path.Combine(folder, "GameMock.lua")));
+        game.Globals.Get("FILES").Table.Set("spiffocon_deaths.txt", DynValue.NewString(
+            "1790000000000\tBob\t300\t300\t0\t\t0\t0\n1790000060000\trj\t100\t102\t0\tzombie\t12.3\t7\n1790000120000\tBob\t310\t305\t0\t\t0\t0\n"));
+        game.DoString(File.ReadAllText(Path.Combine(folder, "SpiffoCONBridge.lua")));
+        var files = new GameFiles(game);
+        files.Tick();
+        var client = new BridgeClient(files) { PollInterval = TimeSpan.FromMilliseconds(2), Timeout = TimeSpan.FromSeconds(2) };
+        Assert.Equal(["rj"], (await client.SnapshotAsync(deathsAndZombies: true)).Deaths!.Select(d => d.Username));
+        var file = game.Globals.Get("FILES").Table.Get("spiffocon_deaths.txt").String;
+        Assert.StartsWith("# SpiffoCON bridge deaths v10\n", file);
+
+        // once the file is a v10 one, a player really named Bob stays
+        game.DoString("rj.username = 'Bob'; rj.getUsername = function() return 'Bob' end; DEATH_HANDLER(rj)");
+        var restarted = new Script();
+        restarted.DoString(File.ReadAllText(Path.Combine(folder, "GameMock.lua")));
+        restarted.Globals.Get("FILES").Table.Set("spiffocon_deaths.txt", game.Globals.Get("FILES").Table.Get("spiffocon_deaths.txt"));
+        restarted.DoString(File.ReadAllText(Path.Combine(folder, "SpiffoCONBridge.lua")));
+        var files2 = new GameFiles(restarted);
+        files2.Tick();
+        var again = new BridgeClient(files2) { PollInterval = TimeSpan.FromMilliseconds(2), Timeout = TimeSpan.FromSeconds(2) };
+        Assert.Equal(["rj", "Bob"], (await again.SnapshotAsync(deathsAndZombies: true)).Deaths!.Select(d => d.Username));
     }
 
     [Fact]
