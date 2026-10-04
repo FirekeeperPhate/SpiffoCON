@@ -20,7 +20,7 @@
         <TextBox x:Name="FilterBox" Grid.Row="3" Margin="0,6,0,0" TextChanged="FilterBox_TextChanged"
                  ToolTip="Filter by name" />
         <ListBox x:Name="StyleList" Grid.Row="4" Margin="0,8,0,0" DisplayMemberPath="Text"
-                 SelectionChanged="Choice_Changed" MouseDoubleClick="StyleList_MouseDoubleClick" />
+                 SelectionChanged="StyleList_SelectionChanged" MouseDoubleClick="StyleList_MouseDoubleClick" />
         <DockPanel x:Name="BeardPanel" Grid.Row="5" Margin="0,12,0,0" Visibility="Collapsed">
             <TextBlock Text="Beard" FontWeight="SemiBold" VerticalAlignment="Center" Width="70" />
             <ComboBox x:Name="BeardBox" DisplayMemberPath="Text" SelectionChanged="Choice_Changed" />

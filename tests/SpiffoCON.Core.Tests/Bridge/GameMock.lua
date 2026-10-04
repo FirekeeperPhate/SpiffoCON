@@ -322,11 +322,12 @@ end
 function getClimateManager() return {} end
 
 -- ---- hair styles (bridge v9) ----
-local function hairStyle(name, level, noChoose)
-	return { getName = function() return name end, getLevel = function() return level end, isNoChoose = function() return noChoose == true end }
+local function hairStyle(name, level, noChoose, attached)
+	return { getName = function() return name end, getLevel = function() return level end, isNoChoose = function() return noChoose == true end,
+		isAttachedHair = function() return attached == true end }
 end
 MALE_STYLES = { hairStyle("Bald", 0), hairStyle("Messy", 1), hairStyle("Donny", 2), hairStyle("HatPunkHat", 2, true), hairStyle("Messy", 1) }
-FEMALE_STYLES = { hairStyle("Bald", 0), hairStyle("Hat", 1), hairStyle("Long2", 3), hairStyle("BunCurly", 2) }
+FEMALE_STYLES = { hairStyle("Bald", 0), hairStyle("Hat", 1), hairStyle("Long2", 3), hairStyle("BunCurly", 2, false, true) }
 function getHairStylesInstance()
 	return { getAllMaleStyles = function() return list(MALE_STYLES) end, getAllFemaleStyles = function() return list(FEMALE_STYLES) end }
 end
@@ -341,6 +342,7 @@ for _, p in ipairs(PLAYERS) do
 		getHairModel = function() return p.visual.hair end,
 		setHairModel = function(self, h) p.visual.hair = h end,
 		setNonAttachedHair = function(self, h) p.visual.nonAttached = h end,
+		getNonAttachedHair = function() return p.visual.nonAttached end,
 	} end
 	p.resetModelNextFrame = function() note("resetModel " .. p.username) end
 end
@@ -373,6 +375,7 @@ SyncPlayerStatsPacket = { getBitMaskForStat = function(s)
 end }
 function syncBodyPart(part, flags) note("syncBodyPart " .. part.name) end
 function syncPlayerStats(p, mask) note("syncPlayerStats " .. p.username .. " " .. mask) end
+function sendDamage(p) note("sendDamage " .. p.username) end
 
 local names = { rj = { "Ray", "Jones" }, kate = { "Kate", "" } }
 for _, p in ipairs(PLAYERS) do

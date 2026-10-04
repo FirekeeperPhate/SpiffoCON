@@ -601,7 +601,8 @@ public sealed partial class BridgeViewModel : ObservableObject
         null or "" => "",
         "zombie" => ", killed by zombies",
         "animal" => ", killed by an animal",
-        var animal when animal.StartsWith("animal:", StringComparison.Ordinal) => $", killed by an animal ({animal["animal:".Length..]})",
+        var animal when animal.StartsWith("animal:", StringComparison.Ordinal) =>
+            animal.Length > "animal:".Length ? $", killed by an animal ({animal["animal:".Length..]})" : ", killed by an animal",
         var player => $", killed by {player}",
     };
 
@@ -640,14 +641,21 @@ public sealed partial class BridgeViewModel : ObservableObject
     {
         if (V10Problem is { } problem)
             return problem;
+        // the bridge it was asked of: "Find on server" may connect another one while this waits
+        var client = _client!;
         if (_main.Confirm?.Invoke($"Cure {username}'s zombie infection?\n\nThe infection, its fever and its countdown end; "
                 + "wounds and bites stay as they are (Heal completely heals them).") != true)
             return null;
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
         try
         {
-            var (was, still) = await _client!.CureInfectionAsync(username);
+            var (was, still) = await client.CureInfectionAsync(username);
             _retryAt = default;
             await RefreshAsync();
+            // the sheet beside the inventory says INFECTED until it is read again
+            if (SelectedPlayer?.Username == username)
+                await LoadInventoryAsync(username);
             return still ? $"The server still says {username} is infected: the cure did not take."
                 : was ? $"{username} is no longer infected."
                 : $"{username} was not infected (nothing to cure; any fake infection of a hypochondriac is gone too).";
@@ -673,43 +681,52 @@ public sealed partial class BridgeViewModel : ObservableObject
     {
         if (V9Problem is { } problem)
             return problem;
+        // the bridge it was asked of, for every step: "Find on server" may connect another one meanwhile
+        var client = _client!;
         BridgeHairStyles styles;
         try
         {
-            styles = await _client!.HairStylesAsync(username);
+            styles = await client.HairStylesAsync(username);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return "The bridge could not list the hair styles: " + ex.Message;
         }
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
         if (choose(styles) is not { IsEmpty: false } choice)
             return null;
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
         var done = new List<string>();
         try
         {
             if (choice.Hair is { } hair)
             {
-                await _client!.SetHairAsync(username, hair);
+                await client.SetHairAsync(username, hair);
                 done.Add("hair style " + Label(styles.Styles, hair));
             }
             if (choice.Beard is { } beard)
             {
-                await _client!.SetBeardAsync(username, beard);
+                await client.SetBeardAsync(username, beard);
                 done.Add(beard == "" ? "no beard" : "beard " + Label(styles.Beards ?? [], beard));
             }
             if (choice.Color is { } color)
             {
-                await _client!.SetHairColorAsync(username, color);
+                await client.SetHairColorAsync(username, color);
                 done.Add("a new hair colour");
             }
             return $"{username} now has " + string.Join(", ", done) + ".";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            return (done.Count > 0 ? $"{username} now has " + string.Join(", ", done) + ", but " : "")
-                + "the bridge could not change the rest: " + ex.Message;
+            return done.Count > 0
+                ? $"{username} now has " + string.Join(", ", done) + ", but the bridge could not change the rest: " + ex.Message
+                : "The bridge could not change the look: " + ex.Message;
         }
     }
+
+    const string ConnectionChanged = "The bridge connection changed meanwhile (another server?): nothing was sent. Try again.";
 
     static string Label(IEnumerable<BridgeHairStyle> styles, string name) =>
         styles.FirstOrDefault(s => s.Name == name) is { Label: { Length: > 0 } label } && label != name ? $"{label} ({name})" : name;

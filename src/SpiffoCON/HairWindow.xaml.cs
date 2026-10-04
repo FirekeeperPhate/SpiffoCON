@@ -14,12 +14,16 @@ namespace SpiffoCON;
 /// </summary>
 public partial class HairWindow : Window
 {
-    sealed record Row(string Name, string Text);
+    sealed record Row(string Name, string Text, string Search);
 
     readonly BridgeHairStyles _styles;
     readonly List<Row> _rows;
     readonly List<ToggleButton> _swatches = [];
     BridgeColor? _color;
+
+    // the hair style the user picked: kept across filters, which empty the list's selection when they hide it
+    Row? _picked;
+    bool _refiltering;
 
     /// <summary>What was picked (null fields: unchanged), or null when cancelled.</summary>
     public HairChoice? Chosen { get; private set; }
@@ -36,30 +40,42 @@ public partial class HairWindow : Window
         _rows = styles.Styles
             .OrderBy(s => s.Level ?? int.MaxValue)
             .ThenBy(s => s.Label ?? s.Name, StringComparer.CurrentCultureIgnoreCase)
-            .Select(s => new Row(s.Name, Text(s)))
+            .Select(s => new Row(s.Name, Text(s), s.Label is { Length: > 0 } label ? $"{label} {s.Name}" : s.Name))
             .ToList();
         StyleList.ItemsSource = _rows;
         // the style they have is picked: only what the user changes is sent
-        StyleList.SelectedItem = _rows.FirstOrDefault(r => r.Name == styles.Current);
+        _picked = _rows.FirstOrDefault(r => r.Name == styles.Current);
+        StyleList.SelectedItem = _picked;
 
-        if (styles.Beards is { } beards)
+        // an empty list (the bridge could not read the beards) offers nothing: "None" alone would shave
+        if (styles.Beards is { Count: > 0 } beards)
         {
-            var beardRows = new List<Row> { new("", "None") };
+            var beardRows = new List<Row> { new("", "None", "") };
             beardRows.AddRange(beards.OrderBy(b => b.Level ?? int.MaxValue).ThenBy(b => b.Label ?? b.Name, StringComparer.CurrentCultureIgnoreCase)
-                .Select(b => new Row(b.Name, Text(b))));
+                .Select(b => new Row(b.Name, Text(b), b.Name)));
             BeardBox.ItemsSource = beardRows;
             BeardBox.SelectedItem = beardRows.FirstOrDefault(r => r.Name == (styles.Beard ?? ""));
             BeardPanel.Visibility = Visibility.Visible;
         }
-        if (styles.Colors.Count > 0)
+        if (styles.Colors is { Count: > 0 } offered)
         {
-            foreach (var c in styles.Colors)
+            // the colour they have comes first and is picked (a dyed one is not among the game's own)
+            var colors = offered.ToList();
+            int current = styles.HairColor is { } now ? colors.FindIndex(c => Same(c, now)) : -1;
+            if (styles.HairColor is { } dyed && current < 0)
             {
+                colors.Insert(0, dyed);
+                current = 0;
+            }
+            for (int i = 0; i < colors.Count; i++)
+            {
+                var c = colors[i];
                 var swatch = new ToggleButton
                 {
                     Width = 30, Height = 30, Margin = new Thickness(0, 0, 6, 6), Padding = new Thickness(3), Tag = c,
                     Content = new Border { Background = new SolidColorBrush(ToColor(c)), CornerRadius = new CornerRadius(3), Width = 20, Height = 20 },
-                    ToolTip = $"{(int)(c.R * 255)}, {(int)(c.G * 255)}, {(int)(c.B * 255)}",
+                    ToolTip = $"{Channel(c.R)}, {Channel(c.G)}, {Channel(c.B)}" + (i == current ? " (now)" : ""),
+                    IsChecked = i == current,
                 };
                 swatch.Click += Swatch_Click;
                 _swatches.Add(swatch);
@@ -74,7 +90,12 @@ public partial class HairWindow : Window
         };
     }
 
-    static Color ToColor(BridgeColor c) => Color.FromRgb((byte)Math.Round(c.R * 255), (byte)Math.Round(c.G * 255), (byte)Math.Round(c.B * 255));
+    static byte Channel(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
+
+    static Color ToColor(BridgeColor c) => Color.FromRgb(Channel(c.R), Channel(c.G), Channel(c.B));
+
+    // the same 8-bit colour: the game keeps colours as floats
+    static bool Same(BridgeColor a, BridgeColor b) => Channel(a.R) == Channel(b.R) && Channel(a.G) == Channel(b.G) && Channel(a.B) == Channel(b.B);
 
     internal static string Text(BridgeHairStyle s) =>
         (s.Label is { Length: > 0 } label && label != s.Name ? $"{label} ({s.Name})" : s.Name)
@@ -90,17 +111,32 @@ public partial class HairWindow : Window
         : "beard " + (styles.Beards?.FirstOrDefault(b => b.Name == beard) is { } style ? Text(style) : beard);
 
     HairChoice Choice() => new(
-        StyleList.SelectedItem is Row hair && hair.Name != _styles.Current ? hair.Name : null,
+        _picked is { } hair && hair.Name != _styles.Current ? hair.Name : null,
         BeardBox.SelectedItem is Row beard && beard.Name != (_styles.Beard ?? "") ? beard.Name : null,
         _color);
 
     void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         var filter = FilterBox.Text.Trim();
-        var selected = StyleList.SelectedItem;
-        StyleList.ItemsSource = filter.Length == 0 ? _rows : _rows.Where(r => r.Text.Contains(filter, StringComparison.CurrentCultureIgnoreCase)).ToList();
-        if (selected is not null && StyleList.Items.Contains(selected))
-            StyleList.SelectedItem = selected;
+        _refiltering = true;
+        try
+        {
+            // the names only: the text also says "length N"
+            StyleList.ItemsSource = filter.Length == 0 ? _rows : _rows.Where(r => r.Search.Contains(filter, StringComparison.CurrentCultureIgnoreCase)).ToList();
+            if (_picked is not null && StyleList.Items.Contains(_picked))
+                StyleList.SelectedItem = _picked;
+        }
+        finally
+        {
+            _refiltering = false;
+        }
+    }
+
+    void StyleList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_refiltering)
+            _picked = StyleList.SelectedItem as Row;
+        SetButton.IsEnabled = !Choice().IsEmpty;
     }
 
     void Choice_Changed(object sender, SelectionChangedEventArgs e) => SetButton.IsEnabled = !Choice().IsEmpty;
@@ -110,13 +146,17 @@ public partial class HairWindow : Window
         var clicked = (ToggleButton)sender;
         foreach (var s in _swatches)
             s.IsChecked = ReferenceEquals(s, clicked) && clicked.IsChecked == true;
-        _color = clicked.IsChecked == true ? (BridgeColor)clicked.Tag : null;
+        var color = clicked.IsChecked == true ? (BridgeColor)clicked.Tag : null;
+        // the colour they have already is no change
+        _color = color is not null && _styles.HairColor is { } now && Same(color, now) ? null : color;
         SetButton.IsEnabled = !Choice().IsEmpty;
     }
 
     void StyleList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (!Choice().IsEmpty)
+        // a double click on a row, not on the scroll bar or the empty space under the rows
+        if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(StyleList, source) is ListBoxItem
+            && !Choice().IsEmpty)
             Set_Click(sender, e);
     }
 

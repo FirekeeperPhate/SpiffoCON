@@ -659,8 +659,11 @@ public sealed record BridgeHairStyles
     public BridgeColor? BeardColor { get; init; }
     public List<BridgeHairStyle>? Beards { get; init; }
 
-    /// <summary>Bridge v10: the hair colours the game offers when a character is made.</summary>
-    public List<BridgeColor> Colors { get; init; } = [];
+    /// <summary>
+    /// Bridge v10: the hair colours the game offers when a character is made; null with an older bridge (the
+    /// generated deserializer sets an absent property to null, whatever its initializer says).
+    /// </summary>
+    public List<BridgeColor>? Colors { get; init; }
 }
 
 /// <summary>A colour, each channel 0 to 1.</summary>

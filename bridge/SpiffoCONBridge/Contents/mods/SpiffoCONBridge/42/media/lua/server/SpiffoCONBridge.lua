@@ -866,6 +866,23 @@ local deaths = nil
 -- without this line comes from them, and its "Bob" lines are dropped once.
 local DEATHS_HEADER = "# SpiffoCON bridge deaths v10"
 
+-- written once the "Bob" lines are gone: if the server goes back to bridge v8/v9 for a while (they rewrite
+-- the file without the header), the next v10 does not drop the deaths of a real player named Bob again
+local DEATHS_CLEANED_FILE = "spiffocon_deaths_v10.txt"
+
+local function deathsCleaned()
+	local reader = getFileReader(DEATHS_CLEANED_FILE, false)
+	if not reader then return false end
+	reader:close()
+	return true
+end
+
+local function markDeathsCleaned()
+	local writer = getFileWriter(DEATHS_CLEANED_FILE, true, false)
+	writer:write("The deaths of animals kept by bridges v8 and v9 were dropped from spiffocon_deaths.txt.\n")
+	writer:close()
+end
+
 local function isAnimal(character)
 	return try(function() return character:isAnimal() end) or instanceof(character, "IsoAnimal")
 end
@@ -877,19 +894,26 @@ local saveDeaths
 local function loadDeaths()
 	deaths = {}
 	local reader = getFileReader(DEATHS_FILE, false)
-	if not reader then return end
+	if not reader then
+		try(markDeathsCleaned)
+		return
+	end
 	local line = reader:readLine()
 	local old = line ~= nil and line ~= DEATHS_HEADER
+	local clean = old and not deathsCleaned()
 	local dropped = 0
 	while line do
 		local p = {}
 		for part in (line .. "\t"):gmatch("([^\t]*)\t") do p[#p + 1] = part end
 		if #p >= 5 and line:sub(1, 1) ~= "#" then
-			if old and p[2] == "Bob" then
+			if clean and p[2] == "Bob" then
 				dropped = dropped + 1
 			else
+				local killer = p[6] ~= "" and p[6] or nil
+				-- an animal that killed a player was "Bob" too for the older bridges
+				if clean and killer == "Bob" then killer = "animal" end
 				deaths[#deaths + 1] = { time = p[1], username = p[2], x = tonumber(p[3]), y = tonumber(p[4]), z = tonumber(p[5]),
-					killer = p[6] ~= "" and p[6] or nil, hoursSurvived = tonumber(p[7]), zombieKills = tonumber(p[8]),
+					killer = killer, hoursSurvived = tonumber(p[7]), zombieKills = tonumber(p[8]),
 					characterName = p[9] ~= "" and p[9] or nil }
 			end
 		end
@@ -898,7 +922,10 @@ local function loadDeaths()
 	reader:close()
 	if old then
 		try(saveDeaths)
-		if dropped > 0 then print("SpiffoCON bridge: dropped " .. dropped .. " deaths of animals kept by an older bridge") end
+		if clean then
+			try(markDeathsCleaned)
+			if dropped > 0 then print("SpiffoCON bridge: dropped " .. dropped .. " deaths of animals kept by an older bridge") end
+		end
 	end
 end
 
@@ -916,6 +943,9 @@ end
 local function onCharacterDeath(character)
 	if not instanceof(character, "IsoPlayer") or isAnimal(character) then return end
 	if not deaths then loadDeaths() end
+	-- the killer is the game's last attacker (IsoGameCharacter.setAttackedBy: hits, bites, fire, vehicles,
+	-- Kill). An animal's attack does not set it (AnimalAttackState → hitConsequences → DamageFromAnimal), so
+	-- an animal is named only when the game happens to; otherwise the last attacker before it shows
 	local killer = try(function()
 		local by = character:getAttackedBy()
 		if by and isAnimal(by) then
@@ -1082,8 +1112,16 @@ local function setHair(username, style)
 	end
 	local visual = p:getHumanVisual()
 	local before = visual:getHairModel()
+	-- as ISCutHair:complete: a tied style (ponytail, bun) remembers the loose hair "Untie" gives back, any
+	-- other style forgets it
+	if try(function() return found:isAttachedHair() end) then
+		if not visual:getNonAttachedHair() and before and before ~= "" and string.lower(before) ~= "bald" then
+			visual:setNonAttachedHair(before)
+		end
+	else
+		visual:setNonAttachedHair(nil)
+	end
 	visual:setHairModel(style)
-	visual:setNonAttachedHair(nil)
 	p:resetModelNextFrame()
 	sendHumanVisual(p)
 	audit("set the hair style of " .. username .. " to " .. style .. " (was " .. tostring(before) .. ")")
@@ -1093,8 +1131,9 @@ end
 -- setbeard <username> <style>: a man's beard, "" for none (bridge v10), as setHair
 local function setBeard(username, style)
 	local p = requirePlayer(username)
-	if p:isFemale() then error(username .. " can't have a beard") end
 	style = style or ""
+	-- a woman can lose one she got somehow (debug), not get one
+	if p:isFemale() and style ~= "" then error(username .. " can't have a beard") end
 	if style ~= "" then
 		local found = false
 		local all = getBeardStylesInstance():getAllStyles()
@@ -1165,6 +1204,9 @@ local function cureInfection(username)
 	local mask = (try(function() return SyncPlayerStatsPacket.getBitMaskForStat(CharacterStat.ZOMBIE_INFECTION) end) or 0)
 		+ (try(function() return SyncPlayerStatsPacket.getBitMaskForStat(CharacterStat.ZOMBIE_FEVER) end) or 0)
 	if mask > 0 then syncPlayerStats(p, mask) end
+	-- the whole body to the player's game too (time and mortality of the infection are not in the parts):
+	-- the game's own actions send it so (ISDryMyself, ISDrinkFromBottle)
+	sendDamage(p)
 	audit("cured the zombie infection of " .. username .. (was and "" or " (was not infected)"))
 	return { wasInfected = was, infected = body:IsInfected() }
 end

@@ -162,7 +162,8 @@ instead.
     sheet, on the map and in the deaths;
   - animals kept out of the deaths: in Build 42 an animal is a kind of player for the game, named
     "Bob", so bridges v8 and v9 kept every dead animal as a death of "Bob" (v10 drops those once from
-    the file they left). A player killed by an animal now says so.
+    the file they left). Who killed a player is the game's last attacker, and an animal's attack does
+    not set it: "killed by an animal" shows only when the game happens to name one.
 
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
@@ -188,8 +189,9 @@ instead.
 - Player menu: right-click a player wherever players are listed (the sidebar, Players, map
   markers, Bridge, Accounts, chat lines in Logs): show in the Players tab, on the map or their
   inventory, teleport to another player or bring one here, give a kit, lightning / thunder /
-  horde, full heal (bridge), god mode, invisible, no clip, access level, voice mute, kick, ban,
-  unban, copy the name. Each reply shows in the status bar.
+  horde, full heal and cure of the zombie infection, clean up around them, hair and beard (bridge),
+  god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the name. Each
+  reply shows in the status bar.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards. With SFTP on, connecting also connects the bridge,

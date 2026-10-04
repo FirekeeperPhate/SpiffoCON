@@ -95,7 +95,7 @@ public static class PlayerMenu
         Sub(menu.Items, "Event", online, actions.PlayerEvents.Select(ev =>
             ((object)(ev.Id == "horde" ? $"{ev.Name} ({actions.HordeSize} zombies)" : ev.Name), (Func<Task>)(() => actions.EventAsync(player, ev)))));
         Add(menu.Items, "Heal completely…", () => actions.HealAsync(player), online && actions.CanHeal(player),
-            actions.CanHeal(player) ? null : "Needs bridge v2 (Bridge tab)");
+            actions.CanHeal(player) ? null : bridge?.Dead == true ? "This player is dead." : "Needs bridge v2 (Bridge tab)");
         Add(menu.Items, "Cure zombie infection…", () => actions.CureInfectionAsync(player), online && actions.CureProblem(player) is null,
             actions.CureProblem(player) ?? "Ends the zombie infection of a bite or scratch, which Heal completely does not");
         // through the bridge (corpses: v6, the rest: v7): what RCON has no command for, within a radius

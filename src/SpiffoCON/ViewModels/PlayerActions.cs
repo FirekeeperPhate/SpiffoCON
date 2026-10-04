@@ -21,7 +21,7 @@ public sealed class PlayerActions(MainViewModel main)
     public BridgePlayer? BridgeInfo(string player) =>
         main.Bridge.Players.FirstOrDefault(p => p.Username.Equals(player, StringComparison.OrdinalIgnoreCase));
 
-    public bool CanHeal(string player) => main.Bridge.CanAct && BridgeInfo(player) is not null;
+    public bool CanHeal(string player) => main.Bridge.CanAct && BridgeInfo(player) is { Dead: not true };
 
     public IReadOnlyList<KitView> Kits => main.Kits.Kits;
 
@@ -161,12 +161,18 @@ public sealed class PlayerActions(MainViewModel main)
     }
 
     /// <summary>Why a player's hair style can't be set (null: it can): bridge v9, player online in the bridge.</summary>
+    // RCON may still list a player who just died; the bridge says so
+    string? PlayerProblem(string player) =>
+        BridgeInfo(player) is not { } info ? "The bridge does not list this player (online?)."
+        : info.Dead == true ? "This player is dead."
+        : null;
+
     public string? HairProblem(string player) =>
-        main.Bridge.V9Problem ?? (BridgeInfo(player) is null ? "The bridge does not list this player (online?)." : null);
+        main.Bridge.V9Problem ?? PlayerProblem(player);
 
     /// <summary>Why a player's zombie infection can't be cured (null: it can): bridge v10, player online in the bridge.</summary>
     public string? CureProblem(string player) =>
-        main.Bridge.V10Problem ?? (BridgeInfo(player) is null ? "The bridge does not list this player (online?)." : null);
+        main.Bridge.V10Problem ?? PlayerProblem(player);
 
     public async Task CureInfectionAsync(string player)
     {

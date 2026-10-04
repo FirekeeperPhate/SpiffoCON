@@ -105,6 +105,21 @@ public sealed class BridgeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_v9_hair_reply_has_no_beards_nor_colours()
+    {
+        // bridge v9 answers hairstyles with the styles only: what v10 adds is absent, not empty
+        RunFakeBridge((action, args) => action == "hairstyles"
+            ? """{"id":"$ID","ok":true,"data":{"female":true,"current":"","styles":[{"name":"Bald","level":0},{"name":"Long2","label":"Long","level":3}]}}"""
+            : """{"id":"$ID","ok":false,"error":"unknown action x"}""");
+        var client = new BridgeClient(new LocalBridgeFiles(_dir)) { PollInterval = TimeSpan.FromMilliseconds(50) };
+        var styles = await client.HairStylesAsync("kate");
+        Assert.Equal(2, styles.Styles.Count);
+        Assert.Null(styles.Colors);
+        Assert.Null(styles.Beards);
+        Assert.Null(styles.HairColor);
+    }
+
+    [Fact]
     public async Task Typed_calls_parse_the_bridge_replies()
     {
         RunFakeBridge((action, args) => action switch
