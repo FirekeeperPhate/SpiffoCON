@@ -514,8 +514,9 @@ public sealed class BridgeScriptTests
         var (items, kate) = await _client.CharacterAsync("kate", details: true);
         Assert.NotNull(kate);
         Assert.Equal(["Left Hand", "Upper Torso"], kate.Parts!.Select(p => p.Name));
-        Assert.Equal((62, "bitten, bleeding, zombie infection, dirty bandage"), (kate.Parts[0].Health, string.Join(", ", kate.Parts[0].Conditions)));
-        Assert.Equal((100, 0), (kate.Parts[1].Health, kate.Parts[1].Conditions.Count));
+        var parts = kate.Parts!;
+        Assert.Equal((62, "bitten, bleeding, zombie infection, dirty bandage"), (parts[0].Health, string.Join(", ", parts[0].Conditions)));
+        Assert.Equal((100, 0), (parts[1].Health, parts[1].Conditions.Count));
         Assert.Empty(kate.Equipment!);
         Assert.Equal(7.3, kate.Weight!.Value, 3);
         Assert.Equal((15, true), (kate.MaxWeight, kate.Asleep));
