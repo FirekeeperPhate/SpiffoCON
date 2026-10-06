@@ -215,6 +215,9 @@ public sealed class PlayerActions(MainViewModel main)
         main.StatusText = main.Bridge.StatusText;
     }
 
+    /// <summary>Opens the character window of a player (one per player; again brings it to the front).</summary>
+    public void ShowDetails(string player) => main.ShowCharacter?.Invoke(BridgeInfo(player)?.Username ?? player);
+
     public void ShowInPlayersTab(string player)
     {
         main.Players.Target = player;

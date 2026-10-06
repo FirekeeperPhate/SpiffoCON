@@ -515,6 +515,22 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         };
     }
 
+    /// <summary>
+    /// An online player's inventory and, with <paramref name="details"/> (bridge v7), their sheet, in one round
+    /// trip. The sheet is null when it was not asked or the bridge could not read it (the inventory still came).
+    /// </summary>
+    public async Task<(IReadOnlyList<BridgeItem> Items, BridgePlayerDetails? Details)> CharacterAsync(string username, bool details, CancellationToken ct = default)
+    {
+        var requests = new List<(string, string[])> { ("inventory", [username]) };
+        if (details)
+            requests.Add(("playerdetails", [username]));
+        var replies = await SendAsync(requests, ct).ConfigureAwait(false);
+        if (!replies[0].Ok)
+            throw new BridgeException(replies[0].Error ?? "The bridge reported an error.");
+        return (Deserialize(replies[0].Data, BridgeJson.Default.ListBridgeItem),
+            replies.Count > 1 && replies[1].Ok ? replies[1].Data.Deserialize(BridgeJson.Default.BridgePlayerDetails) : null);
+    }
+
     static List<T> Deserialize<T>(JsonElement data, System.Text.Json.Serialization.Metadata.JsonTypeInfo<List<T>> info) =>
         data.ValueKind == JsonValueKind.Array ? data.Deserialize(info) ?? [] : [];
 }
@@ -585,6 +601,44 @@ public sealed record BridgePlayerDetails
     public int? Health { get; init; }
     public double? HoursSurvived { get; init; }
     public int? ZombieKills { get; init; }
+
+    /// <summary>Bridge v11: every part of the body with its health and wounds; null with an older bridge.</summary>
+    public List<BridgeBodyPart>? Parts { get; init; }
+
+    /// <summary>Bridge v11: what is held, worn and attached; null with an older bridge.</summary>
+    public List<BridgeEquipment>? Equipment { get; init; }
+
+    /// <summary>Bridge v11: the weight carried and the most the character can carry.</summary>
+    public double? Weight { get; init; }
+    public double? MaxWeight { get; init; }
+    public bool? Asleep { get; init; }
+}
+
+public sealed record BridgeBodyPart
+{
+    /// <summary>The game's name for the part ("Left Hand"), in the server's language.</summary>
+    public string Name { get; init; } = "";
+
+    /// <summary>0 to 100.</summary>
+    public int? Health { get; init; }
+
+    /// <summary>What is wrong with it or done to it: "bitten", "bleeding", "bandaged"...</summary>
+    public List<string> Conditions { get => _conditions ?? []; init => _conditions = value; }
+    readonly List<string>? _conditions;
+}
+
+public sealed record BridgeEquipment
+{
+    /// <summary>"hand", "worn" or "attached".</summary>
+    public string Kind { get; init; } = "";
+
+    /// <summary>Where: "Primary hand", a body location (the game's name or its id, "base:jacket"), an attachment ("Belt Left").</summary>
+    public string Slot { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string? FullType { get; init; }
+
+    /// <summary>0 (broken) to 1 (new); null for what does not wear out.</summary>
+    public double? Condition { get; init; }
 }
 
 public sealed record BridgeSkill

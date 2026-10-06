@@ -45,7 +45,7 @@ public static class PlayerMenu
             e.Handled = true;
             return;
         }
-        Fill(menu, vm.PlayerActions, name);
+        Fill(menu.Items, vm.PlayerActions, name);
     }
 
     /// <summary>The player of a list item, if it is one.</summary>
@@ -63,42 +63,52 @@ public static class PlayerMenu
     public static void Open(MainViewModel vm, string player, UIElement target)
     {
         var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.MousePoint };
-        Fill(menu, vm.PlayerActions, player);
+        Fill(menu.Items, vm.PlayerActions, player);
         menu.IsOpen = true;
     }
 
-    static void Fill(ContextMenu menu, PlayerActions actions, string player)
+    /// <summary>
+    /// The actions on a player, as menu items: for the right-click menu, and for the character window
+    /// (<paramref name="inWindow"/>: without the header and what the window itself shows).
+    /// </summary>
+    internal static void Fill(ItemCollection items, PlayerActions actions, string player, bool inWindow = false)
     {
-        menu.Items.Clear();
+        items.Clear();
         bool connected = actions.IsConnected;
         bool online = connected && actions.IsOnline(player);
         var bridge = actions.BridgeInfo(player);
 
-        menu.Items.Add(new MenuItem
+        if (!inWindow)
         {
-            Header = player + (!connected ? " (not connected)" : online ? "" : " (offline)"),
-            IsEnabled = false,
-            FontWeight = FontWeights.SemiBold,
-        });
-        Add(menu.Items, "Show in the Players tab", () => actions.ShowInPlayersTab(player));
-        Add(menu.Items, "Show on the map", () => actions.ShowOnMap(player), bridge?.X is not null,
+            items.Add(new MenuItem
+            {
+                Header = player + (!connected ? " (not connected)" : online ? "" : " (offline)"),
+                IsEnabled = false,
+                FontWeight = FontWeights.SemiBold,
+            });
+            Add(items, "Character details…", () => actions.ShowDetails(player), true,
+                "Everything about this player in one window: health, skills, equipment, inventory and every action");
+        }
+        Add(items, "Show in the Players tab", () => actions.ShowInPlayersTab(player));
+        Add(items, "Show on the map", () => actions.ShowOnMap(player), bridge?.X is not null,
             bridge is null ? "Needs the bridge (Bridge tab)" : null);
-        Add(menu.Items, "Inventory (Bridge tab)", () => actions.ShowInventory(player), bridge is not null,
-            bridge is null ? "Needs the bridge (Bridge tab)" : null);
-        menu.Items.Add(new Separator());
+        if (!inWindow)
+            Add(items, "Inventory (Bridge tab)", () => actions.ShowInventory(player), bridge is not null,
+                bridge is null ? "Needs the bridge (Bridge tab)" : null);
+        items.Add(new Separator());
 
         var others = actions.OthersOnline(player);
-        Sub(menu.Items, "Teleport to", online && others.Count > 0, others.Select(o => ((object)o, (Func<Task>)(() => actions.TeleportAsync(player, o)))));
-        Sub(menu.Items, "Bring here", online && others.Count > 0, others.Select(o => ((object)o, (Func<Task>)(() => actions.TeleportAsync(o, player)))));
-        Sub(menu.Items, "Give kit", online && actions.Kits.Count > 0,
+        Sub(items, "Teleport to", online && others.Count > 0, others.Select(o => ((object)o, (Func<Task>)(() => actions.TeleportAsync(player, o)))));
+        Sub(items, "Bring here", online && others.Count > 0, others.Select(o => ((object)o, (Func<Task>)(() => actions.TeleportAsync(o, player)))));
+        Sub(items, "Give kit", online && actions.Kits.Count > 0,
             actions.Kits.Select(k => ((object)$"{k.Name} ({k.Summary})", (Func<Task>)(() => actions.GiveKitAsync(player, k)))));
-        Sub(menu.Items, "Event", online, actions.PlayerEvents.Select(ev =>
+        Sub(items, "Event", online, actions.PlayerEvents.Select(ev =>
             ((object)(ev.Id == "horde" ? $"{ev.Name} ({actions.HordeSize} zombies)" : ev.Name), (Func<Task>)(() => actions.EventAsync(player, ev)))));
         // why a bridge action is off: the player not online for RCON first, then what the bridge says
         string? Tip(string? problem, string? what) => !online ? "Needs the player online (connect RCON)" : problem ?? what;
-        Add(menu.Items, "Heal completely…", () => actions.HealAsync(player), online && actions.HealProblem(player) is null,
+        Add(items, "Heal completely…", () => actions.HealAsync(player), online && actions.HealProblem(player) is null,
             Tip(actions.HealProblem(player), null));
-        Add(menu.Items, "Cure zombie infection…", () => actions.CureInfectionAsync(player), online && actions.CureProblem(player) is null,
+        Add(items, "Cure zombie infection…", () => actions.CureInfectionAsync(player), online && actions.CureProblem(player) is null,
             Tip(actions.CureProblem(player), "Ends the zombie infection of a bite or scratch, which Heal completely does not"));
         // through the bridge (corpses: v6, the rest: v7): what RCON has no command for, within a radius
         // of where the player is now
@@ -116,12 +126,12 @@ public static class PlayerMenu
         Sub(cleanUp.Items, "Wrecks", actions.WrecksProblem is null,
             actions.CorpseRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveWrecksAsync(player, r)))),
             actions.WrecksProblem ?? "Burnt and smashed vehicles: counted first, then asked. Cars that can still be driven stay");
-        menu.Items.Add(cleanUp);
-        Add(menu.Items, "Hair and beard…", () => actions.SetHairAsync(player), online && actions.HairProblem(player) is null,
+        items.Add(cleanUp);
+        Add(items, "Hair and beard…", () => actions.SetHairAsync(player), online && actions.HairProblem(player) is null,
             Tip(actions.HairProblem(player), actions.HairTip));
-        menu.Items.Add(new Separator());
+        items.Add(new Separator());
 
-        Sub(menu.Items, "Powers", online,
+        Sub(items, "Powers", online,
         [
             ("God mode on", () => actions.GodModeAsync(player, true)),
             ("God mode off", () => actions.GodModeAsync(player, false)),
@@ -130,18 +140,18 @@ public static class PlayerMenu
             ("No clip on", () => actions.NoClipAsync(player, true)),
             ("No clip off", () => actions.NoClipAsync(player, false)),
         ]);
-        Sub(menu.Items, "Access level", connected, actions.AccessLevels.Select(l => ((object)l, (Func<Task>)(() => actions.SetAccessLevelAsync(player, l)))));
-        Sub(menu.Items, "Voice chat", online,
+        Sub(items, "Access level", connected, actions.AccessLevels.Select(l => ((object)l, (Func<Task>)(() => actions.SetAccessLevelAsync(player, l)))));
+        Sub(items, "Voice chat", online,
         [
             ("Mute", () => actions.VoiceAsync(player, true)),
             ("Unmute", () => actions.VoiceAsync(player, false)),
         ]);
-        menu.Items.Add(new Separator());
-        Add(menu.Items, "Kick…", () => actions.KickAsync(player), online);
-        Add(menu.Items, "Ban…", () => actions.BanAsync(player), connected);
-        Add(menu.Items, "Unban…", () => actions.UnbanAsync(player), connected);
-        menu.Items.Add(new Separator());
-        Add(menu.Items, "Copy name", () => actions.CopyName(player));
+        items.Add(new Separator());
+        Add(items, "Kick…", () => actions.KickAsync(player), online);
+        Add(items, "Ban…", () => actions.BanAsync(player), connected);
+        Add(items, "Unban…", () => actions.UnbanAsync(player), connected);
+        items.Add(new Separator());
+        Add(items, "Copy name", () => actions.CopyName(player));
     }
 
     static void Add(ItemCollection items, string header, Action action, bool enabled = true, string? tip = null)

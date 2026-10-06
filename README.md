@@ -166,6 +166,10 @@ instead.
     the file they left). Who killed a player is the game's last attacker, and an animal's attack does
     not set it: "killed by an animal" shows only when the game happens to name one.
 
+  Bridge v11 adds to a player's sheet, for the Character details window: the body part by part
+  (health and wounds, as the game's health panel), what is held, worn and attached with its
+  condition, the weight carried.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.
@@ -193,6 +197,12 @@ instead.
   horde, full heal and cure of the zombie infection, clean up around them, hair and beard (bridge),
   god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the name. Each
   reply shows in the status bar.
+- Character details: the first item of the player menu opens a window of its own for that player,
+  with everything in one place: who and where they are, health (with bridge v11 part by part:
+  bites, bleeding, fractures, bandages...), needs and moods, traits, skills, what they wear, hold
+  and have attached (bridge v11), the inventory with its remove buttons, the account (last
+  connection, kicks and bans, when the Accounts tab was read) and every action of the player menu
+  as a bar. It follows the bridge's refreshes; one window per player, several can stay open.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards. With SFTP on, connecting also connects the bridge,

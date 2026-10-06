@@ -12,7 +12,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 10
+local VERSION = 11
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -697,6 +697,94 @@ end
 local STATS = { "HUNGER", "THIRST", "FATIGUE", "ENDURANCE", "STRESS", "PANIC", "BOREDOM", "UNHAPPINESS", "PAIN", "INTOXICATION", "SICKNESS" }
 
 -- playerdetails <username>: traits, skills and condition, as the server has them
+-- each part of the body: its health (0 to 100) and what is wrong with it, checked as the game's health
+-- panel does (ISHealthPanel). Every part is listed, the sound ones too (the app shows those with something to say)
+local PART_CONDITIONS = {
+	{ "bitten", function(part) return part:bitten() end },
+	{ "scratched", function(part) return part:scratched() end },
+	{ "laceration", function(part) return part:isCut() end },
+	{ "deep wound", function(part) return part:deepWounded() end },
+	{ "bleeding", function(part) return part:bleeding() end },
+	{ "fracture", function(part) return part:getFractureTime() > 0 end },
+	{ "burn", function(part) return part:getBurnTime() > 0 end },
+	{ "glass", function(part) return part:haveGlass() end },
+	{ "bullet", function(part) return part:haveBullet() end },
+	{ "infected wound", function(part) return part:isInfectedWound() end },
+	{ "zombie infection", function(part) return part:IsInfected() end },
+	{ "stitched", function(part) return part:stitched() end },
+	{ "splint", function(part) return part:getSplintFactor() > 0 end },
+	{ "bandaged", function(part) return part:bandaged() and part:getBandageLife() > 0 end },
+	{ "dirty bandage", function(part) return part:bandaged() and part:getBandageLife() <= 0 end },
+}
+
+local function bodyParts(p)
+	local result = array()
+	try(function()
+		local parts = p:getBodyDamage():getBodyParts()
+		for i = 0, parts:size() - 1 do
+			local part = parts:get(i)
+			local conditions = array()
+			for _, c in ipairs(PART_CONDITIONS) do
+				if try(c[2], part) then conditions[#conditions + 1] = c[1] end
+			end
+			result[#result + 1] = {
+				name = try(function() return BodyPartType.getDisplayName(part:getType()) end)
+					or try(function() return BodyPartType.ToString(part:getType()) end) or tostring(i),
+				health = try(function() return math.floor(part:getHealth() + 0.5) end),
+				conditions = conditions,
+			}
+		end
+	end)
+	return result
+end
+
+-- an item worn, held or attached: its name and how worn out it is (0 to 1; nil for what has no condition)
+local function equipmentItem(kind, slot, item)
+	return {
+		kind = kind,
+		slot = slot,
+		name = try(function() return item:getDisplayName() end) or try(function() return item:getFullType() end),
+		fullType = try(function() return item:getFullType() end),
+		condition = try(function()
+			local max = item:getConditionMax()
+			if not max or max <= 0 then return nil end
+			return round(item:getCondition() / max, 0.01)
+		end),
+	}
+end
+
+-- what the character wears (by body location), holds (hands) and has attached (belt, back, holsters)
+local function equipment(p)
+	local result = array()
+	try(function()
+		local primary, secondary = p:getPrimaryHandItem(), p:getSecondaryHandItem()
+		if primary and primary == secondary then
+			result[#result + 1] = equipmentItem("hand", "Both hands", primary)
+		else
+			if primary then result[#result + 1] = equipmentItem("hand", "Primary hand", primary) end
+			if secondary then result[#result + 1] = equipmentItem("hand", "Secondary hand", secondary) end
+		end
+	end)
+	try(function()
+		local worn = p:getWornItems()
+		for i = 0, worn:size() - 1 do
+			local w = worn:get(i)
+			local location = w:getLocation()
+			-- the game's own name for the place when it has one, else its id ("base:jacket")
+			local slot = try(function() return getTextOrNull(location:getTranslationName()) end) or tostring(location)
+			result[#result + 1] = equipmentItem("worn", slot, w:getItem())
+		end
+	end)
+	try(function()
+		local attached = p:getAttachedItems()
+		for i = 0, attached:size() - 1 do
+			local a = attached:get(i)
+			result[#result + 1] = equipmentItem("attached", tostring(a:getLocation()), a:getItem())
+		end
+	end)
+	return result
+end
+
 local function playerDetails(username)
 	local p = requirePlayer(username)
 	local info = playerInfo(p)
@@ -746,6 +834,13 @@ local function playerDetails(username)
 		info.bitten = try(function() return body:getNumPartsBitten() end)
 		info.onFire = try(function() return body:IsOnFire() end)
 	end
+
+	-- bridge v11: the body part by part, what is worn, held and attached, the weight carried
+	info.parts = bodyParts(p)
+	info.equipment = equipment(p)
+	info.weight = try(function() return round(p:getInventory():getCapacityWeight(), 0.1) end)
+	info.maxWeight = try(function() return p:getMaxWeight() end)
+	info.asleep = try(function() return p:isAsleep() end)
 	return info
 end
 

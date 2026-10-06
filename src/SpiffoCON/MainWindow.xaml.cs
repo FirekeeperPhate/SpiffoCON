@@ -51,6 +51,8 @@ public partial class MainWindow : Window
         {
             // let the server list finish its own selection change first
             await Dispatcher.Yield(DispatcherPriority.Background);
+            // the character windows show the server being left
+            CloseCharacters();
             await _vm.ShutdownAsync();
             _book.Selected = target.Id;
             var before = _vm;
@@ -90,17 +92,55 @@ public partial class MainWindow : Window
         }
     }
 
+    // ---- the character windows: one per player, beside the main window ----
+
+    readonly Dictionary<string, CharacterWindow> _characters = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A question or a dialog belongs to the window the user is working in.</summary>
+    Window DialogOwner() => _characters.Values.FirstOrDefault(w => w.IsActive) ?? (Window)this;
+
+    void ShowCharacter(string username)
+    {
+        if (_closing || _switching)
+            return;
+        if (_characters.TryGetValue(username, out var open))
+        {
+            if (open.WindowState == WindowState.Minimized)
+                open.WindowState = WindowState.Normal;
+            open.Activate();
+            return;
+        }
+        var window = new CharacterWindow(new CharacterViewModel(_vm, username));
+        // beside the main window, each a little further so they don't hide each other
+        var area = SystemParameters.WorkArea;
+        double offset = 40 + 28 * (_characters.Count % 6);
+        double left = WindowState == WindowState.Normal ? Left + offset : area.Left + offset;
+        double top = WindowState == WindowState.Normal ? Top + offset : area.Top + offset;
+        window.Left = Math.Max(area.Left, Math.Min(left, area.Right - window.Width));
+        window.Top = Math.Max(area.Top, Math.Min(top, area.Bottom - window.Height));
+        _characters[username] = window;
+        window.Closed += (_, _) => _characters.Remove(username);
+        window.Show();
+    }
+
+    void CloseCharacters()
+    {
+        foreach (var window in _characters.Values.ToList())
+            window.Close();
+    }
+
     void Attach(MainViewModel vm)
     {
         _vm = vm;
         DataContext = _vm;
+        _vm.ShowCharacter = ShowCharacter;
         _vm.SwitchRequested += OnSwitchRequested;
         _vm.NotificationRaised += (_, n) => ShowNotification(n);
         _vm.Confirm = question =>
-            MessageBox.Show(this, question, "SpiffoCON", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+            MessageBox.Show(DialogOwner(), question, "SpiffoCON", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
         _vm.ChooseHairStyle = (player, styles) =>
         {
-            var dialog = new HairWindow(player, styles) { Owner = this };
+            var dialog = new HairWindow(player, styles) { Owner = DialogOwner() };
             return dialog.ShowDialog() == true ? dialog.Chosen : null;
         };
 
@@ -374,6 +414,7 @@ public partial class MainWindow : Window
             return;
         // let the RCON connection close cleanly, then close for real
         _closing = true;
+        CloseCharacters();
         // checked again: the countdown may have ended while the question was open
         if (_vm.Maintenance.IsCountingDown)
             await _vm.Maintenance.CancelRestartCommand.ExecuteAsync(null);

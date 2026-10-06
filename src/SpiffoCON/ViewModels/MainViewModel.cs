@@ -927,6 +927,9 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Asks the user a yes/no question; set by the view.</summary>
     public Func<string, bool>? Confirm { get; set; }
 
+    /// <summary>Opens the character window of a player; set by the view.</summary>
+    public Action<string>? ShowCharacter { get; set; }
+
     /// <summary>Lets the user pick hair, beard and colour for a player (null: cancelled); set by the view.</summary>
     public Func<string, SpiffoCON.Core.Bridge.BridgeHairStyles, HairChoice?>? ChooseHairStyle { get; set; }
 

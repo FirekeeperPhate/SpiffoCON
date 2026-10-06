@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(10, await _client.PingAsync());
+        Assert.Equal(11, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -505,6 +505,35 @@ public sealed class BridgeScriptTests
         files.Tick();
         var again = new BridgeClient(files) { PollInterval = TimeSpan.FromMilliseconds(2), Timeout = TimeSpan.FromSeconds(2) };
         Assert.Equal("Ray Jones", Assert.Single((await again.SnapshotAsync(deathsAndZombies: true)).Deaths!).CharacterName);
+    }
+
+    [Fact]
+    public async Task The_sheet_has_the_body_part_by_part_and_what_is_worn_held_and_attached()
+    {
+        // one round trip for the inventory and the sheet
+        var (items, kate) = await _client.CharacterAsync("kate", details: true);
+        Assert.NotNull(kate);
+        Assert.Equal(["Left Hand", "Upper Torso"], kate.Parts!.Select(p => p.Name));
+        Assert.Equal((62, "bitten, bleeding, zombie infection, dirty bandage"), (kate.Parts[0].Health, string.Join(", ", kate.Parts[0].Conditions)));
+        Assert.Equal((100, 0), (kate.Parts[1].Health, kate.Parts[1].Conditions.Count));
+        Assert.Empty(kate.Equipment!);
+        Assert.Equal(7.3, kate.Weight!.Value, 3);
+        Assert.Equal((15, true), (kate.MaxWeight, kate.Asleep));
+        Assert.Empty(items);
+
+        var (rjItems, rj) = await _client.CharacterAsync("rj", details: true);
+        Assert.NotEmpty(rjItems);
+        Assert.Equal(
+            [("hand", "Both hands", "Axe", 0.7), ("worn", "Jacket", "Padded Jacket", 1.0), ("worn", "base:shoes", "Black Shoes", null),
+                ("attached", "Belt Left", "Hunting Knife", 0.5)],
+            rj!.Equipment!.Select(e => (e.Kind, e.Slot, e.Name, e.Condition is { } c ? Math.Round(c, 2) : (double?)null)));
+        Assert.Equal("Base.Axe", rj.Equipment![0].FullType);
+        Assert.All(rj.Parts!, p => Assert.Empty(p.Conditions));
+
+        // without the sheet (an older bridge): the inventory only
+        var (_, none) = await _client.CharacterAsync("rj", details: false);
+        Assert.Null(none);
+        await Assert.ThrowsAsync<BridgeException>(() => _client.CharacterAsync("ghost", details: true));
     }
 
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>

@@ -97,6 +97,10 @@ public sealed partial class AccountsViewModel : ObservableObject
 
     bool _loadingServers;
 
+    /// <summary>The account of a player, when the accounts were read (for the character window).</summary>
+    internal AccountRow? Find(string username) =>
+        _rows.FirstOrDefault(r => r.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+
     bool Matches(object o)
     {
         var row = (AccountRow)o;

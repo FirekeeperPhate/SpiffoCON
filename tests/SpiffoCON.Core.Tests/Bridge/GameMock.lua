@@ -437,3 +437,58 @@ for _, p in ipairs(PLAYERS) do
 	}
 	p.getStats = function() return stats end
 end
+
+-- ---- bridge v11: the body part by part, what is worn, held and attached ----
+BodyPartType = {
+	getDisplayName = function(t) return ({ Hand_L = "Left Hand", Torso_Upper = "Upper Torso" })[t] or t end,
+	ToString = function(t) return t end,
+}
+local function wearable(fullType, name, condition, max)
+	local it = item(fullType, name)
+	it.getCondition = function() return condition end
+	it.getConditionMax = function() return max end
+	return it
+end
+for _, p in ipairs(PLAYERS) do
+	local hurt = p.username == "kate"
+	for _, bp in ipairs(p.parts) do
+		local hand = hurt and bp.name == "Hand_L"
+		bp.getType = function() return bp.name end
+		bp.getHealth = function() return hand and 61.6 or 100 end
+		bp.bitten = function() return hand end
+		bp.scratched = function() return false end
+		bp.isCut = function() return false end
+		bp.deepWounded = function() return false end
+		bp.bleeding = function() return hand end
+		bp.getFractureTime = function() return 0 end
+		bp.getBurnTime = function() return 0 end
+		bp.haveGlass = function() return false end
+		bp.haveBullet = function() return false end
+		bp.isInfectedWound = function() return false end
+		bp.stitched = function() return false end
+		bp.getSplintFactor = function() return 0 end
+		bp.bandaged = function() return hand end
+		bp.getBandageLife = function() return 0 end
+	end
+
+	-- rj: an axe in both hands, a jacket and shoes on, a knife on the belt; kate: nothing
+	local axe = wearable("Base.Axe", "Axe", 7, 10)
+	local worn, attached = {}, {}
+	if p.username == "rj" then
+		worn = {
+			{ getLocation = function() return { getTranslationName = function() return "IGUI_Loc_Jacket" end } end, getItem = function() return wearable("Base.Jacket_Padded", "Padded Jacket", 10, 10) end },
+			-- a place the game has no name for: its id
+			{ getLocation = function() return setmetatable({ getTranslationName = function() return "IGUI_Loc_None" end }, { __tostring = function() return "base:shoes" end }) end,
+				getItem = function() return item("Base.Shoes_Black", "Black Shoes") end },
+		}
+		attached = { { getLocation = function() return "Belt Left" end, getItem = function() return wearable("Base.HuntingKnife", "Hunting Knife", 5, 10) end } }
+	end
+	p.getPrimaryHandItem = function() return p.username == "rj" and axe or nil end
+	p.getSecondaryHandItem = function() return p.username == "rj" and axe or nil end
+	p.getWornItems = function() return list(worn) end
+	p.getAttachedItems = function() return list(attached) end
+	p.getMaxWeight = function() return 15 end
+	p.isAsleep = function() return p.username == "kate" end
+	p.inventory.getCapacityWeight = function() return 7.26 end
+end
+TRANSLATIONS.IGUI_Loc_Jacket = "Jacket"

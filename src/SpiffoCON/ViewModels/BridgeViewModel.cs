@@ -500,10 +500,31 @@ public sealed partial class BridgeViewModel : ObservableObject
     [RelayCommand]
     private Task RemoveAllAsync(BridgeItem? item) => RemoveAsync(item, item?.Count ?? 0);
 
-    Task RemoveAsync(BridgeItem? item, int count)
+    Task RemoveAsync(BridgeItem? item, int count) =>
+        item is null || _inventoryOwner is not { } owner ? Task.CompletedTask : RemoveItemAsync(owner, item, count);
+
+    /// <summary>
+    /// For the character window: the inventory and (bridge v7) the sheet of an online player in one round
+    /// trip, or why they can't be read.
+    /// </summary>
+    internal async Task<(IReadOnlyList<BridgeItem>? Items, BridgePlayerDetails? Details, string? Problem)> ReadCharacterAsync(string username)
     {
-        if (item is null || _inventoryOwner is not { } owner)
-            return Task.CompletedTask;
+        if (_client is not { } client || !IsConnected)
+            return (null, null, "Health, skills, equipment and inventory come from the SpiffoCON Bridge: connect it in the Bridge tab.");
+        try
+        {
+            var (items, details) = await client.CharacterAsync(username, BridgeVersion >= 7);
+            return (items, details, null);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return (null, null, ex.Message);
+        }
+    }
+
+    /// <summary>Removes items of a player (the Bridge tab's selected one, or the character window's), after asking.</summary>
+    internal Task RemoveItemAsync(string owner, BridgeItem item, int count)
+    {
         // bridge v3 removes from the row's container; v2 from anywhere, main inventory first
         bool byContainer = BridgeVersion >= 3 && !string.IsNullOrEmpty(item.Container);
         var where = byContainer
