@@ -492,3 +492,20 @@ for _, p in ipairs(PLAYERS) do
 	p.inventory.getCapacityWeight = function() return 7.26 end
 end
 TRANSLATIONS.IGUI_Loc_Jacket = "Jacket"
+
+-- ---- bridge v12: the id and the experience of each skill ----
+-- each level takes 75 more than the one before: 75, 150, 225...
+for _, pk in ipairs({ axe, carpentry }) do
+	pk.getXpForLevel = function(self, level) return level * 75 end
+	pk.getTotalXpForLevel = function(self, level)
+		local total = 0
+		for i = 1, level do total = total + i * 75 end
+		return total
+	end
+end
+axe.getId = function() return "Axe" end
+carpentry.getId = function() return "Woodwork" end
+-- axe: level 4 (750 to get there) and 120 more; carpentry: level 2 (225) and 75 more
+for _, p in ipairs(PLAYERS) do
+	p.getXp = function() return { getXP = function(self, pk) return pk == axe and 870 or 300 end } end
+end

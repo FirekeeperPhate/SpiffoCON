@@ -646,6 +646,18 @@ public sealed record BridgeSkill
     public string Name { get; init; } = "";
     public string? Category { get; init; }
     public int? Level { get; init; }
+
+    /// <summary>Bridge v12: the id RCON's addxp takes ("Woodwork" for Carpentry); null with an older bridge.</summary>
+    public string? Id { get; init; }
+
+    /// <summary>Bridge v12: all the experience in this skill.</summary>
+    public double? Xp { get; init; }
+
+    /// <summary>Bridge v12: the experience gained within the current level.</summary>
+    public double? LevelXp { get; init; }
+
+    /// <summary>Bridge v12: the experience the next level takes from the start of this one (null at the last level).</summary>
+    public double? NextXp { get; init; }
 }
 
 public sealed record BridgeSafehouse

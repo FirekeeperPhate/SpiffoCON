@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(11, await _client.PingAsync());
+        Assert.Equal(12, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -89,6 +89,8 @@ public sealed class BridgeScriptTests
         Assert.Equal(["Brave", "Fast Reader", "base:mystery"], sheet.Traits);
         // the categories themselves are not skills
         Assert.Equal([("Axe", "Combat", 4), ("Carpentry", "Crafting", 2)], sheet.Skills.Select(s => (s.Name, s.Category, s.Level)));
+        // bridge v12: the id addxp takes, and the experience as the game's skill bar counts it
+        Assert.Equal([("Axe", 870.0, 120.0, 375.0), ("Woodwork", 300.0, 75.0, 225.0)], sheet.Skills.Select(s => (s.Id!, s.Xp!.Value, s.LevelXp!.Value, s.NextXp!.Value)));
         // each stat as a fraction of its own range: panic is kept 0-100 by the game
         Assert.Equal((0.26, 0.5, 1.0), (sheet.Stats["hunger"], sheet.Stats["panic"], sheet.Stats["endurance"]));
 

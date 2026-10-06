@@ -18,7 +18,13 @@ public sealed record CharacterStat(string Name, double Value, string Text);
 public sealed record CharacterPart(string Name, int Health, string Text);
 
 /// <summary>The skills of one category ("Combat").</summary>
-public sealed record CharacterSkillGroup(string Category, IReadOnlyList<BridgeSkill> Skills);
+public sealed record CharacterSkillGroup(string Category, IReadOnlyList<CharacterSkill> Skills);
+
+/// <summary>A skill: its level (0 to 10), the experience as text when the bridge gives it, and what adding some needs.</summary>
+public sealed record CharacterSkill(string Name, int Level, string XpText, string? PerkId, int? ToNextLevel, string AddTip)
+{
+    public bool CanAdd => PerkId is not null;
+}
 
 /// <summary>Something held, worn or attached.</summary>
 public sealed record CharacterEquipment(string Group, string Slot, string Name, string ConditionText, double? Condition);
@@ -308,10 +314,19 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
         StatsNote = Stats.Count == 0 ? "Fed, rested and calm: nothing to report." : "";
         Traits = string.Join(", ", details.Traits);
 
-        Sync(Skills, details.Skills
+        var groups = details.Skills
             .GroupBy(s => s.Category ?? "")
-            .Select(g => new CharacterSkillGroup(g.Key, g.ToList()))
-            .ToList());
+            .Select(g => new CharacterSkillGroup(g.Key, g.Select(Skill).ToList()))
+            .ToList();
+        // the groups hold lists (compared by reference): the skills themselves say whether anything changed, so
+        // the list is left alone (and a "+" menu open on it stays) when nothing did
+        if (!Skills.SelectMany(g => g.Skills).SequenceEqual(groups.SelectMany(g => g.Skills))
+            || !Skills.Select(g => g.Category).SequenceEqual(groups.Select(g => g.Category)))
+        {
+            Skills.Clear();
+            foreach (var g in groups)
+                Skills.Add(g);
+        }
 
         if (details.Parts is { } parts)
         {
@@ -350,6 +365,35 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
             return slot;
         var words = slot[(colon + 1)..].Replace('_', ' ').Trim();
         return words.Length == 0 ? slot : char.ToUpperInvariant(words[0]) + words[1..];
+    }
+
+    static string Number(double v) => Math.Round(v).ToString("#,0", CultureInfo.InvariantCulture);
+
+    /// <summary>A skill as the window shows it: level, experience (bridge v12) and how to add some.</summary>
+    static CharacterSkill Skill(BridgeSkill s)
+    {
+        int level = s.Level ?? 0;
+        // "120 / 300 XP" towards the next level; at the last level, or without a next one, the total
+        string xp = s is { LevelXp: { } gained, NextXp: { } next } ? $"{Number(gained)} / {Number(next)} XP"
+            : s.Xp is { } total ? $"{Number(total)} XP"
+            : "";
+        // addxp wants the game's id: from the bridge (v12), else from the English name of a vanilla skill
+        var id = s.Id ?? Core.Commands.PlayerCommands.Perks.FirstOrDefault(p => p.Name.Equals(s.Name, StringComparison.OrdinalIgnoreCase))?.Id;
+        int? toNext = s is { LevelXp: { } g, NextXp: { } n } && n > g ? (int)Math.Ceiling(n - g) : null;
+        return new CharacterSkill(s.Name, level, xp, id, toNext,
+            id is null ? "Adding experience needs bridge v12: this skill's id is not known (a mod's skill, or the server is not in English)." : "Add experience");
+    }
+
+    /// <summary>
+    /// Adds experience to a skill (RCON addxp, as the Players tab; no multiplier: the amount is what they get),
+    /// then reads the character again.
+    /// </summary>
+    public async Task AddXpAsync(CharacterSkill skill, int amount)
+    {
+        if (skill.PerkId is null || amount <= 0)
+            return;
+        await Actions.AddXpAsync(Info?.Username ?? Username, skill.PerkId, skill.Name, amount);
+        await RefreshAsync();
     }
 
     [RelayCommand]

@@ -170,6 +170,10 @@ instead.
   (health and wounds, as the game's health panel), what is held, worn and attached with its
   condition, the weight carried.
 
+  Bridge v12 adds to each skill of the sheet its experience (gained in the level, and what the next
+  level takes, as the game's skill bar) and the id `addxp` wants, so experience can be added from
+  the window whatever the language of the server.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.
@@ -200,10 +204,11 @@ instead.
 - Character details: the first item of the player menu, or a double click on a player in the sidebar
   or the Bridge tab, opens a window of its own for that player,
   with everything in one place: who and where they are, health (with bridge v11 part by part:
-  bites, bleeding, fractures, bandages...), needs and moods, traits, skills, what they wear, hold
+  bites, bleeding, fractures, bandages...), needs and moods, traits, skills (the level, with bridge v12 the
+  experience towards the next one, and a + that adds some: `addxp`), what they wear, hold
   and have attached (bridge v11), the inventory with its remove buttons, the account (last
   connection, kicks and bans, when the Accounts tab was read) and every action of the player menu
-  as a bar. It follows the bridge's refreshes; one window per player, several can stay open.
+  as a column of buttons on the right. It follows the bridge's refreshes; one window per player, several can stay open.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards. With SFTP on, connecting also connects the bridge,

@@ -12,7 +12,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 11
+local VERSION = 12
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -807,10 +807,21 @@ local function playerDetails(username)
 			local parent = perk:getParent()
 			-- as the skills panel of the game: the categories themselves are not skills
 			if parent ~= Perks.None then
+				local level = try(function() return p:getPerkLevel(perk) end)
+				-- bridge v12: the id RCON's addxp takes ("Woodwork" for Carpentry), and the experience as the
+				-- game's skill bar counts it (ISSkillProgressBar): gained within the level, and what the next
+				-- level takes (none after the last)
+				local xp = try(function() return p:getXp():getXP(perk) end)
+				local before = level and try(function() return perk:getTotalXpForLevel(level) end)
+				local next = level and level < 10 and try(function() return perk:getXpForLevel(level + 1) end) or nil
 				skills[#skills + 1] = {
 					name = try(function() return perk:getName() end) or tostring(perk),
 					category = try(function() return parent:getName() end) or tostring(parent),
-					level = try(function() return p:getPerkLevel(perk) end),
+					level = level,
+					id = try(function() return perk:getId() end),
+					xp = xp and round(xp, 0.01),
+					levelXp = xp and before and round(math.max(0, xp - before), 0.01),
+					nextXp = next and next > 0 and round(next, 0.01) or nil,
 				}
 			end
 		end

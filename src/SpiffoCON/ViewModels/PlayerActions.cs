@@ -89,6 +89,10 @@ public sealed class PlayerActions(MainViewModel main)
     public Task NoClipAsync(string player, bool on) =>
         RunAsync(player, PlayerCommands.NoClip(player, on), $"No clip {(on ? "on" : "off")} for {player}");
 
+    /// <summary>Experience for a skill (RCON addxp; no multiplier: the amount is what the player gets).</summary>
+    public Task AddXpAsync(string player, string perkId, string skill, int amount) =>
+        RunAsync(player, PlayerCommands.AddXp(player, perkId, amount, useMultiplier: false), $"{amount} XP of {skill} for {player}");
+
     public Task VoiceAsync(string player, bool mute) =>
         RunAsync(player, PlayerCommands.VoiceBan(player, mute), $"Voice chat {(mute ? "muted" : "unmuted")} for {player}");
 
