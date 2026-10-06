@@ -92,9 +92,6 @@ public static class PlayerMenu
         Add(items, "Show in the Players tab", () => actions.ShowInPlayersTab(player));
         Add(items, "Show on the map", () => actions.ShowOnMap(player), bridge?.X is not null,
             bridge is null ? "Needs the bridge (Bridge tab)" : null);
-        if (!inWindow)
-            Add(items, "Inventory (Bridge tab)", () => actions.ShowInventory(player), bridge is not null,
-                bridge is null ? "Needs the bridge (Bridge tab)" : null);
         items.Add(new Separator());
 
         var others = actions.OthersOnline(player);

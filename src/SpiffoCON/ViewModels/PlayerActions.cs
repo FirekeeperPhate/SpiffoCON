@@ -232,12 +232,6 @@ public sealed class PlayerActions(MainViewModel main)
         main.Map.Show(BridgeInfo(player)?.Username ?? player);
     }
 
-    public void ShowInventory(string player)
-    {
-        main.ShowTab("Bridge");
-        main.Bridge.SelectedPlayer = BridgeInfo(player);
-    }
-
     public void CopyName(string player)
     {
         SafeClipboard.SetText(player);

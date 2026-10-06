@@ -270,12 +270,22 @@ public partial class MainWindow : Window
 
     void TestSftp_Click(object sender, RoutedEventArgs e) => Tabs.SelectedItem = FilesTab;
 
-    // double-click in the online sidebar: that player in the Players tab
+    // double-click on a player (the online sidebar, the Bridge tab): their Character details window
     void OnlineSidebar_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (OnlineSidebar.SelectedItem is SidebarPlayer player)
-            _vm.PlayerActions.ShowInPlayersTab(player.Username);
+        if (OnRow(OnlineSidebar, e) && OnlineSidebar.SelectedItem is SidebarPlayer player)
+            _vm.PlayerActions.ShowDetails(player.Username);
     }
+
+    void BridgePlayers_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListView list && OnRow(list, e) && list.SelectedItem is SpiffoCON.Core.Bridge.BridgePlayer player)
+            _vm.PlayerActions.ShowDetails(player.Username);
+    }
+
+    // on a row: not on the scroll bar, a column header or the empty space under the rows
+    static bool OnRow(ItemsControl list, MouseButtonEventArgs e) =>
+        e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(list, source) is not null;
 
     // with the Map tab open, a click on a player (also the one already selected) shows and follows them there
     void OnlineSidebar_Click(object sender, MouseButtonEventArgs e)

@@ -115,7 +115,7 @@ instead.
   Password hashes are never read. Ban, unban and "To Players tab" (with the last position)
   go through RCON.
 - Bridge tab, with the **SpiffoCON Bridge** mod (`bridge/SpiffoCONBridge`, B42, server
-  side only): player positions, health, role, vehicle and inventory, vehicles in loaded
+  side only): the players in the game with position, health, role and vehicle, the vehicles in loaded
   areas and world state, which RCON can't give. It talks through files in the server's
   `Zomboid/Lua` folder, read and written over SFTP (`spiffocon_in.txt` /
   `spiffocon_out.txt`). Bridge v2 adds admin actions, each done the way the game's own
@@ -129,7 +129,7 @@ instead.
     is in containers, on tables and shelves, or inside a safehouse is not touched) and fires
     (not lit campfires);
   - the safehouses, drawn on the map with their owner, and removing one (what is in it stays);
-  - a player's sheet next to the inventory: profession, traits, skills, and what is wrong
+  - a player's sheet (now in Character details): profession, traits, skills, and what is wrong
     with them (infection, bites, hunger, panic...);
   - the zombies near each player, in the sidebar and in the players list;
   - the time of day (Events tab): the clock skips forward to the next time it is that hour,
@@ -192,12 +192,13 @@ instead.
 - Online players sidebar on the right, always in view (refreshed every 30 s), with each player's
   position when the bridge is connected; double-click opens the player in the Players tab.
 - Player menu: right-click a player wherever players are listed (the sidebar, Players, map
-  markers, Bridge, Accounts, chat lines in Logs): show in the Players tab, on the map or their
-  inventory, teleport to another player or bring one here, give a kit, lightning / thunder /
+  markers, Bridge, Accounts, chat lines in Logs): their Character details, show in the Players tab or on the map,
+  teleport to another player or bring one here, give a kit, lightning / thunder /
   horde, full heal and cure of the zombie infection, clean up around them, hair and beard (bridge),
   god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the name. Each
   reply shows in the status bar.
-- Character details: the first item of the player menu opens a window of its own for that player,
+- Character details: the first item of the player menu, or a double click on a player in the sidebar
+  or the Bridge tab, opens a window of its own for that player,
   with everything in one place: who and where they are, health (with bridge v11 part by part:
   bites, bleeding, fractures, bandages...), needs and moods, traits, skills, what they wear, hold
   and have attached (bridge v11), the inventory with its remove buttons, the account (last

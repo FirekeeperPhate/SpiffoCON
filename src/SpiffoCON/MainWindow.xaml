@@ -1313,13 +1313,14 @@
                     <TextBlock Grid.Row="1" Text="{Binding WorldText}" Margin="0,0,0,8" Opacity="0.85"
                                Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibility}}" />
 
-                    <!-- players and inventory -->
+                    <!-- the players in the game -->
                     <Grid Grid.Row="2" IsEnabled="{Binding IsConnected}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="420" />
-                        </Grid.ColumnDefinitions>
-                        <ListView ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" ItemContainerStyle="{StaticResource GridRow}" controls:PlayerMenu.Enabled="True">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <ListView ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" ItemContainerStyle="{StaticResource GridRow}" controls:PlayerMenu.Enabled="True"
+                                  MouseDoubleClick="BridgePlayers_MouseDoubleClick">
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="Player" Width="125" DisplayMemberBinding="{Binding Username}" />
@@ -1352,70 +1353,18 @@
                             </ListView.View>
                         </ListView>
 
-                        <DockPanel Grid.Column="1" Margin="10,0,0,0">
-                            <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="{Binding HasPlayer, Converter={StaticResource BoolToVisibility}}">
-                                <Button Content="Heal" Command="{Binding HealCommand}" CommandParameter="{Binding SelectedPlayer}"
-                                        ToolTip="Full heal: wounds, fractures, bites (bridge v2); a zombie infection stays (Cure zombie infection, in the player's menu)" Margin="0,0,6,0" />
-                                <Button Content="Copy x,y,z" Command="{Binding CopyPositionCommand}" CommandParameter="{Binding SelectedPlayer}" Margin="0,0,6,0" />
-                                <Button Content="To Players tab" Command="{Binding UseInPlayersTabCommand}" CommandParameter="{Binding SelectedPlayer}"
-                                        ToolTip="Put this player and their position in the Players tab (teleport others here)" />
-                            </WrapPanel>
-                            <!-- profession, traits, condition and skills: bridge v7 -->
-                            <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Padding="10,8" Margin="0,0,0,8"
-                                    Visibility="{Binding PlayerSheet, Converter={StaticResource NullToCollapsed}}">
-                                <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
-                                    <TextBlock Text="{Binding PlayerSheet}" TextWrapping="Wrap" FontSize="12" />
-                                </ScrollViewer>
-                            </Border>
-                            <TextBlock DockPanel.Dock="Top" Text="{Binding InventoryTitle}" TextWrapping="Wrap" Margin="0,0,0,6" FontWeight="SemiBold" />
-                            <ListView ItemsSource="{Binding Inventory}" ItemContainerStyle="{StaticResource GridRow}">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="Item" Width="120">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock ToolTip="{Binding FullType}">
-                                                        <Run Text="{Binding Name, Mode=OneWay}" />
-                                                        <Run x:Name="Eq" Text="" Foreground="#8FD694" />
-                                                    </TextBlock>
-                                                    <DataTemplate.Triggers>
-                                                        <DataTrigger Binding="{Binding Equipped}" Value="True">
-                                                            <Setter TargetName="Eq" Property="Text" Value="(equipped)" />
-                                                        </DataTrigger>
-                                                    </DataTemplate.Triggers>
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn Header="#" Width="36" DisplayMemberBinding="{Binding Count}" />
-                                        <GridViewColumn Header="In" Width="150">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding ContainerShort}" ToolTip="{Binding Container}" TextTrimming="CharacterEllipsis" />
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn Width="90">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Button Content="−1" FontSize="11" Padding="6,1" MinHeight="0" MinWidth="0" ToolTip="Remove one"
-                                                                Command="{Binding DataContext.RemoveOneCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
-                                                                CommandParameter="{Binding}" />
-                                                        <Button Content="All" FontSize="11" Padding="6,1" MinHeight="0" MinWidth="0" Margin="4,0,0,0" ToolTip="Remove all of them"
-                                                                Command="{Binding DataContext.RemoveAllCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
-                                                                CommandParameter="{Binding}" />
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
-                        </DockPanel>
+                        <!-- on the selected player; health, skills, equipment and inventory are in Character details -->
+                        <WrapPanel Grid.Row="1" Margin="0,8,0,0" IsEnabled="{Binding HasPlayer}">
+                            <Button Content="Character details…" Command="{Binding ShowDetailsCommand}" CommandParameter="{Binding SelectedPlayer}"
+                                    ToolTip="Everything about the selected player in one window: health, skills, equipment, inventory and every action (also a double click on the row)" Margin="0,0,6,0" />
+                            <Button Content="Copy x,y,z" Command="{Binding CopyPositionCommand}" CommandParameter="{Binding SelectedPlayer}" Margin="0,0,6,0" />
+                            <Button Content="To Players tab" Command="{Binding UseInPlayersTabCommand}" CommandParameter="{Binding SelectedPlayer}"
+                                    ToolTip="Put this player and their position in the Players tab (teleport others here)" />
+                        </WrapPanel>
                     </Grid>
 
                     <Expander Grid.Row="3" Header="Vehicles in loaded areas" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}">
-                        <ListView ItemsSource="{Binding Vehicles}" MaxHeight="160" ItemContainerStyle="{StaticResource GridRow}" Margin="0,6,0,0">
+                        <ListView ItemsSource="{Binding Vehicles}" MaxHeight="220" ItemContainerStyle="{StaticResource GridRow}" Margin="0,6,0,0">
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="Vehicle" Width="220" DisplayMemberBinding="{Binding Script}" />
@@ -1827,7 +1776,7 @@
                         Command="{Binding RefreshCommand}" ToolTip="Refresh now (it also refreshes by itself every 30 s)" />
                 <TextBlock Text="{Binding OnlineCount}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
             </DockPanel>
-            <TextBlock DockPanel.Dock="Bottom" Text="Right-click a player for the actions; double-click opens the Players tab. With the Map tab open, a click shows and follows the player."
+            <TextBlock DockPanel.Dock="Bottom" Text="Right-click a player for the actions; double-click opens their details. With the Map tab open, a click shows and follows the player."
                        Opacity="0.6" FontSize="11.5" TextWrapping="Wrap" Margin="0,6,0,0" />
             <ListBox x:Name="OnlineSidebar" ItemsSource="{Binding DataContext.SidebarPlayers, RelativeSource={RelativeSource AncestorType=Window}}"
                      controls:PlayerMenu.Enabled="True" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"

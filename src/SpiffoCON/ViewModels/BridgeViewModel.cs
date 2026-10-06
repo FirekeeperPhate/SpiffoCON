@@ -34,7 +34,6 @@ public sealed partial class BridgeViewModel : ObservableObject
     public Func<string?>? PickFolder { get; set; }
 
     public ObservableCollection<BridgePlayer> Players { get; } = [];
-    public ObservableCollection<BridgeItem> Inventory { get; } = [];
     public ObservableCollection<BridgeVehicle> Vehicles { get; } = [];
 
     [ObservableProperty] private string source = "Not connected to the bridge.";
@@ -46,7 +45,6 @@ public sealed partial class BridgeViewModel : ObservableObject
     [ObservableProperty] private bool isConnected;
     [ObservableProperty] private bool autoRefresh = true;
     [ObservableProperty] private string? workshopId;
-    [ObservableProperty] private string inventoryTitle = "Select a player to see their inventory.";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasPlayer))]
@@ -56,13 +54,6 @@ public sealed partial class BridgeViewModel : ObservableObject
 
     partial void OnAutoRefreshChanged(bool value) => UpdateTimer();
 
-    bool _keepInventory;
-
-    partial void OnSelectedPlayerChanged(BridgePlayer? value)
-    {
-        if (value is not null && !_keepInventory)
-            _ = LoadInventoryAsync(value.Username);
-    }
 
     void UpdateTimer()
     {
@@ -284,10 +275,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             Players.Clear();
             foreach (var p in snapshot.Players.OrderBy(p => p.Username, StringComparer.CurrentCultureIgnoreCase))
                 Players.Add(p);
-            // keep the selection without reloading the inventory each time
-            _keepInventory = true;
             SelectedPlayer = Players.FirstOrDefault(p => p.Username == keep);
-            _keepInventory = false;
             Vehicles.Clear();
             foreach (var v in snapshot.Vehicles.OrderBy(v => v.Script))
                 Vehicles.Add(v);
@@ -369,53 +357,12 @@ public sealed partial class BridgeViewModel : ObservableObject
     int _failures;
     DateTime _retryAt;
 
-    int _inventoryLoad;
-
-    /// <summary>Whose items <see cref="Inventory"/> shows (null while loading): removals act on them.</summary>
-    string? _inventoryOwner;
-
-    async Task LoadInventoryAsync(string username)
+    /// <summary>The Character details window of a player (the button and the double click of the Bridge tab).</summary>
+    [RelayCommand]
+    private void ShowDetails(BridgePlayer? player)
     {
-        if (_client is null)
-            return;
-        int load = ++_inventoryLoad;
-        InventoryTitle = $"Inventory of {username}: loading...";
-        Inventory.Clear();
-        PlayerSheet = "";
-        _inventoryOwner = null;
-        try
-        {
-            var items = await _client.InventoryAsync(username);
-            // another player was picked meanwhile: this answer is not for the list any more
-            if (load != _inventoryLoad)
-                return;
-            Inventory.Clear();
-            foreach (var item in items)
-                Inventory.Add(item);
-            _inventoryOwner = username;
-            InventoryTitle = $"Inventory of {username}: {items.Sum(i => i.Count)} items";
-            // traits, skills and condition came with bridge v7
-            if (BridgeVersion >= 7)
-            {
-                try
-                {
-                    var details = await _client.PlayerDetailsAsync(username);
-                    if (load == _inventoryLoad)
-                        PlayerSheet = DescribeSheet(details);
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    // the inventory above is still good
-                    if (load == _inventoryLoad)
-                        PlayerSheet = "Traits and skills: " + ex.Message;
-                }
-            }
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            if (load == _inventoryLoad)
-                InventoryTitle = $"Inventory of {username}: {ex.Message}";
-        }
+        if (player is not null)
+            _main.PlayerActions.ShowDetails(player.Username);
     }
 
     [RelayCommand]
@@ -451,7 +398,7 @@ public sealed partial class BridgeViewModel : ObservableObject
     /// <summary>Write actions arrived with bridge v2.</summary>
     public bool CanAct => BridgeVersion >= 2;
 
-    async Task ActAsync(string confirm, Func<BridgeClient, Task<string>> action, bool reloadInventory = false)
+    async Task ActAsync(string confirm, Func<BridgeClient, Task<string>> action)
     {
         if (_client is null)
             return;
@@ -475,8 +422,6 @@ public sealed partial class BridgeViewModel : ObservableObject
         await RefreshAsync();
         // the action's outcome, not the refresh's "Updated at", is what the user needs to see
         StatusText = result;
-        if (reloadInventory && SelectedPlayer is { } p)
-            await LoadInventoryAsync(p.Username);
     }
 
     Task SetStatus(string text)
@@ -493,15 +438,6 @@ public sealed partial class BridgeViewModel : ObservableObject
             + "A zombie infection stays, as with the game's own heal: \"Cure zombie infection\" in the player's menu ends it"
             + (BridgeVersion < 10 ? " (with bridge v10)." : "."),
         async c => $"{player.Username} healed" + (await c.HealAsync(player.Username) is { } h ? $": health {h}." : "."));
-
-    [RelayCommand]
-    private Task RemoveOneAsync(BridgeItem? item) => RemoveAsync(item, 1);
-
-    [RelayCommand]
-    private Task RemoveAllAsync(BridgeItem? item) => RemoveAsync(item, item?.Count ?? 0);
-
-    Task RemoveAsync(BridgeItem? item, int count) =>
-        item is null || _inventoryOwner is not { } owner ? Task.CompletedTask : RemoveItemAsync(owner, item, count);
 
     /// <summary>
     /// For the character window: the inventory and (bridge v7) the sheet of an online player in one round
@@ -522,7 +458,7 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
-    /// <summary>Removes items of a player (the Bridge tab's selected one, or the character window's), after asking.</summary>
+    /// <summary>Removes items of a player (from the character window), after asking.</summary>
     internal Task RemoveItemAsync(string owner, BridgeItem item, int count)
     {
         // bridge v3 removes from the row's container; v2 from anywhere, main inventory first
@@ -536,8 +472,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             {
                 var (removed, skipped) = await c.RemoveItemAsync(owner, item.FullType, count, byContainer ? item.Container : null);
                 return $"Removed {removed} × {item.Name} from {owner}." + (skipped > 0 ? $" {skipped} worn or attached left in place." : "");
-            },
-            reloadInventory: true);
+            });
     }
 
     [RelayCommand]
@@ -725,9 +660,6 @@ public sealed partial class BridgeViewModel : ObservableObject
             var (was, still) = await client.CureInfectionAsync(username);
             _retryAt = default;
             await RefreshAsync();
-            // the sheet beside the inventory says INFECTED until it is read again
-            if (SelectedPlayer?.Username == username)
-                await LoadInventoryAsync(username);
             return still ? $"The server still says {username} is infected: the cure did not take."
                 : was ? $"{username} is no longer infected."
                 : $"{username} was not infected (nothing to cure; any fake infection of a hypochondriac is gone too).";
@@ -985,45 +917,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             return Task.CompletedTask;
         }
         return ActAsync($"Give {player.Username} a key of {v.Script} #{id}?",
-            async c => $"{player.Username} got {await c.GiveVehicleKeyAsync(id, v.Script, player.Username) ?? "the key"} ({v.Script} #{id}).",
-            // the key shows in the inventory on screen, which is this player's
-            reloadInventory: true);
-    }
-
-    // ---- the selected player's sheet (bridge v7) ----
-
-    /// <summary>Profession, traits, skills and condition of the selected player (empty with an older bridge).</summary>
-    [ObservableProperty] private string playerSheet = "";
-
-    internal static string DescribeSheet(BridgePlayerDetails d)
-    {
-        static string Percent(double? v) => v is { } x ? $"{x:P0}" : "?";
-        var lines = new List<string>();
-        lines.Add((d.CharacterName is { Length: > 0 } name ? name + " · " : "") + (d.Profession ?? "No profession")
-            + (d.Traits.Count > 0 ? " · " + string.Join(", ", d.Traits) : ""));
-
-        var condition = new List<string>();
-        if (d.Infected == true)
-            condition.Add("INFECTED");
-        if (d.Bitten is > 0 and var bites)
-            condition.Add($"{bites} bite{(bites == 1 ? "" : "s")}");
-        if (d.OnFire == true)
-            condition.Add("ON FIRE");
-        // only what is worth a look: a rested, fed, calm player shows nothing here
-        foreach (var (key, label) in new[] { ("hunger", "hunger"), ("thirst", "thirst"), ("fatigue", "tiredness"), ("panic", "panic"),
-                     ("stress", "stress"), ("pain", "pain"), ("sickness", "sickness"), ("intoxication", "drunk"), ("boredom", "boredom"), ("unhappiness", "unhappiness") })
-            if (d.Stats.TryGetValue(key, out var v) && v >= 0.15)
-                condition.Add($"{label} {Percent(v)}");
-        if (d.Stats.TryGetValue("endurance", out var endurance) && endurance <= 0.85)
-            condition.Add($"endurance {Percent(endurance)}");
-        lines.Add(condition.Count > 0 ? string.Join(" · ", condition) : "No wounds to report, fed and rested.");
-
-        // by category, levels above 0 first to the eye: "Combat: Axe 4, Long Blunt 2"
-        foreach (var group in d.Skills.Where(s => s.Level is > 0).GroupBy(s => s.Category ?? ""))
-            lines.Add((group.Key.Length > 0 ? group.Key + ": " : "") + string.Join(", ", group.OrderByDescending(s => s.Level).Select(s => $"{s.Name} {s.Level}")));
-        if (!d.Skills.Any(s => s.Level is > 0))
-            lines.Add(d.Skills.Count > 0 ? "All skills at level 0." : "");
-        return string.Join("\n", lines.Where(l => l.Length > 0));
+            async c => $"{player.Username} got {await c.GiveVehicleKeyAsync(id, v.Script, player.Username) ?? "the key"} ({v.Script} #{id}).");
     }
 
     /// <summary>
