@@ -260,7 +260,7 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
             bool have = Directory.Exists(cached) && state.ContainsKey(id);
             var info = details.GetValueOrDefault(id);
             // without Steam info (offline) a cached copy is used as is; an item Steam doesn't list
-            // publicly (unlisted, like the SpiffoCON Bridge) has no date, so it is fetched again weekly
+            // publicly (unlisted, as the SpiffoCON Bridge was up to v13) has no date, so it is fetched again weekly
             state.TryGetValue(id, out var stamp);
             bool stale = info is { Exists: true }
                 ? stamp < info.Updated.ToUnixTimeSeconds()
@@ -268,8 +268,8 @@ public sealed class CatalogService(string dataFolder, HttpClient http)
             if (have && !stale)
                 folders[id] = (ModFileSource.SteamCmd, cached);
             else
-                // also when the web API says "not found": it says so for unlisted items (e.g. the
-                // SpiffoCON Bridge), which SteamCMD downloads fine; removed ones just fail there
+                // also when the web API says "not found": it says so for unlisted items (as the
+                // SpiffoCON Bridge was up to v13), which SteamCMD downloads fine; removed ones just fail there
                 toDownload.Add(id);
         }
         if (toDownload.Count == 0)

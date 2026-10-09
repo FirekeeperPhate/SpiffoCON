@@ -269,7 +269,8 @@ dotnet run tools/MakeVanillaSnapshot.cs -- "<dedicated server folder>"
 The bridge is published on the Steam Workshop:
 [SpiffoCON Bridge](https://steamcommunity.com/sharedfiles/filedetails/?id=3809683986), Workshop id
 `3809683986`, mod id `SpiffoCONBridge`. Any server can use it; nothing needs to be uploaded.
-The item is unlisted, so it doesn't show in searches nor in hosts' mod browsers: add it by hand.
+The item was unlisted up to bridge v13 and is public from the upload after it: while unlisted it
+doesn't show in searches nor in hosts' mod browsers, and is added by hand.
 
 1. On the server, add `SpiffoCONBridge` to `Mods=` and `3809683986` to `WorkshopItems=` (the
    Bridge tab's **Copy server settings** puts both on the clipboard; the Options tab edits these
@@ -290,8 +291,13 @@ To upload an update:
 1. In SpiffoCON's Bridge tab press **Prepare Workshop upload**: it copies
    `bridge/SpiffoCONBridge` to `%USERPROFILE%\Zomboid\Workshop\SpiffoCONBridge`.
 2. Start Project Zomboid, open **Workshop** from the main menu, pick SpiffoCON Bridge and
-   upload it (`workshop.txt` sets it unlisted).
+   upload it (`workshop.txt` sets it public, and its description says the bridge version and
+   links the latest SpiffoCON release).
 3. Servers get the new version at their next restart.
+
+A new version of the bridge has its number in three places, which a test keeps together: `VERSION`
+in the Lua script, `modversion` in `mod.info`, and "Bridge version" in the description of
+`workshop.txt`.
 
 A fork that wants its own Workshop item removes the `id=` line from `workshop.txt` (Steam refuses
 an upload to someone else's item; the game writes the new id there after the first upload) and

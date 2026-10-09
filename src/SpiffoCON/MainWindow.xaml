@@ -1298,7 +1298,7 @@
                         <StackPanel>
                             <TextBlock Text="Setting up the bridge" Style="{StaticResource SectionTitle}" />
                             <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" LineHeight="20">
-                                <Run Text="1. The mod is on the Workshop (unlisted, id below). To publish an update: Prepare Workshop upload, then Workshop in the game's main menu." /><LineBreak />
+                                <Run Text="1. The mod is on the Workshop (id below). To publish an update: Prepare Workshop upload, then Workshop in the game's main menu." /><LineBreak />
                                 <Run Text="2. Add it to the server: Mods = SpiffoCONBridge, WorkshopItems = its Workshop id (Copy server settings), then restart the server." /><LineBreak />
                                 <Run Text="3. Enable SFTP on the left and press Find on server." /><LineBreak />
                                 <Run Text="The bridge answers while the server is running a game: with PauseEmpty on, an empty server is paused and the bridge waits for a player." Foreground="#F2C14E" />

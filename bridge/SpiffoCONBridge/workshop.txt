@@ -3,8 +3,11 @@ id=3809683986
 title=SpiffoCON Bridge
 description=Server-side helper for SpiffoCON, a remote admin tool for Project Zomboid servers.
 description=
+description=Bridge version 13.
+description=SpiffoCON (Windows), latest release: [url=https://github.com/FirekeeperPhate/SpiffoCON/releases/latest]github.com/FirekeeperPhate/SpiffoCON/releases/latest[/url]
+description=
 description=It lets SpiffoCON read what RCON can't (player positions, inventories, vehicles and world state) and do a few admin actions. It runs on the server only and does nothing on players' games.
 description=
 description=Communication goes through files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP. Admin actions (heal, remove items, repair, refuel or remove vehicles) are written to the server's admin log.
 tags=Build 42;Multiplayer;Misc
-visibility=unlisted
+visibility=public

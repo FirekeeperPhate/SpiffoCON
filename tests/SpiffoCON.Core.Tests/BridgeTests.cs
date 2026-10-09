@@ -169,6 +169,23 @@ public sealed class BridgeTests : IDisposable
     }
 
     [Fact]
+    public void The_bridge_version_is_the_same_in_the_script_the_mod_info_and_the_workshop_description()
+    {
+        var folder = Path.Combine(AppContext.BaseDirectory, "Bridge");
+        string Found(string file, string pattern) =>
+            System.Text.RegularExpressions.Regex.Match(File.ReadAllText(Path.Combine(folder, file)), pattern, System.Text.RegularExpressions.RegexOptions.Multiline).Groups[1].Value;
+        var script = Found("SpiffoCONBridge.lua", @"^local VERSION = (\d+)");
+        Assert.NotEqual("", script);
+        Assert.Equal(script, Found("mod.info", @"^modversion=(\d+)"));
+        Assert.Equal(script, Found("workshop.txt", @"^description=Bridge version (\d+)\."));
+
+        // what the Workshop page is for: found by anyone, and it says where SpiffoCON itself is
+        var workshop = File.ReadAllText(Path.Combine(folder, "workshop.txt"));
+        Assert.Contains("visibility=public", workshop);
+        Assert.Contains("https://github.com/FirekeeperPhate/SpiffoCON/releases/latest", workshop);
+    }
+
+    [Fact]
     public void Export_keeps_the_workshop_id_of_an_earlier_upload()
     {
         var source = Path.Combine(_dir, "src");

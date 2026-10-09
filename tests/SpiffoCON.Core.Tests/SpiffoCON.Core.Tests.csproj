@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -23,6 +23,9 @@
   <ItemGroup>
     <Content Include="Bridge/GameMock.lua" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../bridge/SpiffoCONBridge/Contents/mods/SpiffoCONBridge/42/media/lua/server/SpiffoCONBridge.lua" Link="Bridge/SpiffoCONBridge.lua" CopyToOutputDirectory="PreserveNewest" />
+    <!-- the two other places the bridge version is written (BridgeTests) -->
+    <Content Include="../../bridge/SpiffoCONBridge/Contents/mods/SpiffoCONBridge/42/mod.info" Link="Bridge/mod.info" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../bridge/SpiffoCONBridge/workshop.txt" Link="Bridge/workshop.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
