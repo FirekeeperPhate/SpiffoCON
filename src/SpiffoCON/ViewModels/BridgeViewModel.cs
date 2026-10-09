@@ -532,6 +532,69 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    /// <summary>Why a vehicle can't be shown part by part (null: it can): bridge v13.</summary>
+    public string? VehicleDetailsProblem =>
+        _client is null || !IsConnected ? "A vehicle's parts come from the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 13 ? $"A vehicle's parts need bridge v13 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>Opens the window of a vehicle of the list (its parts need bridge v13: the window says so).</summary>
+    [RelayCommand]
+    private void ShowVehicle(BridgeVehicle? v)
+    {
+        if (v?.Id is int id)
+            _main.ShowVehicle?.Invoke(id, v.Script);
+    }
+
+    /// <summary>For the vehicle window: one vehicle part by part (bridge v13), or why not.</summary>
+    internal async Task<(BridgeVehicleDetails? Details, string? Problem)> ReadVehicleAsync(int id, string? script)
+    {
+        if (VehicleDetailsProblem is { } problem)
+            return (null, problem);
+        try
+        {
+            return (await _client!.VehicleDetailsAsync(id, script), null);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// One part of a vehicle made whole, or put back when it is gone (from the vehicle window, bridge v13).
+    /// Not asked first: one part, and the click says which. Returns what happened.
+    /// </summary>
+    internal async Task<string> RepairPartAsync(int id, string? script, BridgeVehiclePart part)
+    {
+        if (VehicleDetailsProblem is { } problem)
+            return problem;
+        try
+        {
+            var done = await _client!.RepairPartAsync(id, script, part.Id);
+            string name = done.Part.Length > 0 ? done.Part : part.Name;
+            return done.Missing ? $"{name} could not be put back: the game made no item for it."
+                : done.WasMissing ? $"{name} put back."
+                : done.Before is { } before and < 100 ? $"{name} repaired: {before}% to 100%."
+                : $"{name} repaired.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not repair the part: " + ex.Message;
+        }
+    }
+
+    /// <summary>A key of a vehicle for a player (from the vehicle window), after asking.</summary>
+    internal Task GiveVehicleKeyAsync(BridgeVehicle v, string username)
+    {
+        if (v.Id is not int id)
+            return Task.CompletedTask;
+        if (V7Problem is { } problem)
+            return SetStatus(problem);
+        return ActAsync($"Give {username} a key of {v.Script} #{id}?",
+            async c => $"{username} got {await c.GiveVehicleKeyAsync(id, v.Script, username) ?? "the key"} ({v.Script} #{id}).");
+    }
+
     [RelayCommand]
     private Task RefuelVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
         $"Fill the tank of {v.Script} #{id}?",

@@ -204,6 +204,20 @@ public sealed class PlayerActions(MainViewModel main)
         : BridgeInfo(player) is not { } info ? "The bridge does not list this player (online?)."
         : main.Bridge.VehicleOfProblem(info);
 
+    /// <summary>Why the vehicle a player is in can't be shown part by part (null: it can): bridge v13, and the player in one.</summary>
+    public string? VehicleDetailsProblem(string player) =>
+        main.Bridge.VehicleDetailsProblem
+        ?? (BridgeInfo(player) is not { } info ? "The bridge does not list this player (online?)."
+            : info.VehicleId is null ? "This player is not in a vehicle."
+            : null);
+
+    /// <summary>Opens the window of the vehicle a player is in.</summary>
+    public void ShowVehicle(string player)
+    {
+        if (BridgeInfo(player) is { VehicleId: { } id } info)
+            main.ShowVehicle?.Invoke(id, info.Vehicle);
+    }
+
     public async Task RepairVehicleAsync(string player)
     {
         if (BridgeInfo(player) is not { } info)

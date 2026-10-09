@@ -129,6 +129,8 @@ local function playerInfo(p)
 	local vehicle = try(function() return p:getVehicle() end)
 	if vehicle then
 		info.vehicle = try(function() return vehicle:getScript():getFullName() end)
+		-- bridge v13: which one, for the vehicle window
+		info.vehicleId = try(function() return vehicle:getId() end)
 	end
 	return info
 end
@@ -213,13 +215,17 @@ end
 
 -- the parts that take an item and have none: a wheel taken off, a window or a battery gone
 -- (VehiclePart.isInventoryItemUninstalled)
+local function isMissing(part)
+	local types = part:getItemType()
+	return types ~= nil and not types:isEmpty() and not part:getInventoryItem()
+end
+
 local function missingParts(v)
 	local missing = {}
 	try(function()
 		for i = 0, v:getPartCount() - 1 do
 			local part = v:getPartByIndex(i)
-			local types = part:getItemType()
-			if types and not types:isEmpty() and not part:getInventoryItem() then missing[#missing + 1] = part end
+			if isMissing(part) then missing[#missing + 1] = part end
 		end
 	end)
 	return missing
@@ -441,6 +447,23 @@ end
 -- sent to the players. What it leaves without an item is then installed the way a mechanic's install ends
 -- (ISInstallVehiclePart:complete: the item, the part's install.complete, transmitPartItem) and repaired.
 -- The reply names what was missing, what had to be installed here, and what could not be.
+-- a part the game's repair left without its item: installed the way a mechanic's install ends
+local function installPart(v, part)
+	try(function()
+		local item = VehicleUtils.createPartInventoryItem(part)
+		if not item then
+			item = instanceItem(part:getItemType():get(0))
+			part:setInventoryItem(item)
+		end
+		local install = part:getTable("install")
+		if install and install.complete then VehicleUtils.callLua(install.complete, v, part) end
+		v:transmitPartItem(part)
+		-- new parts come worn: to 100 like the rest, a tyre inflated
+		part:repair()
+	end)
+	return not isMissing(part)
+end
+
 local function repairFully(v)
 	local before = missingParts(v)
 	local beforeNames = partNames(before)
@@ -448,19 +471,7 @@ local function repairFully(v)
 	local installed = array()
 	for _, part in ipairs(missingParts(v)) do
 		local name = partName(part)
-		try(function()
-			local item = VehicleUtils.createPartInventoryItem(part)
-			if not item then
-				item = instanceItem(part:getItemType():get(0))
-				part:setInventoryItem(item)
-			end
-			local install = part:getTable("install")
-			if install and install.complete then VehicleUtils.callLua(install.complete, v, part) end
-			v:transmitPartItem(part)
-			-- new parts come worn: to 100 like the rest, a tyre inflated
-			part:repair()
-		end)
-		if part:getInventoryItem() then installed[#installed + 1] = name end
+		if installPart(v, part) then installed[#installed + 1] = name end
 	end
 	local still = partNames(missingParts(v))
 	audit("repaired " .. vehicleName(v) .. (#beforeNames > 0 and (", " .. #beforeNames .. " missing parts put back") or "")
@@ -482,6 +493,118 @@ local function repairVehicleOf(username)
 	result.vehicle = try(function() return v:getScript():getFullName() end)
 	result.id = try(function() return v:getId() end)
 	return result
+end
+
+-- repairpart <id> <script> <part id>: one part made whole, or put back when it is gone (bridge v13).
+-- As the mechanics window's own "Repair Part" (Commands.repairPart: VehiclePart.repair), then what it left out.
+local function repairPart(id, script, partId)
+	local v = requireVehicle(id, script)
+	local part = v:getPartById(tostring(partId))
+	if not part then error(vehicleName(v) .. " has no part " .. tostring(partId)) end
+	local name = partName(part)
+	local wasMissing = isMissing(part)
+	local before = try(function() return part:getCondition() end)
+	part:repair()
+	local installed = false
+	if isMissing(part) then installed = installPart(v, part) end
+	audit((wasMissing and "put back " or "repaired ") .. name .. " of " .. vehicleName(v))
+	return {
+		part = name, wasMissing = wasMissing, installed = installed, missing = isMissing(part),
+		before = before, condition = try(function() return part:getCondition() end),
+	}
+end
+
+-- the name players see for a vehicle ("Chevalier Dart"), as the mechanics window writes it
+local function vehicleDisplayName(v)
+	return try(function()
+		local script = v:getScript()
+		local car = script:getCarModelName() or script:getName()
+		local name = getTextOrNull("IGUI_VehicleName" .. car)
+		if string.match(script:getName(), "Burnt") then
+			local unburnt = (string.gsub(script:getName(), "Burnt", ""))
+			name = getTextOrNull("IGUI_VehicleName" .. unburnt) or name
+			if name then name = getText("IGUI_VehicleNameBurntCar", name) end
+		end
+		return name
+	end)
+end
+
+-- a part as the mechanics window shows it: condition, what is in it, missing or not
+local function partDetails(part)
+	local category = try(function() return part:getCategory() end) or "Other"
+	local item = try(function() return part:getInventoryItem() end)
+	local info = {
+		id = try(function() return part:getId() end),
+		name = partName(part),
+		category = category,
+		categoryName = try(function() return getTextOrNull("IGUI_VehiclePartCat" .. category) end) or category,
+		condition = try(function() return part:getCondition() end),
+		missing = try(function() return isMissing(part) end) or false,
+		-- false: a part of the body itself (the engine, a seat frame), nothing to install
+		takesItem = try(function() local types = part:getItemType() return types ~= nil and not types:isEmpty() end) or false,
+		item = item and try(function() return item:getDisplayName() end) or nil,
+	}
+	-- the air of a tyre, the fuel of the tank
+	local content = try(function() return part:isContainer() and part:getContainerContentType() end)
+	if content then
+		info.content = content
+		info.amount = try(function() return part:getContainerContentAmount() end)
+		info.capacity = try(function() return part:getContainerCapacity() end)
+	end
+	if info.id == "Battery" and item then
+		info.charge = try(function() return item:getCurrentUsesFloat() end)
+	end
+	local door = try(function() return part:getDoor() end)
+	if door then
+		info.open = try(function() return door:isOpen() end)
+		info.locked = try(function() return door:isLocked() end)
+	end
+	local window = try(function() return part:getWindow() end)
+	if window then info.open = try(function() return window:isOpen() end) end
+	return info
+end
+
+-- vehicle <id> <script>: one vehicle part by part, as the mechanics window of the game (bridge v13)
+local function vehicleDetails(id, script)
+	local v = requireVehicle(id, script)
+	local parts = array()
+	local total, count = 0, 0
+	for i = 0, v:getPartCount() - 1 do
+		local info = partDetails(v:getPartByIndex(i))
+		-- the overall condition counts every part, one that is gone as 0 (recalculGeneralCondition)
+		total = total + (info.missing and 0 or (info.condition or 0))
+		count = count + 1
+		if info.category ~= "nodisplay" then parts[#parts + 1] = info end
+	end
+	local seats = array()
+	try(function()
+		for seat = 0, v:getMaxPassengers() - 1 do
+			local who = v:getCharacter(seat)
+			local username = who and try(function() return who:getUsername() end)
+			if username then seats[#seats + 1] = { seat = seat, username = username } end
+		end
+	end)
+	local kind = try(function() return v:getScript():getMechanicType() end)
+	return {
+		id = try(function() return v:getId() end),
+		script = try(function() return v:getScript():getFullName() end),
+		name = vehicleDisplayName(v),
+		x = try(function() return math.floor(v:getX()) end),
+		y = try(function() return math.floor(v:getY()) end),
+		z = try(function() return math.floor(v:getZ()) end),
+		kind = kind and try(function() return getTextOrNull("IGUI_VehicleType_" .. kind) end) or nil,
+		condition = count > 0 and math.floor(total / count * 100 + 0.5) / 100 or nil,
+		mass = try(function() return v:getMass() end),
+		enginePower = try(function() return v:getEnginePower() / 10 end),
+		engineQuality = try(function() return v:getEngineQuality() end),
+		engineLoudness = try(function() return v:getEngineLoudness() end),
+		engineRunning = try(function() return v:isEngineRunning() end),
+		rust = try(function() return v:getRust() end),
+		hotwired = try(function() return v:isHotwired() end),
+		keyInIgnition = try(function() return v:isKeysInIgnition() end),
+		seats = seats,
+		parts = parts,
+	}
 end
 
 -- as Commands.setContainerContentAmount, filling the gas tank to its capacity
@@ -1448,6 +1571,8 @@ local actions = {
 	heal = heal,
 	removeitem = removeItem,
 	repairvehicle = repairVehicle,
+	repairpart = repairPart,
+	vehicle = vehicleDetails,
 	repairvehicleof = repairVehicleOf,
 	refuelvehicle = refuelVehicle,
 	removevehicle = removeVehicle,

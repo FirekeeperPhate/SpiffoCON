@@ -311,6 +311,15 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     public async Task<BridgeRepair> RepairVehicleOfAsync(string username) =>
         (await SendAsync("repairvehicleof", username).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeRepair) ?? new BridgeRepair();
 
+    /// <summary>One vehicle part by part, as the game's mechanics window shows it (bridge v13).</summary>
+    public async Task<BridgeVehicleDetails> VehicleDetailsAsync(int id, string? script = null) =>
+        (await VehicleAsync("vehicle", id, script).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeVehicleDetails) ?? new BridgeVehicleDetails();
+
+    /// <summary>One part of a vehicle made whole, or put back when it is gone (bridge v13).</summary>
+    public async Task<BridgePartRepair> RepairPartAsync(int id, string? script, string partId) =>
+        (await SendAsync("repairpart", id.ToString(System.Globalization.CultureInfo.InvariantCulture), script ?? "", partId).ConfigureAwait(false))
+            .Deserialize(BridgeJson.Default.BridgePartRepair) ?? new BridgePartRepair();
+
     public Task RefuelVehicleAsync(int id, string? script = null) => VehicleAsync("refuelvehicle", id, script);
 
     public Task RemoveVehicleAsync(int id, string? script = null) => VehicleAsync("removevehicle", id, script);
@@ -578,6 +587,9 @@ public sealed record BridgePlayer
     public string? SteamId { get; init; }
     public string? Vehicle { get; init; }
 
+    /// <summary>Bridge v13: the id of that vehicle (absent with an older bridge).</summary>
+    public int? VehicleId { get; init; }
+
     /// <summary>Bridge v10: the character's own name ("John Smith"), absent with an older bridge.</summary>
     public string? CharacterName { get; init; }
 
@@ -829,6 +841,99 @@ public sealed record BridgeVehicle
     public string MissingText => Missing is { Count: > 0 } m ? $"{m.Count}: {string.Join(", ", m)}" : "";
 }
 
+/// <summary>Bridge v13: a vehicle as the game's mechanics window shows it.</summary>
+public sealed record BridgeVehicleDetails
+{
+    public int? Id { get; init; }
+    public string? Script { get; init; }
+
+    /// <summary>The name players see ("Chevalier Dart"), in the server's language.</summary>
+    public string? Name { get; init; }
+    public int? X { get; init; }
+    public int? Y { get; init; }
+    public int? Z { get; init; }
+
+    /// <summary>"Standard", "Heavy-Duty", "Sports": which mechanics skill book it goes with.</summary>
+    public string? Kind { get; init; }
+
+    /// <summary>The game's overall condition: the mean of every part, one that is gone as 0.</summary>
+    public double? Condition { get; init; }
+    public double? Mass { get; init; }
+
+    /// <summary>In hp.</summary>
+    public double? EnginePower { get; init; }
+    public double? EngineQuality { get; init; }
+    public double? EngineLoudness { get; init; }
+    public bool? EngineRunning { get; init; }
+
+    /// <summary>0 to 1.</summary>
+    public double? Rust { get; init; }
+    public bool? Hotwired { get; init; }
+    public bool? KeyInIgnition { get; init; }
+
+    public List<BridgeSeat> Seats { get => _seats ?? []; init => _seats = value; }
+    readonly List<BridgeSeat>? _seats;
+
+    public List<BridgeVehiclePart> Parts { get => _parts ?? []; init => _parts = value; }
+    readonly List<BridgeVehiclePart>? _parts;
+}
+
+/// <summary>Who sits where: seat 0 is the driver's.</summary>
+public sealed record BridgeSeat
+{
+    public int Seat { get; init; }
+    public string Username { get; init; } = "";
+}
+
+public sealed record BridgeVehiclePart
+{
+    /// <summary>The game's id ("TireFrontLeft"): what repairpart wants.</summary>
+    public string Id { get; init; } = "";
+
+    /// <summary>The name players see, in the server's language.</summary>
+    public string Name { get; init; } = "";
+
+    /// <summary>The game's category ("tire", "engine", "door"...), and its name for players.</summary>
+    public string Category { get; init; } = "";
+    public string CategoryName { get; init; } = "";
+
+    /// <summary>0 to 100.</summary>
+    public int? Condition { get; init; }
+
+    /// <summary>The part takes an item and has none: a wheel taken off, a window gone.</summary>
+    public bool Missing { get; init; }
+
+    /// <summary>False for a part of the body itself (the engine): nothing to install or take off.</summary>
+    public bool TakesItem { get; init; }
+
+    /// <summary>The item installed ("Regular Tire").</summary>
+    public string? Item { get; init; }
+
+    /// <summary>What a tyre or the tank holds ("Air", "Gasoline"), how much, and how much it takes.</summary>
+    public string? Content { get; init; }
+    public double? Amount { get; init; }
+    public double? Capacity { get; init; }
+
+    /// <summary>The battery's charge, 0 to 1.</summary>
+    public double? Charge { get; init; }
+
+    /// <summary>A door or a window.</summary>
+    public bool? Open { get; init; }
+    public bool? Locked { get; init; }
+}
+
+/// <summary>What the repair of one part did (bridge v13).</summary>
+public sealed record BridgePartRepair
+{
+    public string Part { get; init; } = "";
+    public bool WasMissing { get; init; }
+
+    /// <summary>Still gone: no item could be made for it.</summary>
+    public bool Missing { get; init; }
+    public int? Before { get; init; }
+    public int? Condition { get; init; }
+}
+
 /// <summary>What a complete repair did (bridge v13; all empty with an older bridge).</summary>
 public sealed record BridgeRepair
 {
@@ -916,4 +1021,6 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgeWrecks))]
 [JsonSerializable(typeof(BridgeHairStyles))]
 [JsonSerializable(typeof(BridgeRepair))]
+[JsonSerializable(typeof(BridgeVehicleDetails))]
+[JsonSerializable(typeof(BridgePartRepair))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

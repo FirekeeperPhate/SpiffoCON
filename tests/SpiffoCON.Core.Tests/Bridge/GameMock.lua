@@ -537,9 +537,22 @@ local function vehiclePart(v, id, types, hasItem, kind)
 	part.getInventoryItem = function() return part.item end
 	part.setInventoryItem = function(self, it) part.item = it end
 	part.getTable = function(self, name) return name == "install" and { complete = "Vehicles.InstallComplete." .. id } or nil end
+	-- what the vehicle window reads; a tyre holds air, the tank fuel (set on the part: content, amount, capacity)
+	part.getCategory = function() return part.category end
+	part.getCondition = function() return part.condition end
+	part.isContainer = function() return part.content ~= nil end
+	part.getContainerContentType = function() return part.content end
+	part.getContainerContentAmount = function() return part.amount end
+	part.getContainerCapacity = function() return part.capacity end
+	part.getDoor = function() return part.door end
+	part.getWindow = function() return part.window end
 	part.repair = function()
-		if not part.item and #(types or {}) > 0 and kind == "game" then part.item = item(types[1], id) end
-		if part.item then part.condition = 100 end
+		if not part.item and #(types or {}) > 0 and part.kind == "game" then part.item = item(types[1], id) end
+		-- whole, and full: a tyre inflated, the tank to the top (a part that takes no item, the engine, too)
+		if part.item or #(types or {}) == 0 then
+			part.condition = 100
+			if part.capacity then part.amount = part.capacity end
+		end
 	end
 	return part
 end
@@ -549,7 +562,38 @@ for _, v in ipairs(VEHICLES) do
 	v.getPartByIndex = function(self, i) return v.parts[i + 1] end
 	v.repair = function() note("repair " .. v.id); for _, p in ipairs(v.parts) do p.repair() end end
 	v.transmitPartItem = function(self, part) note("transmitPartItem " .. part.id) end
+	v.getPartById = function(self, id) for _, p in ipairs(v.parts) do if p.id == id then return p end end return nil end
+	-- the vehicle window: the model's names, the engine, who sits where
+	local fullName = v.getScript().getFullName()
+	local name = fullName:gsub("^Base%.", "")
+	v.getScript = function()
+		return {
+			getFullName = function() return fullName end,
+			getName = function() return name end,
+			getCarModelName = function() return nil end,
+			getMechanicType = function() return 2 end,
+		}
+	end
+	v.getMass = function() return 1200 end
+	v.getEnginePower = function() return 3400 end
+	v.getEngineQuality = function() return 71 end
+	v.getEngineLoudness = function() return 95 end
+	v.getRust = function() return 0.25 end
+	v.isHotwired = function() return false end
+	v.isKeysInIgnition = function() return true end
+	v.seated = {}
+	v.getMaxPassengers = function() return 2 end
+	v.getCharacter = function(self, seat) return v.seated[seat] end
 end
+TRANSLATIONS.IGUI_VehicleNamePickUpTruck = "Chevalier D6"
+TRANSLATIONS.IGUI_VehicleNameOffRoad = "Dash Rancher"
+TRANSLATIONS.IGUI_VehicleNameBurntCar = "Burnt %1"
+TRANSLATIONS.IGUI_VehicleType_2 = "Heavy-Duty"
+TRANSLATIONS.IGUI_VehiclePartCattire = "Tires"
+TRANSLATIONS.IGUI_VehiclePartCatgastank = "Gas Tank"
+function getText(key, a) return ((TRANSLATIONS[key] or key):gsub("%%1", tostring(a))) end
+-- for a test or a harness that wants a whole car
+VEHICLE_PART = vehiclePart
 -- the pick-up truck (#7): the battery in place but worn, a wheel and a window gone, a seat that takes no item
 VEHICLES[1].parts = {
 	vehiclePart(VEHICLES[1], "Battery", { "Base.CarBattery1" }, true, "game"),
@@ -557,3 +601,7 @@ VEHICLES[1].parts = {
 	vehiclePart(VEHICLES[1], "WindowRearRight", { "Base.RearWindow1" }, false, "bridge"),
 	vehiclePart(VEHICLES[1], "SeatFrontLeft", {}, false, "game"),
 }
+VEHICLES[1].parts[1].category = "engine"
+VEHICLES[1].parts[2].category = "tire"
+VEHICLES[1].parts[3].category = "door"
+VEHICLES[1].parts[4].category = "nodisplay"

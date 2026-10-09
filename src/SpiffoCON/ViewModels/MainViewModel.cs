@@ -930,6 +930,9 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Opens the character window of a player; set by the view.</summary>
     public Action<string>? ShowCharacter { get; set; }
 
+    /// <summary>Opens the window of a vehicle (its runtime id and model); set by the view.</summary>
+    public Action<int, string?>? ShowVehicle { get; set; }
+
     /// <summary>Lets the user pick hair, beard and colour for a player (null: cancelled); set by the view.</summary>
     public Func<string, SpiffoCON.Core.Bridge.BridgeHairStyles, HairChoice?>? ChooseHairStyle { get; set; }
 

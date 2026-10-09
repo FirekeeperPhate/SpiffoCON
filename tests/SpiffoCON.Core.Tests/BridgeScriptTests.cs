@@ -589,6 +589,73 @@ public sealed class BridgeScriptTests
         Assert.Equal(" 1 missing part put back (Front Left Tire). Still missing: Rear Right Window.", done.Describe());
     }
 
+    [Fact]
+    public async Task A_vehicle_is_read_part_by_part_as_the_mechanics_window_shows_it()
+    {
+        _game.DoString("""
+            local truck = VEHICLES[1]
+            truck.seated[0] = rj
+            truck.parts[2].content, truck.parts[2].amount, truck.parts[2].capacity = "Air", 0, 35
+            truck.parts[1].item.getCurrentUsesFloat = function() return 0.5 end
+            rj.getVehicle = function() return truck end
+            """);
+        var truck = await _client.VehicleDetailsAsync(7, "Base.PickUpTruck");
+        Assert.Equal((7, "Base.PickUpTruck", "Chevalier D6", "Heavy-Duty"), (truck.Id, truck.Script, truck.Name, truck.Kind));
+        Assert.Equal((1200, 340, 71, 95, 0.25), (truck.Mass, truck.EnginePower, truck.EngineQuality, truck.EngineLoudness, truck.Rust));
+        Assert.Equal((false, true), (truck.Hotwired, truck.KeyInIgnition));
+        Assert.Equal([(0, "rj")], truck.Seats.Select(s => (s.Seat, s.Username)));
+        // every part counts for the overall condition, one that is gone as 0: (55 + 0 + 0 + 0) / 4
+        Assert.Equal(13.75, truck.Condition);
+
+        // the seat is "nodisplay": the game's window does not list it either
+        Assert.Equal(["Battery", "TireFrontLeft", "WindowRearRight"], truck.Parts.Select(p => p.Id));
+        var battery = truck.Parts[0];
+        Assert.Equal(("Battery", "engine", 55, false, true, "Battery", 0.5), (battery.Name, battery.Category, battery.Condition, battery.Missing, battery.TakesItem, battery.Item, battery.Charge));
+        var tyre = truck.Parts[1];
+        Assert.Equal(("Front Left Tire", "tire", "Tires", true, (string?)null), (tyre.Name, tyre.Category, tyre.CategoryName, tyre.Missing, tyre.Item));
+        Assert.Equal(("Air", 0, 35), (tyre.Content, tyre.Amount, tyre.Capacity));
+        // a category the game has no name for is shown as it is
+        Assert.Equal("door", truck.Parts[2].CategoryName);
+
+        // the players list says which vehicle, for the window
+        var players = (await _client.SnapshotAsync()).Players;
+        Assert.Equal(7, players.Single(p => p.Username == "rj").VehicleId);
+        Assert.Null(players.Single(p => p.Username == "kate").VehicleId);
+
+        // a burnt one is named after the model it was; an id that now is another model is refused
+        Assert.Equal("Burnt Dash Rancher", (await _client.VehicleDetailsAsync(10)).Name);
+        await Assert.ThrowsAsync<BridgeException>(() => _client.VehicleDetailsAsync(7, "Base.CarNormal"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.VehicleDetailsAsync(99));
+    }
+
+    [Fact]
+    public async Task One_part_is_repaired_or_put_back_and_the_rest_is_left_as_it_is()
+    {
+        // a worn part: to 100
+        var battery = await _client.RepairPartAsync(7, "Base.PickUpTruck", "Battery");
+        Assert.Equal(("Battery", false, false, 55, 100), (battery.Part, battery.WasMissing, battery.Missing, battery.Before, battery.Condition));
+        Assert.Empty(Told());
+
+        // one that is gone and the game's repair leaves out: installed as by a mechanic, then whole
+        var window = await _client.RepairPartAsync(7, "Base.PickUpTruck", "WindowRearRight");
+        Assert.Equal(("Rear Right Window", true, false, 100), (window.Part, window.WasMissing, window.Missing, window.Condition));
+        Assert.Equal(
+            ["createPartInventoryItem WindowRearRight", "callLua Vehicles.InstallComplete.WindowRearRight WindowRearRight", "transmitPartItem WindowRearRight"],
+            Told());
+
+        // the wheel nobody asked for is still gone
+        var truck = await _client.VehicleDetailsAsync(7);
+        Assert.Equal(["TireFrontLeft"], truck.Parts.Where(p => p.Missing).Select(p => p.Id));
+
+        // one no item can be made for stays gone, and the reply says so
+        _game.DoString("VEHICLES[1].parts[2].kind = 'never'");
+        var tyre = await _client.RepairPartAsync(7, "Base.PickUpTruck", "TireFrontLeft");
+        Assert.Equal((true, true), (tyre.WasMissing, tyre.Missing));
+
+        await Assert.ThrowsAsync<BridgeException>(() => _client.RepairPartAsync(7, "Base.PickUpTruck", "Wings"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.RepairPartAsync(7, "Base.CarNormal", "Battery"));
+    }
+
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>
     sealed class GameFiles(Script game) : IBridgeFiles
     {

@@ -174,12 +174,18 @@ instead.
   level takes, as the game's skill bar) and the id `addxp` wants, so experience can be added from
   the window whatever the language of the server.
 
-  Bridge v13 is about a complete repair of a vehicle. The game's repair already makes every part
-  whole and puts back the ones that are gone (a wheel, a window, the battery...); the bridge now
-  checks that, installs itself what was left out, and names what was put back or is still missing.
-  The vehicles list shows the missing parts of each one, and *Repair their vehicle…* of the player
-  menu finds the vehicle through the player, driver or passenger (before v13: only the one they
-  drive).
+  Bridge v13 is about vehicles:
+  - a vehicle part by part, for the Vehicle details window: the condition of each part, what is
+    in it (the item, the fuel, the pressure of a tyre, the charge of the battery), the parts that
+    are gone, who sits in it, and the repair of one part (made whole, or put back when it is gone,
+    as the *Repair Part* of the game's own mechanics window);
+  - a complete repair that is checked: the game's repair already makes every part whole and puts
+    back the ones that are gone (a wheel, a window, the battery...); the bridge installs itself
+    what was left out, and names what was put back or is still missing;
+  - the missing parts of each vehicle in the vehicles list;
+  - the vehicle of a player found through the player, driver or passenger: *Their vehicle…* and
+    *Repair their vehicle…* of the player menu (before v13 the repair finds only the one they
+    drive).
 
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
@@ -205,7 +211,7 @@ instead.
 - Player menu: right-click a player wherever players are listed (the sidebar, Players, map
   markers, Bridge, Accounts, chat lines in Logs): their Character details, show in the Players tab or on the map,
   teleport to another player or bring one here, give a kit, lightning / thunder /
-  horde, full heal and cure of the zombie infection, a complete repair of the vehicle they are in,
+  horde, full heal and cure of the zombie infection, the vehicle they are in (its details, a complete repair),
   clean up around them, hair and beard (bridge),
   god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the name. Each
   reply shows in the status bar.
@@ -217,6 +223,15 @@ instead.
   and have attached (bridge v11), the inventory with its remove buttons, the account (last
   connection, kicks and bans, when the Accounts tab was read) and every action of the player menu
   as a column of buttons on the right. It follows the bridge's refreshes; one window per player, several can stay open.
+- Vehicle details (bridge v13): *Their vehicle…* in the player menu and in Character details, or a
+  double click on a vehicle of the Bridge tab (or its *Parts…* button), opens a window for that
+  vehicle, as the game's mechanics window: a plan of the vehicle seen from above with each part in
+  the colour of its condition (green whole, red worn out, a dashed outline where a part is gone),
+  the parts under the game's categories with their percentage and what is in them, the overall
+  condition, engine, weight, rust and who sits in it. Each part has its own button: *Repair* (to
+  100%, a tyre inflated, the tank filled) or *Put back* when it is missing; no question asked for
+  one part. The whole vehicle can be repaired, refuelled, given a key of to a player online, shown
+  on the map or removed. It follows the bridge's refreshes; one window per vehicle.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards. With SFTP on, connecting also connects the bridge,

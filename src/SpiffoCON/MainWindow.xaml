@@ -1364,12 +1364,21 @@
                     </Grid>
 
                     <Expander Grid.Row="3" Header="Vehicles in loaded areas" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}">
-                        <ListView ItemsSource="{Binding Vehicles}" MaxHeight="220" ItemContainerStyle="{StaticResource GridRow}" Margin="0,6,0,0">
+                        <ListView ItemsSource="{Binding Vehicles}" MaxHeight="220" ItemContainerStyle="{StaticResource GridRow}" Margin="0,6,0,0"
+                                  SelectionMode="Single" MouseDoubleClick="BridgeVehicles_MouseDoubleClick">
                             <ListView.View>
                                 <GridView>
-                                    <GridViewColumn Header="Vehicle" Width="220" DisplayMemberBinding="{Binding Script}" />
-                                    <GridViewColumn Header="Id" Width="70" DisplayMemberBinding="{Binding Id}" />
-                                    <GridViewColumn Header="Position" Width="140">
+                                    <GridViewColumn Width="190">
+                                        <GridViewColumnHeader Content="Vehicle" ToolTip="Double-click a vehicle for its parts, one by one (bridge v13)" />
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Script}" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="Double-click for the vehicle part by part: conditions, what is missing, a repair for each (bridge v13)" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Id" Width="52" DisplayMemberBinding="{Binding Id}" />
+                                    <GridViewColumn Header="Position" Width="118">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock FontFamily="{StaticResource MonoFont}" FontSize="12">
@@ -1378,9 +1387,9 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="Driver" Width="140" DisplayMemberBinding="{Binding Driver}" />
-                                    <GridViewColumn Header="Engine on" Width="80" DisplayMemberBinding="{Binding EngineRunning}" />
-                                    <GridViewColumn Width="170">
+                                    <GridViewColumn Header="Driver" Width="100" DisplayMemberBinding="{Binding Driver}" />
+                                    <GridViewColumn Header="Engine on" Width="76" DisplayMemberBinding="{Binding EngineRunning}" />
+                                    <GridViewColumn Width="140">
                                         <GridViewColumnHeader Content="Missing parts" ToolTip="Parts that are gone: a wheel, a window, the battery... (bridge v13). Repair puts them back" />
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
@@ -1388,10 +1397,14 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Width="270">
+                                    <GridViewColumn Width="326">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
+                                                    <Button Content="Parts…" FontSize="11" Padding="8,1" MinHeight="0" Margin="0,0,4,0"
+                                                            ToolTip="The vehicle part by part, as the mechanics window of the game: conditions, what is missing, a repair for each (bridge v13)"
+                                                            Command="{Binding DataContext.ShowVehicleCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
                                                     <Button Content="Key" FontSize="11" Padding="8,1" MinHeight="0" Margin="0,0,4,0"
                                                             ToolTip="Give a key of this vehicle to the player selected in the list above (bridge v7)"
                                                             Command="{Binding DataContext.GiveVehicleKeyCommand, RelativeSource={RelativeSource AncestorType=ListView}}"

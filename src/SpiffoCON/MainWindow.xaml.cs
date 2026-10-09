@@ -97,7 +97,39 @@ public partial class MainWindow : Window
     readonly Dictionary<string, CharacterWindow> _characters = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>A question or a dialog belongs to the window the user is working in.</summary>
-    Window DialogOwner() => _characters.Values.FirstOrDefault(w => w.IsActive) ?? (Window)this;
+    Window DialogOwner() => _characters.Values.Cast<Window>().Concat(_vehicles.Values).FirstOrDefault(w => w.IsActive) ?? this;
+
+    // one window per vehicle, by its runtime id
+    readonly Dictionary<int, VehicleWindow> _vehicles = [];
+
+    void ShowVehicle(int id, string? script)
+    {
+        if (_closing || _switching)
+            return;
+        if (_vehicles.TryGetValue(id, out var open))
+        {
+            if (open.WindowState == WindowState.Minimized)
+                open.WindowState = WindowState.Normal;
+            open.Activate();
+            return;
+        }
+        var window = new VehicleWindow(new VehicleViewModel(_vm, id, script));
+        PlaceBeside(window, _characters.Count + _vehicles.Count);
+        _vehicles[id] = window;
+        window.Closed += (_, _) => _vehicles.Remove(id);
+        window.Show();
+    }
+
+    // beside the main window, each a little further so they don't hide each other
+    void PlaceBeside(Window window, int count)
+    {
+        var area = SystemParameters.WorkArea;
+        double offset = 40 + 28 * (count % 6);
+        double left = WindowState == WindowState.Normal ? Left + offset : area.Left + offset;
+        double top = WindowState == WindowState.Normal ? Top + offset : area.Top + offset;
+        window.Left = Math.Max(area.Left, Math.Min(left, area.Right - window.Width));
+        window.Top = Math.Max(area.Top, Math.Min(top, area.Bottom - window.Height));
+    }
 
     void ShowCharacter(string username)
     {
@@ -111,13 +143,7 @@ public partial class MainWindow : Window
             return;
         }
         var window = new CharacterWindow(new CharacterViewModel(_vm, username));
-        // beside the main window, each a little further so they don't hide each other
-        var area = SystemParameters.WorkArea;
-        double offset = 40 + 28 * (_characters.Count % 6);
-        double left = WindowState == WindowState.Normal ? Left + offset : area.Left + offset;
-        double top = WindowState == WindowState.Normal ? Top + offset : area.Top + offset;
-        window.Left = Math.Max(area.Left, Math.Min(left, area.Right - window.Width));
-        window.Top = Math.Max(area.Top, Math.Min(top, area.Bottom - window.Height));
+        PlaceBeside(window, _characters.Count + _vehicles.Count);
         _characters[username] = window;
         window.Closed += (_, _) => _characters.Remove(username);
         window.Show();
@@ -125,7 +151,7 @@ public partial class MainWindow : Window
 
     void CloseCharacters()
     {
-        foreach (var window in _characters.Values.ToList())
+        foreach (var window in _characters.Values.Cast<Window>().Concat(_vehicles.Values).ToList())
             window.Close();
     }
 
@@ -134,6 +160,7 @@ public partial class MainWindow : Window
         _vm = vm;
         DataContext = _vm;
         _vm.ShowCharacter = ShowCharacter;
+        _vm.ShowVehicle = ShowVehicle;
         _vm.SwitchRequested += OnSwitchRequested;
         _vm.NotificationRaised += (_, n) => ShowNotification(n);
         _vm.Confirm = question =>
@@ -284,6 +311,24 @@ public partial class MainWindow : Window
     }
 
     // on a row: not on the scroll bar, a column header or the empty space under the rows
+    void BridgeVehicles_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // not on the buttons of the row: a quick second click on Repair is not "open the window"
+        if (sender is ListView list && OnRow(list, e) && !InButton(e.OriginalSource as DependencyObject, list)
+            && list.SelectedItem is SpiffoCON.Core.Bridge.BridgeVehicle vehicle)
+            _vm.Bridge.ShowVehicleCommand.Execute(vehicle);
+    }
+
+    static bool InButton(DependencyObject? source, DependencyObject within)
+    {
+        for (var at = source; at is not null && at != within; at = at is System.Windows.Media.Visual ? System.Windows.Media.VisualTreeHelper.GetParent(at) : LogicalTreeHelper.GetParent(at))
+        {
+            if (at is System.Windows.Controls.Primitives.ButtonBase)
+                return true;
+        }
+        return false;
+    }
+
     static bool OnRow(ItemsControl list, MouseButtonEventArgs e) =>
         e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(list, source) is not null;
 

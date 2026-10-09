@@ -106,6 +106,9 @@ public sealed partial class MapViewModel : ObservableObject
             CenterRequested?.Invoke(x + 0.5, y + 0.5, true);
     }
 
+    /// <summary>Brings a square into view (a vehicle, from its window).</summary>
+    public void ShowAt(int x, int y) => CenterRequested?.Invoke(x + 0.5, y + 0.5, true);
+
     /// <summary>Selects a player and brings them into view, also when already selected.</summary>
     public void Show(string username)
     {
