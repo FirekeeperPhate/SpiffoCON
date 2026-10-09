@@ -12,7 +12,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 12
+local VERSION = 13
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -205,6 +205,32 @@ local function inventory(username)
 	return result
 end
 
+-- the name players see for a part of a vehicle ("Front Left Tire"), else its id
+local function partName(part)
+	local id = try(function() return part:getId() end) or "part"
+	return try(function() return getTextOrNull("IGUI_VehiclePart" .. id) end) or id
+end
+
+-- the parts that take an item and have none: a wheel taken off, a window or a battery gone
+-- (VehiclePart.isInventoryItemUninstalled)
+local function missingParts(v)
+	local missing = {}
+	try(function()
+		for i = 0, v:getPartCount() - 1 do
+			local part = v:getPartByIndex(i)
+			local types = part:getItemType()
+			if types and not types:isEmpty() and not part:getInventoryItem() then missing[#missing + 1] = part end
+		end
+	end)
+	return missing
+end
+
+local function partNames(parts)
+	local names = array()
+	for _, part in ipairs(parts) do names[#names + 1] = partName(part) end
+	return names
+end
+
 -- B42's IsoCell.getVehicles() is a java.util.Set (B41: an ArrayList), which has no get(i):
 -- copied into an ArrayList, the list type the game's own Lua builds with ArrayList.new()
 local function loadedVehicles()
@@ -230,6 +256,8 @@ local function vehicles()
 			z = try(function() return math.floor(v:getZ()) end),
 			driver = driver,
 			engineRunning = try(function() return v:isEngineRunning() end),
+			-- bridge v13: the parts that are gone (a wheel, a window, the battery...)
+			missing = partNames(missingParts(v)),
 		}
 	end
 	return result
@@ -407,12 +435,53 @@ local function vehicleName(v)
 	return (try(function() return v:getScript():getFullName() end) or "vehicle") .. " #" .. tostring(try(function() return v:getId() end))
 end
 
--- as Commands.repair in server/Vehicles/VehicleCommands.lua
-local function repairVehicle(id, script)
-	local v = requireVehicle(id, script)
+-- Every part whole, and those that are gone put back (bridge v13).
+-- The game's own repair (Commands.repair: BaseVehicle.repair, each VehiclePart.repair) is meant to do both: a
+-- part without its item gets a new one, every condition goes to 100, tyres and tank are filled, each change
+-- sent to the players. What it leaves without an item is then installed the way a mechanic's install ends
+-- (ISInstallVehiclePart:complete: the item, the part's install.complete, transmitPartItem) and repaired.
+-- The reply names what was missing, what had to be installed here, and what could not be.
+local function repairFully(v)
+	local before = missingParts(v)
+	local beforeNames = partNames(before)
 	v:repair()
-	audit("repaired " .. vehicleName(v))
-	return { repaired = true }
+	local installed = array()
+	for _, part in ipairs(missingParts(v)) do
+		local name = partName(part)
+		try(function()
+			local item = VehicleUtils.createPartInventoryItem(part)
+			if not item then
+				item = instanceItem(part:getItemType():get(0))
+				part:setInventoryItem(item)
+			end
+			local install = part:getTable("install")
+			if install and install.complete then VehicleUtils.callLua(install.complete, v, part) end
+			v:transmitPartItem(part)
+			-- new parts come worn: to 100 like the rest, a tyre inflated
+			part:repair()
+		end)
+		if part:getInventoryItem() then installed[#installed + 1] = name end
+	end
+	local still = partNames(missingParts(v))
+	audit("repaired " .. vehicleName(v) .. (#beforeNames > 0 and (", " .. #beforeNames .. " missing parts put back") or "")
+		.. (#still > 0 and (", " .. #still .. " still missing") or ""))
+	return { repaired = true, missing = beforeNames, installed = installed, stillMissing = still }
+end
+
+-- as Commands.repair in server/Vehicles/VehicleCommands.lua, then what it left out
+local function repairVehicle(id, script)
+	return repairFully(requireVehicle(id, script))
+end
+
+-- repairvehicleof <username>: the vehicle that player is in now (bridge v13)
+local function repairVehicleOf(username)
+	local p = requirePlayer(username)
+	local v = p:getVehicle()
+	if not v then error(tostring(username) .. " is not in a vehicle") end
+	local result = repairFully(v)
+	result.vehicle = try(function() return v:getScript():getFullName() end)
+	result.id = try(function() return v:getId() end)
+	return result
 end
 
 -- as Commands.setContainerContentAmount, filling the gas tank to its capacity
@@ -1379,6 +1448,7 @@ local actions = {
 	heal = heal,
 	removeitem = removeItem,
 	repairvehicle = repairVehicle,
+	repairvehicleof = repairVehicleOf,
 	refuelvehicle = refuelVehicle,
 	removevehicle = removeVehicle,
 	climate = setClimate,

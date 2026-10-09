@@ -174,6 +174,13 @@ instead.
   level takes, as the game's skill bar) and the id `addxp` wants, so experience can be added from
   the window whatever the language of the server.
 
+  Bridge v13 is about a complete repair of a vehicle. The game's repair already makes every part
+  whole and puts back the ones that are gone (a wheel, a window, the battery...); the bridge now
+  checks that, installs itself what was left out, and names what was put back or is still missing.
+  The vehicles list shows the missing parts of each one, and *Repair their vehicle…* of the player
+  menu finds the vehicle through the player, driver or passenger (before v13: only the one they
+  drive).
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.
@@ -198,7 +205,8 @@ instead.
 - Player menu: right-click a player wherever players are listed (the sidebar, Players, map
   markers, Bridge, Accounts, chat lines in Logs): their Character details, show in the Players tab or on the map,
   teleport to another player or bring one here, give a kit, lightning / thunder /
-  horde, full heal and cure of the zombie infection, clean up around them, hair and beard (bridge),
+  horde, full heal and cure of the zombie infection, a complete repair of the vehicle they are in,
+  clean up around them, hair and beard (bridge),
   god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the name. Each
   reply shows in the status bar.
 - Character details: the first item of the player menu, or a double click on a player in the sidebar

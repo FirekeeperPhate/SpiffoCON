@@ -477,8 +477,60 @@ public sealed partial class BridgeViewModel : ObservableObject
 
     [RelayCommand]
     private Task RepairVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(
-        $"Repair {v.Script} #{id} completely?",
-        async c => { await c.RepairVehicleAsync(id, v.Script); return $"{v.Script} #{id} repaired."; });
+        $"Repair {v.Script} #{id} completely?\n\n" + RepairDoes,
+        async c => $"{v.Script} #{id} repaired." + (await c.RepairVehicleAsync(id, v.Script)).Describe());
+
+    string RepairDoes => "Every part goes back to 100%, tyres are inflated and the tank filled"
+        + (BridgeVersion >= 13 ? "; parts that are gone (a wheel, a window, the battery...) are put back, and the result names them."
+            : ". Bridge v13 also checks that the parts that are gone (a wheel, a window...) are back, and names them.");
+
+    /// <summary>The listed vehicle a player drives: how a bridge before v13 finds "their vehicle".</summary>
+    BridgeVehicle? DrivenBy(string username) =>
+        Vehicles.FirstOrDefault(v => v.Id is not null && string.Equals(v.Driver, username, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Why the vehicle a player is in can't be repaired from their menu (null: it can). Bridge v13 finds
+    /// it through the player, driver or passenger; an older one only when the player drives it.
+    /// </summary>
+    public string? VehicleOfProblem(BridgePlayer player) =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : !CanAct ? "Needs bridge v2 (Bridge tab)"
+        : player.Dead == true ? "This player is dead."
+        : string.IsNullOrEmpty(player.Vehicle) ? "This player is not in a vehicle."
+        : BridgeVersion >= 13 || DrivenBy(player.Username) is not null ? null
+        : $"{player.Username} is a passenger: bridge v{BridgeVersion} finds only the vehicle a player drives (v13 finds this one too).";
+
+    /// <summary>
+    /// Repairs completely the vehicle an online player is in, after asking. Returns what happened, for the
+    /// status bar.
+    /// </summary>
+    internal async Task<string?> RepairVehicleOfAsync(BridgePlayer player)
+    {
+        if (VehicleOfProblem(player) is { } problem)
+            return problem;
+        var client = _client!;
+        string username = player.Username;
+        // before v13 the bridge has no "the vehicle of": the one the player drives, by its id
+        var driven = BridgeVersion >= 13 ? null : DrivenBy(username);
+        string what = driven is null ? player.Vehicle! : $"{driven.Script} #{driven.Id}";
+        if (_main.Confirm?.Invoke($"Repair completely the vehicle {username} is in ({what})?\n\n" + RepairDoes) != true)
+            return null;
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
+        try
+        {
+            var done = driven is null
+                ? await client.RepairVehicleOfAsync(username)
+                : await client.RepairVehicleAsync(driven.Id!.Value, driven.Script) with { Vehicle = driven.Script, Id = driven.Id };
+            _retryAt = default;
+            await RefreshAsync();
+            return $"{done.Vehicle ?? "The vehicle"}{(done.Id is { } id ? $" #{id}" : "")} of {username} repaired." + done.Describe();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not repair the vehicle: " + ex.Message;
+        }
+    }
 
     [RelayCommand]
     private Task RefuelVehicleAsync(BridgeVehicle? v) => v?.Id is not int id ? Task.CompletedTask : ActAsync(

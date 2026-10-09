@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(12, await _client.PingAsync());
+        Assert.Equal(13, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -537,6 +537,56 @@ public sealed class BridgeScriptTests
         var (_, none) = await _client.CharacterAsync("rj", details: false);
         Assert.Null(none);
         await Assert.ThrowsAsync<BridgeException>(() => _client.CharacterAsync("ghost", details: true));
+    }
+
+    [Fact]
+    public async Task A_complete_repair_puts_back_the_parts_that_are_gone_and_names_them()
+    {
+        // the list says what is gone: a part that takes no item (a seat) is not "missing"
+        var truck = (await _client.SnapshotAsync()).Vehicles.Single(v => v.Id == 7);
+        Assert.Equal(["Front Left Tire", "Rear Right Window"], truck.Missing);
+        Assert.Equal("2: Front Left Tire, Rear Right Window", truck.MissingText);
+        Assert.Empty((await _client.SnapshotAsync()).Vehicles.Single(v => v.Id == 8).Missing!);
+
+        // the game's own repair restores the wheel; the window it leaves out is installed as a mechanic's install
+        // ends (the item, the part's install.complete, sent to the players)
+        var done = await _client.RepairVehicleAsync(7, "Base.PickUpTruck");
+        Assert.Equal(["Front Left Tire", "Rear Right Window"], done.Missing);
+        Assert.Equal(["Rear Right Window"], done.Installed);
+        Assert.Empty(done.StillMissing);
+        Assert.Equal(
+            ["repair 7", "createPartInventoryItem WindowRearRight", "callLua Vehicles.InstallComplete.WindowRearRight WindowRearRight", "transmitPartItem WindowRearRight"],
+            Told());
+        Assert.Equal(" 2 missing parts put back (Front Left Tire, Rear Right Window).", done.Describe());
+        // every part with an item at 100, the new window too (new parts come worn)
+        Assert.Equal(300, Lua("VEHICLES[1].parts[1].condition + VEHICLES[1].parts[2].condition + VEHICLES[1].parts[3].condition"));
+        Assert.Empty((await _client.SnapshotAsync()).Vehicles.Single(v => v.Id == 7).Missing!);
+
+        // nothing missing: a plain repair, nothing to name
+        var again = await _client.RepairVehicleAsync(7, "Base.PickUpTruck");
+        Assert.Equal("", again.Describe());
+        Assert.Equal(["repair 7"], Told());
+    }
+
+    [Fact]
+    public async Task The_vehicle_a_player_is_in_is_repaired_and_what_can_not_be_put_back_is_said()
+    {
+        await Assert.ThrowsAsync<BridgeException>(() => _client.RepairVehicleOfAsync("kate"));   // on foot
+        await Assert.ThrowsAsync<BridgeException>(() => _client.RepairVehicleOfAsync("ghost"));
+        Assert.Empty(Told());
+
+        // a part no item can be made for stays missing, and the reply says so
+        _game.DoString("""
+            local truck = VEHICLES[1]
+            truck.parts[3].kind = "never"
+            kate.getVehicle = function() return truck end
+            """);
+        var done = await _client.RepairVehicleOfAsync("kate");
+        Assert.Equal(("Base.PickUpTruck", 7), (done.Vehicle, done.Id));
+        Assert.Equal(["Front Left Tire", "Rear Right Window"], done.Missing);
+        Assert.Empty(done.Installed);
+        Assert.Equal(["Rear Right Window"], done.StillMissing);
+        Assert.Equal(" 1 missing part put back (Front Left Tire). Still missing: Rear Right Window.", done.Describe());
     }
 
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>

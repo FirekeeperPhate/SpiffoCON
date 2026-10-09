@@ -27,6 +27,7 @@ local function list(items)
 	return {
 		items = items,
 		size = function(self) return #items end,
+		isEmpty = function(self) return #items == 0 end,
 		get = function(self, i) return items[i + 1] end,
 		contains = function(self, o) for _, v in ipairs(items) do if v == o then return true end end return false end,
 		addAll = function(self, other) for _, v in ipairs(other.items) do items[#items + 1] = v end end,
@@ -509,3 +510,50 @@ carpentry.getId = function() return "Woodwork" end
 for _, p in ipairs(PLAYERS) do
 	p.getXp = function() return { getXP = function(self, pk) return pk == axe and 870 or 300 end } end
 end
+
+-- ---- bridge v13: the parts of a vehicle, and the repair that puts back the ones that are gone ----
+TRANSLATIONS.IGUI_VehiclePartTireFrontLeft = "Front Left Tire"
+TRANSLATIONS.IGUI_VehiclePartWindowRearRight = "Rear Right Window"
+VehicleUtils = {
+	-- as server/Vehicles/Vehicles.lua: an item of one of the part's types, installed (worn, as new parts come)
+	createPartInventoryItem = function(part)
+		if part.kind == "never" then return nil end
+		part.item = item(part.types[1], part.id)
+		part.condition = 40
+		note("createPartInventoryItem " .. part.id)
+		return part.item
+	end,
+	callLua = function(name, v, part) note("callLua " .. name .. " " .. part.id) end,
+}
+function instanceItem(fullType) error("no such item " .. tostring(fullType)) end
+
+-- kind: how a part without its item comes back. "game": the game's own repair restores it; "bridge": it
+-- does not, the bridge has to install it; "never": no item can be made for it
+local function vehiclePart(v, id, types, hasItem, kind)
+	local part = { id = id, types = types, kind = kind, condition = hasItem and 55 or 0 }
+	part.item = hasItem and item(types[1] or "Base.None", id) or nil
+	part.getId = function() return id end
+	part.getItemType = function() return types and list(types) or nil end
+	part.getInventoryItem = function() return part.item end
+	part.setInventoryItem = function(self, it) part.item = it end
+	part.getTable = function(self, name) return name == "install" and { complete = "Vehicles.InstallComplete." .. id } or nil end
+	part.repair = function()
+		if not part.item and #(types or {}) > 0 and kind == "game" then part.item = item(types[1], id) end
+		if part.item then part.condition = 100 end
+	end
+	return part
+end
+for _, v in ipairs(VEHICLES) do
+	v.parts = {}
+	v.getPartCount = function() return #v.parts end
+	v.getPartByIndex = function(self, i) return v.parts[i + 1] end
+	v.repair = function() note("repair " .. v.id); for _, p in ipairs(v.parts) do p.repair() end end
+	v.transmitPartItem = function(self, part) note("transmitPartItem " .. part.id) end
+end
+-- the pick-up truck (#7): the battery in place but worn, a wheel and a window gone, a seat that takes no item
+VEHICLES[1].parts = {
+	vehiclePart(VEHICLES[1], "Battery", { "Base.CarBattery1" }, true, "game"),
+	vehiclePart(VEHICLES[1], "TireFrontLeft", { "Base.OldTire1", "Base.NormalTire1" }, false, "game"),
+	vehiclePart(VEHICLES[1], "WindowRearRight", { "Base.RearWindow1" }, false, "bridge"),
+	vehiclePart(VEHICLES[1], "SeatFrontLeft", {}, false, "game"),
+}

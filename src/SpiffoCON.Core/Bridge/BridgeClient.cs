@@ -300,7 +300,16 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     }
 
     // the script name makes bridge v3 refuse another vehicle that got the same runtime id meanwhile
-    public Task RepairVehicleAsync(int id, string? script = null) => VehicleAsync("repairvehicle", id, script);
+    /// <summary>
+    /// Repairs a vehicle completely. With bridge v13 the parts that were gone (a wheel, a window, the
+    /// battery...) are put back too, and the reply names them; an older bridge answers nothing more.
+    /// </summary>
+    public async Task<BridgeRepair> RepairVehicleAsync(int id, string? script = null) =>
+        (await VehicleAsync("repairvehicle", id, script).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeRepair) ?? new BridgeRepair();
+
+    /// <summary>Repairs completely the vehicle an online player is in (bridge v13).</summary>
+    public async Task<BridgeRepair> RepairVehicleOfAsync(string username) =>
+        (await SendAsync("repairvehicleof", username).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeRepair) ?? new BridgeRepair();
 
     public Task RefuelVehicleAsync(int id, string? script = null) => VehicleAsync("refuelvehicle", id, script);
 
@@ -477,7 +486,7 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     public async Task<BridgeWorld> ResetClimateAsync() =>
         (await SendAsync("climate", "reset").ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld();
 
-    Task VehicleAsync(string action, int id, string? script)
+    Task<JsonElement> VehicleAsync(string action, int id, string? script)
     {
         var idText = id.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return string.IsNullOrEmpty(script) ? SendAsync(action, idText) : SendAsync(action, idText, script);
@@ -812,6 +821,47 @@ public sealed record BridgeVehicle
     public int? Z { get; init; }
     public string? Driver { get; init; }
     public bool? EngineRunning { get; init; }
+
+    /// <summary>Bridge v13: the parts that are gone (a wheel, a window, the battery...); null with an older bridge.</summary>
+    public List<string>? Missing { get; init; }
+
+    /// <summary>"2: Front Left Tire, Battery", or empty when nothing is missing or the bridge does not say.</summary>
+    public string MissingText => Missing is { Count: > 0 } m ? $"{m.Count}: {string.Join(", ", m)}" : "";
+}
+
+/// <summary>What a complete repair did (bridge v13; all empty with an older bridge).</summary>
+public sealed record BridgeRepair
+{
+    /// <summary>The parts that were gone before the repair.</summary>
+    public List<string> Missing { get => _missing ?? []; init => _missing = value; }
+    readonly List<string>? _missing;
+
+    /// <summary>Of those, the ones the game's own repair left out and the bridge installed itself.</summary>
+    public List<string> Installed { get => _installed ?? []; init => _installed = value; }
+    readonly List<string>? _installed;
+
+    /// <summary>The parts still gone after it (nothing could be put there).</summary>
+    public List<string> StillMissing { get => _stillMissing ?? []; init => _stillMissing = value; }
+    readonly List<string>? _stillMissing;
+
+    /// <summary>The vehicle, when it was found through the player in it.</summary>
+    public string? Vehicle { get; init; }
+    public int? Id { get; init; }
+
+    /// <summary>"3 missing parts put back (Front Left Tire, ...)" and what is still missing, for the status bar.</summary>
+    public string Describe()
+    {
+        var text = "";
+        if (Missing.Count > 0)
+        {
+            int back = Missing.Count - StillMissing.Count;
+            if (back > 0)
+                text += $" {back} missing part{(back == 1 ? "" : "s")} put back ({string.Join(", ", Missing.Except(StillMissing))}).";
+        }
+        if (StillMissing.Count > 0)
+            text += $" Still missing: {string.Join(", ", StillMissing)}.";
+        return text;
+    }
 }
 
 public sealed record BridgeWorld
@@ -865,4 +915,5 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(List<BridgeZombieCell>))]
 [JsonSerializable(typeof(BridgeWrecks))]
 [JsonSerializable(typeof(BridgeHairStyles))]
+[JsonSerializable(typeof(BridgeRepair))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

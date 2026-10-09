@@ -195,6 +195,23 @@ public sealed class PlayerActions(MainViewModel main)
             main.StatusText = result;
     }
 
+    /// <summary>
+    /// Why the vehicle a player is in can't be repaired (null: it can): the bridge, and the player in one
+    /// (before bridge v13: driving it).
+    /// </summary>
+    public string? VehicleProblem(string player) =>
+        !main.Bridge.IsConnected ? "Needs the bridge (Bridge tab)"
+        : BridgeInfo(player) is not { } info ? "The bridge does not list this player (online?)."
+        : main.Bridge.VehicleOfProblem(info);
+
+    public async Task RepairVehicleAsync(string player)
+    {
+        if (BridgeInfo(player) is not { } info)
+            return;
+        if (await main.Bridge.RepairVehicleOfAsync(info) is { } result)
+            main.StatusText = result;
+    }
+
     public async Task SetHairAsync(string player)
     {
         if (BridgeInfo(player) is not { } info || main.ChooseHairStyle is not { } choose)
