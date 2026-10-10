@@ -37,7 +37,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="1.15*" />
-                <ColumnDefinition Width="1.35*" />
+                <ColumnDefinition Width="1.5*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
@@ -167,7 +167,9 @@
                                             <TextBlock DockPanel.Dock="Left" Text="{Binding Slot}" Width="118" Opacity="0.65" TextTrimming="CharacterEllipsis" />
                                             <TextBlock DockPanel.Dock="Right" Text="{Binding ConditionText}" Opacity="0.7" MinWidth="40" TextAlignment="Right"
                                                        ToolTip="Condition: 100% is new" />
-                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                            <Image DockPanel.Dock="Left" Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                   Source="{Binding IconPath, Converter={StaticResource Icon}}" RenderOptions.BitmapScalingMode="HighQuality" />
+                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                                         </DockPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -181,13 +183,18 @@
                         <ListView ItemsSource="{Binding Items}" ItemContainerStyle="{StaticResource GridRow}" MinHeight="80">
                             <ListView.View>
                                 <GridView>
-                                    <GridViewColumn Header="Item" Width="128">
+                                    <GridViewColumn Header="Item" Width="142">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBlock ToolTip="{Binding FullType}" TextTrimming="CharacterEllipsis">
-                                                    <Run Text="{Binding Name, Mode=OneWay}" />
-                                                    <Run x:Name="Eq" Text="" Foreground="#8FD694" />
-                                                </TextBlock>
+                                                <DockPanel ToolTip="{Binding FullType}">
+                                                    <!-- the Catalog's icon: empty for an item it does not know (a mod not loaded there) -->
+                                                    <Image DockPanel.Dock="Left" Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                           Source="{Binding IconPath, Converter={StaticResource Icon}}" RenderOptions.BitmapScalingMode="HighQuality" />
+                                                    <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
+                                                        <Run Text="{Binding Name, Mode=OneWay}" />
+                                                        <Run x:Name="Eq" Text="" Foreground="#8FD694" />
+                                                    </TextBlock>
+                                                </DockPanel>
                                                 <DataTemplate.Triggers>
                                                     <DataTrigger Binding="{Binding Equipped}" Value="True">
                                                         <Setter TargetName="Eq" Property="Text" Value=" (in use)" />

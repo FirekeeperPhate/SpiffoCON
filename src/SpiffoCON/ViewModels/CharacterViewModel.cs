@@ -26,8 +26,19 @@ public sealed record CharacterSkill(string Name, int Level, string XpText, strin
     public bool CanAdd => PerkId is not null;
 }
 
-/// <summary>Something held, worn or attached.</summary>
-public sealed record CharacterEquipment(string Group, string Slot, string Name, string ConditionText, double? Condition);
+/// <summary>Something held, worn or attached; the icon is the Catalog's, when it knows the item.</summary>
+public sealed record CharacterEquipment(string Group, string Slot, string Name, string ConditionText, double? Condition, string? IconPath = null);
+
+/// <summary>A row of the inventory: what the bridge listed, with the Catalog's icon when it knows the item.</summary>
+public sealed record CharacterItem(BridgeItem Item, string? IconPath)
+{
+    public string Container => Item.Container;
+    public string ContainerShort => Item.ContainerShort;
+    public string FullType => Item.FullType;
+    public string Name => Item.Name;
+    public int Count => Item.Count;
+    public bool Equipped => Item.Equipped;
+}
 
 /// <summary>
 /// Everything SpiffoCON knows about one player in one place (the "Character details" window): who and
@@ -52,6 +63,8 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
         // a bridge refresh updates the players in place: one read for the whole burst of changes
         _main.Bridge.Players.CollectionChanged += OnSourceChanged;
         _main.OnlinePlayersChanged += OnOnlineChanged;
+        // the icons are the Catalog's: when it loads (the base game, then the server's mods) they come in
+        _main.Catalog.EntriesChanged += OnOnlineChanged;
         ShowWho();
         _ = RefreshAsync();
     }
@@ -96,7 +109,10 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
     public ObservableCollection<CharacterPart> Parts { get; } = [];
     public ObservableCollection<CharacterSkillGroup> Skills { get; } = [];
     public ObservableCollection<CharacterEquipment> Equipment { get; } = [];
-    public ObservableCollection<BridgeItem> Items { get; } = [];
+    public ObservableCollection<CharacterItem> Items { get; } = [];
+
+    /// <summary>The icon the Catalog has for an item (base game and the mods loaded), if any.</summary>
+    string? IconOf(string? fullType) => string.IsNullOrEmpty(fullType) ? null : _main.Catalog.Find(fullType)?.IconPath;
 
     void OnSourceChanged(object? sender, NotifyCollectionChangedEventArgs e) => RefreshSoon();
 
@@ -229,7 +245,7 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
             Clear(problem ?? "The bridge did not answer.");
             return;
         }
-        Sync(Items, items);
+        Sync(Items, items.Select(i => new CharacterItem(i, IconOf(i.FullType))).ToList());
         int count = items.Sum(i => i.Count);
         InventoryTitle = $"Inventory: {count} item{(count == 1 ? "" : "s")}"
             + (details is { Weight: { } w, MaxWeight: { } max }
@@ -347,7 +363,7 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
             Sync(Equipment, equipment.Select(e => new CharacterEquipment(
                 e.Kind switch { "hand" => "In hand", "worn" => "Worn", "attached" => "Attached", _ => e.Kind },
                 Slot(e.Slot), e.Name,
-                e.Condition is { } c ? $"{c:P0}" : "", e.Condition)).ToList());
+                e.Condition is { } c ? $"{c:P0}" : "", e.Condition, IconOf(e.FullType))).ToList());
             EquipmentNote = equipment.Count == 0 ? "Nothing worn, held or attached." : "";
         }
         else
@@ -397,16 +413,16 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private async Task RemoveOneAsync(BridgeItem? item) => await RemoveAsync(item, 1);
+    private async Task RemoveOneAsync(CharacterItem? item) => await RemoveAsync(item, 1);
 
     [RelayCommand]
-    private async Task RemoveAllAsync(BridgeItem? item) => await RemoveAsync(item, item?.Count ?? 0);
+    private async Task RemoveAllAsync(CharacterItem? item) => await RemoveAsync(item, item?.Count ?? 0);
 
-    async Task RemoveAsync(BridgeItem? item, int count)
+    async Task RemoveAsync(CharacterItem? item, int count)
     {
         if (item is null || Info is not { } info)
             return;
-        await _main.Bridge.RemoveItemAsync(info.Username, item, count);
+        await _main.Bridge.RemoveItemAsync(info.Username, item.Item, count);
         _main.StatusText = _main.Bridge.StatusText;
         await RefreshAsync();
     }
@@ -417,5 +433,6 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
         _soon.Stop();
         _main.Bridge.Players.CollectionChanged -= OnSourceChanged;
         _main.OnlinePlayersChanged -= OnOnlineChanged;
+        _main.Catalog.EntriesChanged -= OnOnlineChanged;
     }
 }

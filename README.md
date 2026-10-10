@@ -232,7 +232,7 @@ instead.
   with everything in one place: who and where they are, health (with bridge v11 part by part:
   bites, bleeding, fractures, bandages...), needs and moods, traits, skills (the level, with bridge v12 the
   experience towards the next one, and a + that adds some: `addxp`), what they wear, hold
-  and have attached (bridge v11), the inventory with its remove buttons, the account (last
+  and have attached (bridge v11), the inventory with its remove buttons (items show the icon the Catalog has for them), the account (last
   connection, kicks and bans, when the Accounts tab was read) and every action of the player menu
   as a column of buttons on the right. It follows the bridge's refreshes; one window per player, several can stay open.
 - Vehicle details (bridge v13): *Their vehicle…* in the player menu and in Character details, or a
