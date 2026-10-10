@@ -10,9 +10,10 @@ Windows, .NET 10, WPF.
 **[Download the latest version](https://github.com/FirekeeperPhate/SpiffoCON/releases/latest)**
 (then SpiffoCON updates itself: see [Updates](#updates)).
 
-![SpiffoCON: console, players, events and weather, map, catalog, kits, options, sandbox, logs, accounts, bridge, broadcast and maintenance tabs, with the online players sidebar](docs/SpiffoCON-demo.gif)
+![SpiffoCON: console, players, events and weather, accounts, catalog, kits, options, sandbox, logs, bridge (vehicles, animals, the notice of broken liquid containers), the window of a player with the right-click menu of an item, the window of a vehicle, map, broadcast and maintenance, with the online players sidebar](docs/SpiffoCON-demo.gif)
 
-*The tabs against a B42 test server (players, positions, chat, inventory and mod updates are sample data).*
+*The tabs, and the windows of a player and of a vehicle. The options, the sandbox and the map are those of
+a B42 test server; players, vehicles, animals, chat and mod updates are sample data.*
 
 ## Getting started
 
