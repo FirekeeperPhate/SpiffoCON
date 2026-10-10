@@ -311,6 +311,9 @@ public partial class MainWindow : Window
     }
 
     // on a row: not on the scroll bar, a column header or the empty space under the rows
+    // the animals are read when their list is opened (and by its own button), not at every refresh
+    void Animals_Expanded(object sender, RoutedEventArgs e) => _vm.Bridge.ReadAnimalsCommand.Execute(null);
+
     void BridgeVehicles_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         // not on the buttons of the row: a quick second click on Repair is not "open the window"

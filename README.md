@@ -196,13 +196,29 @@ instead.
   the players online carry, and at what is put down or stored in crates and shelves within 50
   squares of each; SpiffoCON says how many and where, asks, and each is replaced by a new, empty one
   of the same type in the same place (one put down keeps its spot and the way it is turned). One that
-  is worn or attached to a belt is left. Built things (a rain collector, a trough) are not looked at.
+  is worn or attached to a belt is left. Built things (a rain collector, a trough) come with bridge v15.
+  SpiffoCON also looks by itself when the bridge connects and when the first player is back after the
+  server was empty (as after a restart), and says so in the Bridge tab and with a notification when it
+  finds some.
 
   Bridge v14 also says the state of the items a player carries (the condition of weapons, clothes and
   anything damaged, what is left of a battery or a lighter, how full a container is, blood and dirt)
   and does things to them, for the menu on an item in Character details: repair (as new: the
   condition, the head of a tool, the edge of a blade; clothes mended and washed), clean, fill with
   water, empty, recharge. Each is told to the player's game the way the game's own actions do it.
+
+  Bridge v15 adds:
+  - built things to *Fix liquid containers*: a feeding trough that lost its water part (it has one
+    unless it holds feed; without it no water can be poured in) and anything built from a script
+    that gives it one, such as a rain collector. Their part is made again in place, the way the
+    game's own code does it; nothing is replaced;
+  - *Repair what they carry…* in the player menu: everything a player holds, wears and has
+    attached, as new, in one go;
+  - the animals of the players (not the wild ones) near the players online, in the Bridge tab:
+    kind, position, health, hunger and thirst, the hungry and thirsty ones first; one or all of
+    them fed and watered (hunger and thirst to nothing, as the game's own cheats set them), and the
+    feeding troughs filled with water (one with feed in it is left). Animals inside a hutch or a
+    trailer are not on the map and are not listed.
 
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
@@ -229,7 +245,7 @@ instead.
   markers, Bridge, Accounts, chat lines in Logs): their Character details, show in the Players tab or on the map,
   teleport to another player or bring one here, give a kit, lightning / thunder /
   horde, full heal and cure of the zombie infection, the vehicle they are in (its details, a complete repair),
-  the containers that lost their liquid part (bridge v14),
+  what they carry repaired at once (bridge v15), the containers that lost their liquid part (bridge v14),
   clean up around them, hair and beard (bridge),
   god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the name. Each
   reply shows in the status bar.

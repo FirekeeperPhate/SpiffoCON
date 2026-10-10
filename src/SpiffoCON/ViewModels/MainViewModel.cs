@@ -18,7 +18,7 @@ public sealed record ConsoleLine(DateTime Time, ConsoleKind Kind, string Text)
     public string TimeText => Time.ToString("HH:mm:ss");
 }
 
-public enum NotificationKind { Players, Chat, Connection, Deaths, Test }
+public enum NotificationKind { Players, Chat, Connection, Deaths, Containers, Test }
 
 /// <summary>A desktop notification; <paramref name="OnlyWhenInactive"/> skips it while SpiffoCON is the active window.</summary>
 public sealed record AppNotification(NotificationKind Kind, string Title, string Text, bool OnlyWhenInactive);
@@ -87,6 +87,7 @@ public sealed partial class MainViewModel : ObservableObject
         NotifyChatWords = notifications.ChatWords;
         NotifyConnection = notifications.Connection;
         NotifyDeaths = notifications.Deaths;
+        NotifyContainers = notifications.Containers;
         NotifyOnlyWhenInactive = notifications.OnlyWhenInactive;
 
         UpdateMessagePreview();
@@ -458,6 +459,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string notifyChatWords = "";
     [ObservableProperty] private bool notifyConnection;
     [ObservableProperty] private bool notifyDeaths;
+    [ObservableProperty] private bool notifyContainers;
     [ObservableProperty] private bool notifyOnlyWhenInactive;
 
     partial void OnNotifyPlayerJoinsChanged(bool value) => _book.Notifications.PlayerJoins = value;
@@ -465,6 +467,7 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnNotifyChatWordsChanged(string value) => _book.Notifications.ChatWords = value;
     partial void OnNotifyConnectionChanged(bool value) => _book.Notifications.Connection = value;
     partial void OnNotifyDeathsChanged(bool value) => _book.Notifications.Deaths = value;
+    partial void OnNotifyContainersChanged(bool value) => _book.Notifications.Containers = value;
     partial void OnNotifyOnlyWhenInactiveChanged(bool value) => _book.Notifications.OnlyWhenInactive = value;
 
     internal void Notify(NotificationKind kind, string title, string text)
@@ -478,6 +481,7 @@ public sealed partial class MainViewModel : ObservableObject
             NotificationKind.Chat => NotifyChat,
             NotificationKind.Connection => NotifyConnection,
             NotificationKind.Deaths => NotifyDeaths,
+            NotificationKind.Containers => NotifyContainers,
             _ => true,
         };
         if (wanted)

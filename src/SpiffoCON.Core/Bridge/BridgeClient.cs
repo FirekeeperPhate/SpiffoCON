@@ -326,6 +326,41 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return (data.GetProperty("done").GetInt32(), data.TryGetProperty("skipped", out var s) ? s.GetInt32() : 0);
     }
 
+    /// <summary>
+    /// What a player holds, wears and has attached, each as new (bridge v15): the Repair of
+    /// <see cref="ItemActionAsync"/> on all of it at once.
+    /// </summary>
+    public async Task<BridgeGearRepair> RepairGearAsync(string username) =>
+        (await SendAsync("repairgear", username).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeGearRepair) ?? new BridgeGearRepair();
+
+    static string Number(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>The animals of the players (not the wild ones) within a radius of each player online (bridge v15).</summary>
+    public async Task<BridgeAnimals> AnimalsAsync(int radius) =>
+        (await SendAsync("animals", Number(radius)).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeAnimals) ?? new BridgeAnimals();
+
+    /// <summary>
+    /// Hunger and thirst to nothing (bridge v15): for every animal <see cref="AnimalsAsync"/> lists, or for the
+    /// one with that id. Returns how many.
+    /// </summary>
+    public async Task<int> FeedAnimalsAsync(int radius, int? id = null)
+    {
+        var data = await (id is { } one
+            ? SendAsync("feedanimals", Number(radius), Number(one))
+            : SendAsync("feedanimals", Number(radius))).ConfigureAwait(false);
+        return data.GetProperty("fed").GetInt32();
+    }
+
+    /// <summary>
+    /// Water to the top in the feeding troughs within a radius of each player online (bridge v15). One with
+    /// feed in it holds no water and is left; returns those filled, those with feed, and those full already.
+    /// </summary>
+    public async Task<(int Filled, int WithFeed, int Full)> FillTroughsAsync(int radius)
+    {
+        var data = await SendAsync("filltroughs", Number(radius)).ConfigureAwait(false);
+        return (data.GetProperty("filled").GetInt32(), data.GetProperty("withFeed").GetInt32(), data.GetProperty("full").GetInt32());
+    }
+
     // the script name makes bridge v3 refuse another vehicle that got the same runtime id meanwhile
     /// <summary>
     /// Repairs a vehicle completely. With bridge v13 the parts that were gone (a wheel, a window, the
@@ -854,6 +889,9 @@ public sealed record BridgeFluidFix
     public int OnSquares { get; init; }
     public int InContainers { get; init; }
 
+    /// <summary>Bridge v15: built things (a feeding trough, a rain collector); their part is made again in place.</summary>
+    public int Built { get; init; }
+
     /// <summary>The players looked at, and the ground squares the server had loaded around them.</summary>
     public int Players { get; init; }
     public int Loaded { get; init; }
@@ -868,6 +906,72 @@ public sealed record BridgeFluidFix
         .Select(g => (Name: g.Key, Count: g.Sum(i => i.Count)))
         .OrderByDescending(g => g.Count).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
         .Select(g => $"{g.Count} × {g.Name}"));
+}
+
+/// <summary>Bridge v15: what repairing a player's gear did.</summary>
+public sealed record BridgeGearRepair
+{
+    /// <summary>What the player holds, wears and has attached.</summary>
+    public int Items { get; init; }
+
+    /// <summary>Of those, the ones that were not as new.</summary>
+    public int Repaired { get; init; }
+
+    public List<string> Names { get => _names ?? []; init => _names = value; }
+    readonly List<string>? _names;
+}
+
+/// <summary>Bridge v15: the animals of the players near the players online.</summary>
+public sealed record BridgeAnimals
+{
+    public List<BridgeAnimal> Animals { get => _animals ?? []; init => _animals = value; }
+    readonly List<BridgeAnimal>? _animals;
+
+    /// <summary>Ground squares the server had loaded in the area looked at.</summary>
+    public int Loaded { get; init; }
+    public int Radius { get; init; }
+}
+
+public sealed record BridgeAnimal
+{
+    public int? Id { get; init; }
+
+    /// <summary>The game's type ("cow", "hen"), and its name for players.</summary>
+    public string? Type { get; init; }
+    public string? TypeName { get; init; }
+    public string? Breed { get; init; }
+
+    /// <summary>The name its owner gave it, else the game's ("Holstein Cow").</summary>
+    public string? Name { get; init; }
+    public int? X { get; init; }
+    public int? Y { get; init; }
+    public int? Z { get; init; }
+
+    /// <summary>0 to 1.</summary>
+    public double? Health { get; init; }
+
+    /// <summary>0 (fed) to 1 (starving); the same for thirst.</summary>
+    public double? Hunger { get; init; }
+    public double? Thirst { get; init; }
+    public bool? Female { get; init; }
+    public bool? Baby { get; init; }
+
+    /// <summary>The animal zone (pasture) it belongs to, if any.</summary>
+    public string? Zone { get; init; }
+
+    static string Percent(double? v) => v is { } value ? Math.Round(Math.Clamp(value, 0, 1) * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%" : "";
+
+    /// <summary>"Cow · Holstein", "Hen (young)".</summary>
+    [JsonIgnore]
+    public string KindText => (TypeName ?? Type ?? "") + (string.IsNullOrEmpty(Breed) ? "" : " · " + Breed) + (Baby == true ? " (young)" : "");
+
+    [JsonIgnore] public string HealthText => Percent(Health);
+    [JsonIgnore] public string HungerText => Percent(Hunger);
+    [JsonIgnore] public string ThirstText => Percent(Thirst);
+
+    /// <summary>Hungry or thirsty enough to worry about.</summary>
+    [JsonIgnore] public bool IsHungry => Hunger is >= 0.6;
+    [JsonIgnore] public bool IsThirsty => Thirst is >= 0.6;
 }
 
 public sealed record BridgeBrokenFluid
@@ -1128,4 +1232,6 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgeVehicleDetails))]
 [JsonSerializable(typeof(BridgePartRepair))]
 [JsonSerializable(typeof(BridgeFluidFix))]
+[JsonSerializable(typeof(BridgeGearRepair))]
+[JsonSerializable(typeof(BridgeAnimals))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

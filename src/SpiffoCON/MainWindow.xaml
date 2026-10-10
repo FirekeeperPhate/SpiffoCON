@@ -1273,7 +1273,15 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
+
+                    <!-- found without being asked: containers that lost their liquid part -->
+                    <Border Grid.Row="5" Background="#30F2C14E" CornerRadius="6" Padding="12,8" Margin="0,8,0,0"
+                            Visibility="{Binding FluidsNotice, Converter={StaticResource NullToCollapsed}}">
+                        <TextBlock Text="{Binding FluidsNotice}" TextWrapping="Wrap" />
+                    </Border>
 
                     <!-- setup and connection -->
                     <DockPanel Margin="0,0,0,8">
@@ -1438,7 +1446,77 @@
                         </ListView>
                     </Expander>
 
-                    <TextBlock Grid.Row="4" Text="{Binding StatusText}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <Expander Grid.Row="4" Header="Animals near the players" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}" Expanded="Animals_Expanded">
+                        <DockPanel Margin="0,6,0,0">
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                <Button DockPanel.Dock="Left" Command="{Binding ReadAnimalsCommand}" ToolTip="Read the animals again"
+                                        FontFamily="{StaticResource IconFont}" Content="&#xE72C;" Padding="10,7" />
+                                <Button DockPanel.Dock="Left" Content="Feed and water all…" Command="{Binding FeedAllAnimalsCommand}" Margin="8,0,0,0"
+                                        ToolTip="The hunger and thirst of every animal listed go to nothing (asked first; bridge v15)" />
+                                <Button DockPanel.Dock="Left" Content="Fill the troughs…" Command="{Binding FillTroughsCommand}" Margin="8,0,0,0"
+                                        ToolTip="Water to the top in the feeding troughs near the players; one with feed in it is left (asked first; bridge v15)" />
+                                <TextBlock Text="{Binding AnimalsText}" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.75" TextWrapping="Wrap" />
+                            </DockPanel>
+                            <ListView ItemsSource="{Binding Animals}" MaxHeight="220" ItemContainerStyle="{StaticResource GridRow}" SelectionMode="Single"
+                                      Visibility="{Binding Animals.Count, Converter={StaticResource PositiveToVisible}}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Animal" Width="170" DisplayMemberBinding="{Binding Name}" />
+                                        <GridViewColumn Header="Kind" Width="190" DisplayMemberBinding="{Binding KindText}" />
+                                        <GridViewColumn Header="Position" Width="118">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock FontFamily="{StaticResource MonoFont}" FontSize="12">
+                                                        <Run Text="{Binding X, Mode=OneWay}" />,<Run Text="{Binding Y, Mode=OneWay}" />,<Run Text="{Binding Z, Mode=OneWay}" />
+                                                    </TextBlock>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Health" Width="64" DisplayMemberBinding="{Binding HealthText}" />
+                                        <GridViewColumn Header="Hunger" Width="74">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock x:Name="Value" Text="{Binding HungerText}" />
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding IsHungry}" Value="True">
+                                                            <Setter TargetName="Value" Property="Foreground" Value="#FF6B6B" />
+                                                            <Setter TargetName="Value" Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Thirst" Width="66">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock x:Name="Value" Text="{Binding ThirstText}" />
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding IsThirsty}" Value="True">
+                                                            <Setter TargetName="Value" Property="Foreground" Value="#FF6B6B" />
+                                                            <Setter TargetName="Value" Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Zone" Width="140" DisplayMemberBinding="{Binding Zone}" />
+                                        <GridViewColumn Width="80">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="Feed" FontSize="11" Padding="8,1" MinHeight="0"
+                                                            ToolTip="Hunger and thirst of this animal to nothing"
+                                                            Command="{Binding DataContext.FeedAnimalCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                            CommandParameter="{Binding}" />
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </DockPanel>
+                    </Expander>
+
+                    <TextBlock Grid.Row="6" Text="{Binding StatusText}" Margin="0,8,0,0" TextWrapping="Wrap" />
                 </Grid>
             </TabItem>
 
@@ -1771,6 +1849,8 @@
                                     <CheckBox Content="Connection lost and server back" IsChecked="{Binding NotifyConnection}" Margin="0,6,0,0" />
                                     <CheckBox Content="A player dies" IsChecked="{Binding NotifyDeaths}" Margin="0,6,0,0"
                                               ToolTip="Where and, when the game says, by whom (bridge v8)" />
+                                    <CheckBox Content="Containers that can't hold liquids any more" IsChecked="{Binding NotifyContainers}" Margin="0,6,0,0"
+                                              ToolTip="Buckets, bottles, troughs that lost their liquid part, as happens after a server crash: looked for when the bridge connects and when the first player is back (bridge v14)" />
                                     <CheckBox Content="Only while SpiffoCON is in the background" IsChecked="{Binding NotifyOnlyWhenInactive}" Margin="0,6,0,0" />
                                     <Button Content="Try one" Command="{Binding TestNotificationCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
                                 </StackPanel>

@@ -124,6 +124,9 @@ public sealed class NotificationSettings
     /// <summary>A player died (bridge v8).</summary>
     public bool Deaths { get; set; } = true;
 
+    /// <summary>Containers that lost their liquid part were found (bridge v14).</summary>
+    public bool Containers { get; set; } = true;
+
     public bool OnlyWhenInactive { get; set; } = true;
 }
 

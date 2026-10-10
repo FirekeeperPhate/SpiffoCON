@@ -160,6 +160,11 @@ public sealed partial class BridgeViewModel : ObservableObject
         ZombieCells.Clear();
         _lastDeath = null;
         _client = new BridgeClient(files);
+        // a new connection: the containers are looked at again, the animals read again
+        _fluidsCheckedAt = default;
+        FluidsNotice = "";
+        Animals.Clear();
+        AnimalsText = "";
         Source = files.Description;
         StatusText = "Asking the bridge...";
         await PingAsync(_client);
@@ -293,6 +298,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             }
             if (snapshot.Deaths is { } deaths)
                 ShowDeaths(deaths);
+            CheckFluidsWhenDue(client);
             StatusText = $"Updated at {DateTime.Now:HH:mm:ss}" + (AutoRefresh ? " · every 15 s" : "")
                 + (snapshot.Problem is { } problem ? $" · not available: {problem}" + (BridgeVersion < 4 && problem.Contains("vehicles") ? " (fixed in bridge v4: upload it to the Workshop)" : "") : "");
         }
@@ -967,6 +973,184 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    // ---- the containers that lost their liquid part, looked for without being asked ----
+
+    /// <summary>"7 containers have lost their liquid part (5 × Bucket, 2 × Water Bottle)": what the last look found, or nothing.</summary>
+    [ObservableProperty] private string fluidsNotice = "";
+
+    DateTime _fluidsCheckedAt;
+    int _playersAtLastCheck;
+
+    // After a restart the server has nobody on it, and so nothing loaded: the look that counts is the one when
+    // the first player is back. So: once when the bridge connects with someone online, and again each time
+    // the players go from none to some, but not more often than every ten minutes.
+    void CheckFluidsWhenDue(BridgeClient client)
+    {
+        int players = Players.Count;
+        bool back = players > 0 && _playersAtLastCheck == 0;
+        _playersAtLastCheck = players;
+        if (BridgeVersion < 14 || players == 0)
+            return;
+        if (_fluidsCheckedAt != default && (!back || DateTime.UtcNow - _fluidsCheckedAt < TimeSpan.FromMinutes(10)))
+            return;
+        _fluidsCheckedAt = DateTime.UtcNow;
+        _ = CheckFluidsAsync(client);
+    }
+
+    async Task CheckFluidsAsync(BridgeClient client)
+    {
+        try
+        {
+            var count = await client.FixFluidsAsync(apply: false, FluidsRadius);
+            if (!ReferenceEquals(client, _client))
+                return;
+            // what the player wears or has on the belt can't be fixed from here: not worth an alarm
+            int fixable = count.Found - count.Skipped;
+            if (fixable <= 0)
+            {
+                FluidsNotice = "";
+                return;
+            }
+            FluidsNotice = $"{fixable} container{(fixable == 1 ? " has" : "s have")} lost the part that holds liquids ({count.Describe()}): "
+                + "they can't be filled any more. Fix liquid containers… puts them right.";
+            _main.Notify(NotificationKind.Containers, "Broken liquid containers",
+                $"{fixable} container{(fixable == 1 ? "" : "s")} can't hold liquids any more ({count.Describe()}). Bridge tab: Fix liquid containers…");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // a look nobody asked for: its failure is not news
+        }
+    }
+
+    // ---- what a player carries, repaired in one go (bridge v15) ----
+
+    /// <summary>Why what came with bridge v15 (repair a player's gear, the animals) can't be done now (null: it can).</summary>
+    public string? V15Problem =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 15 ? $"This needs bridge v15 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>Repairs what a player holds, wears and has attached, after asking. Returns what happened.</summary>
+    internal async Task<string?> RepairGearAsync(string username)
+    {
+        if (V15Problem is { } problem)
+            return problem;
+        var client = _client!;
+        if (_main.Confirm?.Invoke($"Repair everything {username} holds, wears and has attached?\n\n"
+                + "Each goes back to new: the condition, the head of a tool, the edge of a blade; clothes are mended, their patches taken off, and washed.") != true)
+            return null;
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
+        try
+        {
+            var done = await client.RepairGearAsync(username);
+            return done.Items == 0 ? $"{username} holds and wears nothing."
+                : done.Repaired == 0 ? $"Nothing to repair: the {done.Items} thing{(done.Items == 1 ? "" : "s")} {username} holds and wears {(done.Items == 1 ? "is" : "are")} as new."
+                : $"{done.Repaired} of the {done.Items} things {username} holds and wears repaired: {string.Join(", ", done.Names)}.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not repair them: " + ex.Message;
+        }
+    }
+
+    // ---- animals (bridge v15) ----
+
+    /// <summary>How far around each player the animals and the troughs are looked for: as far as the bridge goes.</summary>
+    public const int AnimalsRadius = 100;
+
+    public ObservableCollection<BridgeAnimal> Animals { get; } = [];
+
+    /// <summary>"12 animals, 3 hungry, 1 thirsty", or why there are none to show.</summary>
+    [ObservableProperty] private string animalsText = "";
+
+    [RelayCommand]
+    private async Task ReadAnimalsAsync()
+    {
+        if (V15Problem is { } problem)
+        {
+            Animals.Clear();
+            AnimalsText = problem;
+            return;
+        }
+        var client = _client!;
+        try
+        {
+            var read = await client.AnimalsAsync(AnimalsRadius);
+            if (!ReferenceEquals(client, _client))
+                return;
+            Animals.Clear();
+            // the ones that need something first
+            foreach (var a in read.Animals.OrderByDescending(a => Math.Max(a.Hunger ?? 0, a.Thirst ?? 0)).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase))
+                Animals.Add(a);
+            int hungry = read.Animals.Count(a => a.IsHungry), thirsty = read.Animals.Count(a => a.IsThirsty);
+            AnimalsText = read.Loaded == 0 ? "Nobody is online: the server only keeps the surroundings of players."
+                : read.Animals.Count == 0 ? $"No animals of the players within {read.Radius} squares of the players online (wild ones, and those in a hutch or a trailer, are not listed)."
+                : $"{read.Animals.Count} animal{(read.Animals.Count == 1 ? "" : "s")} within {read.Radius} squares of the players online"
+                    + (hungry + thirsty == 0 ? ", none hungry or thirsty" : $": {hungry} hungry, {thirsty} thirsty")
+                    + $" · read at {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            AnimalsText = "The bridge could not list the animals: " + ex.Message;
+        }
+    }
+
+    async Task AnimalsActionAsync(string? confirm, Func<BridgeClient, Task<string>> action)
+    {
+        if (V15Problem is { } problem)
+        {
+            StatusText = problem;
+            return;
+        }
+        var client = _client!;
+        if (confirm is not null && _main.Confirm?.Invoke(confirm) != true)
+            return;
+        if (!ReferenceEquals(client, _client))
+        {
+            StatusText = ConnectionChanged;
+            return;
+        }
+        string result;
+        try
+        {
+            result = await action(client);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            result = "The bridge could not do it: " + ex.Message;
+        }
+        await ReadAnimalsAsync();
+        StatusText = result;
+    }
+
+    /// <summary>One animal fed and watered (no question: one animal, and the click says which).</summary>
+    [RelayCommand]
+    private Task FeedAnimalAsync(BridgeAnimal? animal) => animal?.Id is not int id ? Task.CompletedTask : AnimalsActionAsync(null,
+        async c => await c.FeedAnimalsAsync(AnimalsRadius, id) > 0 ? $"{animal.Name ?? animal.KindText} fed and watered." : "Nothing done.");
+
+    [RelayCommand]
+    private Task FeedAllAnimalsAsync() => AnimalsActionAsync(
+        $"Feed and water every animal of the players within {AnimalsRadius} squares of the players online?\n\n"
+            + "Their hunger and thirst go to nothing. The feed and the water in the troughs are not touched.",
+        async c =>
+        {
+            int fed = await c.FeedAnimalsAsync(AnimalsRadius);
+            return fed == 0 ? "No animals to feed there." : $"{fed} animal{(fed == 1 ? "" : "s")} fed and watered.";
+        });
+
+    [RelayCommand]
+    private Task FillTroughsAsync() => AnimalsActionAsync(
+        $"Fill with water the feeding troughs within {AnimalsRadius} squares of the players online?\n\n"
+            + "A trough with feed in it holds no water and is left as it is.",
+        async c =>
+        {
+            var (filled, withFeed, full) = await c.FillTroughsAsync(AnimalsRadius);
+            return (filled == 0 ? "No trough filled" : $"{filled} trough{(filled == 1 ? "" : "s")} filled with water")
+                + (full > 0 ? $", {full} full already" : "")
+                + (withFeed > 0 ? $", {withFeed} left (feed in {(withFeed == 1 ? "it" : "them")}, or no water part: Fix liquid containers…)" : "") + ".";
+        });
+
     /// <summary>Why the containers that lost their liquid part can't be looked for now (null: they can): bridge v14.</summary>
     public string? V14Problem =>
         _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
@@ -1012,17 +1196,22 @@ public sealed partial class BridgeViewModel : ObservableObject
                 where.Add($"{count.OnSquares} put down on the ground or on furniture");
             if (count.InContainers > 0)
                 where.Add($"{count.InContainers} in crates, shelves or fridges");
+            if (count.Built > 0)
+                where.Add($"{count.Built} built (a feeding trough, a rain collector)");
             string question = $"{count.Found} container{S(count.Found)} lost the part that holds liquids, and can't be filled: {count.Describe()}.\n\n"
                 + $"{string.Join(", ", where)}; looked at what {who} {carry} and at {FluidsRadius} squares around {around}.\n\n"
-                + (count.Found == 1 ? "Replace it with a new, empty one of the same type, in the same place?"
-                    : "Replace each with a new, empty one of the same type, in the same place?")
+                + (count.Built == count.Found ? "Give " + (count.Found == 1 ? "it its" : "each its") + " part back? Nothing is replaced: built things stay as they are."
+                    : (count.Found == 1 ? "Replace it with a new, empty one of the same type, in the same place?"
+                        : "Replace each with a new, empty one of the same type, in the same place?")
+                        + (count.Built > 0 ? " The built ones are not replaced: their part is made again in place." : ""))
                 + (count.Skipped > 0 ? $"\n\n{count.Skipped} worn or attached (a bottle on a belt) will be left: the player has to take it off first." : "");
             if (_main.Confirm?.Invoke(question) != true)
                 return null;
             if (!ReferenceEquals(client, _client))
                 return ConnectionChanged;
             var done = await client.FixFluidsAsync(apply: true, FluidsRadius, username);
-            return (done.Fixed == 0 ? "No container replaced." : $"{done.Fixed} container{S(done.Fixed)} replaced with {(done.Fixed == 1 ? "a whole one" : "whole ones")}.")
+            FluidsNotice = "";
+            return (done.Fixed == 0 ? "No container fixed." : $"{done.Fixed} container{S(done.Fixed)} fixed.")
                 + (done.Skipped > 0 ? $" {done.Skipped} worn or attached left as {(done.Skipped == 1 ? "it is" : "they are")}." : "")
                 + (done.Failed > 0 ? $" {done.Failed} could not be replaced: the game made no whole item of that type." : "");
         }

@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(14, await _client.PingAsync());
+        Assert.Equal(15, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -753,6 +753,84 @@ public sealed class BridgeScriptTests
         Assert.Equal((0, 1), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Recharge, "Base.Nails", bag));
         await Assert.ThrowsAsync<BridgeException>(() => _client.ItemActionAsync("rj", BridgeClient.ItemAction.Repair, "Base.WoodAxe", "Inventory"));
         await Assert.ThrowsAsync<BridgeException>(() => _client.ItemActionAsync("ghost", BridgeClient.ItemAction.Repair, "Base.WoodAxe", bag));
+    }
+
+    [Fact]
+    public async Task Built_things_that_lost_their_water_part_get_it_back_in_place()
+    {
+        _game.DoString("BUILT()");
+
+        // a trough without its part and without feed, and two rain collectors: one lost that part only, one all
+        // of them. A trough with feed has no water part by design; the side square of a wide tank, a chair and
+        // a wall are nobody's business
+        var count = await _client.FixFluidsAsync(apply: false, radius: 5, username: "rj");
+        Assert.Equal((3, 3, 0), (count.Found, count.Built, count.OnSquares + count.InContainers + count.InInventories));
+        Assert.Equal("2 × Rain Collector Barrel, 1 × Feeding Trough", count.Describe());
+        Assert.Empty(Told());
+
+        // each made again the way the game does it, and sent to the players
+        var done = await _client.FixFluidsAsync(apply: true, radius: 5, username: "rj");
+        Assert.Equal((3, 3, 0), (done.Found, done.Fixed, done.Failed));
+        var told = Told();
+        Assert.Contains("createFluidContainer broken trough", told);
+        Assert.Contains("syncEntity broken trough", told);
+        Assert.Contains("addComponent Rain Collector Barrel", told);
+        Assert.Contains("createEntity Rain Collector Barrel", told);
+        Assert.Equal(2, told.Count(l => l == "syncEntity Rain Collector Barrel"));
+        Assert.True(_game.DoString("return TROUGH_BROKEN.fluid ~= nil and BARREL_PART.fluid ~= nil and BARREL_ALL.fluid ~= nil").Boolean);
+        Assert.Equal(0, (await _client.FixFluidsAsync(apply: false, radius: 5, username: "rj")).Found);
+    }
+
+    [Fact]
+    public async Task What_a_player_holds_wears_and_has_attached_is_repaired_in_one_go()
+    {
+        _game.DoString("GEARED()");
+        var done = await _client.RepairGearAsync("rj");
+        // four things (the axe is in both hands: once); the shoes were as new already
+        Assert.Equal((4, 3), (done.Items, done.Repaired));
+        Assert.Equal(["Axe", "Hunting Knife", "Padded Jacket"], done.Names.Order());
+        Assert.True(_game.DoString("local g = GEAR_ITEMS return g.axe.condition == 10 and g.axe.sharp == 1 and g.knife.condition == 10 and g.jacket.holes == 0").Boolean);
+        var told = Told();
+        Assert.Equal(4, told.Count(l => l.StartsWith("syncFields ")));
+        Assert.Contains("syncVisuals rj", told);
+
+        // nothing left to do; nothing for someone who is not there
+        Assert.Equal((4, 0), ((await _client.RepairGearAsync("rj")) is var again ? (again.Items, again.Repaired) : default));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.RepairGearAsync("ghost"));
+    }
+
+    [Fact]
+    public async Task The_animals_of_the_players_are_listed_fed_and_their_troughs_filled()
+    {
+        _game.DoString("ANIMALS_HERE() BUILT()");
+
+        // near the players, alive and not wild: the cow and the hen
+        var near = await _client.AnimalsAsync(5);
+        Assert.Equal([1, 2], near.Animals.Select(a => a.Id!.Value).Order());
+        var cow = near.Animals.Single(a => a.Id == 1);
+        Assert.Equal(("cow", "Cow", "Holstein", "Bessie", "North field"), (cow.Type, cow.TypeName, cow.Breed, cow.Name, cow.Zone));
+        Assert.Equal((101, 101, 0.8, 0.9, 0.2, true, false), (cow.X, cow.Y, cow.Health, cow.Hunger, cow.Thirst, cow.Female, cow.Baby));
+        var hen = near.Animals.Single(a => a.Id == 2);
+        // a type the game has no name for is shown as it is
+        Assert.Equal(("hen", "Hen", 0.75), (hen.TypeName, hen.Name, hen.Thirst));
+        Assert.Equal(3, (await _client.AnimalsAsync(20)).Animals.Count);
+
+        // one animal, then all of them: the wild one and the far one are left as they were
+        Assert.Equal(1, await _client.FeedAnimalsAsync(5, id: 2));
+        Assert.Equal((0.0, 0.0), ((await _client.AnimalsAsync(5)).Animals.Single(a => a.Id == 2) is var fed ? (fed.Hunger, fed.Thirst) : default));
+        Assert.Equal(0.9, (await _client.AnimalsAsync(5)).Animals.Single(a => a.Id == 1).Hunger);
+        Assert.Equal(2, await _client.FeedAnimalsAsync(5));
+        Assert.Equal(0.0, (await _client.AnimalsAsync(5)).Animals.Single(a => a.Id == 1).Hunger);
+        Assert.Equal(0.5, Lua("ANIMALS[3].hunger"));
+        Assert.Equal(0.6, Lua("ANIMALS[5].hunger"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.FeedAnimalsAsync(5, id: 99));
+        Told();
+
+        // troughs: the whole one to the top; the one with feed and the one without its part are left
+        Assert.Equal((1, 2, 0), await _client.FillTroughsAsync(5));
+        Assert.Equal(40, Lua("TROUGH_WHOLE.water"));
+        Assert.Equal(["syncEntity whole trough"], Told());
+        Assert.Equal((0, 2, 1), await _client.FillTroughsAsync(5));
     }
 
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>

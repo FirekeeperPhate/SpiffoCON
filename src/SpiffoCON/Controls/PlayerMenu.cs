@@ -107,6 +107,8 @@ public static class PlayerMenu
             Tip(actions.HealProblem(player), null));
         Add(items, "Cure zombie infection…", () => actions.CureInfectionAsync(player), online && actions.CureProblem(player) is null,
             Tip(actions.CureProblem(player), "Ends the zombie infection of a bite or scratch, which Heal completely does not"));
+        Add(items, "Repair what they carry…", () => actions.RepairGearAsync(player), online && actions.GearProblem(player) is null,
+            Tip(actions.GearProblem(player), "Everything they hold, wear and have attached, as new: weapons, tools, clothes (mended and washed)"));
         Add(items, "Their vehicle…", () => actions.ShowVehicle(player), online && actions.VehicleDetailsProblem(player) is null,
             Tip(actions.VehicleDetailsProblem(player), "The vehicle they are in, part by part: conditions, what is missing, a repair for each"));
         Add(items, "Repair their vehicle…", () => actions.RepairVehicleAsync(player), online && actions.VehicleProblem(player) is null,

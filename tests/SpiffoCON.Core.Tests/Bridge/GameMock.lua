@@ -63,7 +63,8 @@ local function item(fullType, name)
 	end } end
 	return it
 end
-ComponentType = { FluidContainer = "FluidContainer" }
+-- the kind of part that holds liquids; it can make one from the script of an entity (bridge v15)
+ComponentType = { FluidContainer = { CreateComponentFromScript = function(self, script) return { fromScript = script } end } }
 FLUID_TYPES = { ["Base.Bucket"] = true, ["Base.WaterBottle"] = true, ["Base.OldPot"] = true }
 local function bag(fullType, name)
 	local b = item(fullType, name)
@@ -153,7 +154,8 @@ SAFE_SQUARES = {}
 KNOWN_TYPES = { ["Base.Axe"] = true, ["Base.Nails"] = true, ["Base.WaterBottle"] = true }
 SPAWNED_AT = {}
 local function square(x, y, z)
-	local sq = { x = x, y = y, z = z, corpses = {}, ground = {}, fires = {}, furniture = {} }
+	local sq = { x = x, y = y, z = z, corpses = {}, ground = {}, fires = {}, furniture = {}, animals = {} }
+	sq.getAnimals = function() return list(sq.animals) end
 	sq.getX = function() return x end
 	sq.getY = function() return y end
 	sq.getZ = function() return z end
@@ -768,4 +770,129 @@ function GEAR()
 	can.fluid = liquid(4, 8, false)
 	put(wearing(item("Base.Nails", "Nails"), 10, 10))
 	GEAR_BAG = kit.inner
+end
+
+-- ---- bridge v15: built things that hold water, the gear of a player, animals ----
+FluidType = { Water = "Water" }
+-- the entity scripts of the sprites that have one: a rain collector gives its object a FluidContainer; a
+-- wide tank gives it to its main square only
+local ENTITY_SCRIPTS = {
+	carpentry_02_54 = { master = true, part = { isoMasterOnly = function() return true end } },
+	industry_02_10 = { master = false, part = { isoMasterOnly = function() return true end } },
+	furniture_01_1 = {},
+}
+SpriteConfigManager = { getObjectInfoFromSprite = function(sprite)
+	local script = ENTITY_SCRIPTS[sprite]
+	if not script then return nil end
+	script.getComponentScriptFor = function(self, kind) return kind == ComponentType.FluidContainer and script.part or nil end
+	return {
+		getScript = function() return { getParent = function() return script end } end,
+		getFaceForSprite = function(self, name) return { getTileInfoForSprite = function() return { isMaster = function() return script.master == true end } end } end,
+	}
+end }
+GameEntityFactory = {
+	AddComponent = function(object, sync, part) assert(sync == true); object.fluid = part; note("addComponent " .. object.name) end,
+	CreateIsoObjectEntity = function(object, script, first) assert(first == false); object.fluid, object.components = {}, true; note("createEntity " .. object.name) end,
+}
+-- a built thing: the sprite says what it is; fluid is its part that holds liquids
+local function builtThing(name, sprite, fluid, components)
+	local o = { name = name, fluid = fluid, components = components }
+	o.getSprite = function() return { getName = function() return sprite end } end
+	o.getFluidContainer = function() return o.fluid end
+	o.hasComponents = function() return o.components end
+	o.getProperties = function() return { get = function(self, key) return key == "CustomName" and name or nil end } end
+	o.sendSyncEntity = function(self, to) note("syncEntity " .. name) end
+	return o
+end
+local function trough(name, fluid, feed)
+	local t = builtThing(name, "location_farm_accesories_01_4", fluid, true)
+	t.class = "IsoFeedingTrough"
+	t.feed = container(name)
+	for i = 1, feed or 0 do t.feed:AddItem(item("Base.AnimalFeedBag", "Feed")) end
+	t.feed.isEmpty = function() return t.feed.count() == 0 end
+	t.getContainer = function() return t.feed end
+	t.water, t.maxWater = 0, 40
+	t.createFluidContainer = function() t.fluid = {}; note("createFluidContainer " .. name) end
+	t.getMaxWater = function() return t.fluid and t.maxWater or 0 end
+	t.getWater = function() return t.fluid and t.water or 0 end
+	t.addWater = function(self, kind, amount) assert(kind == FluidType.Water and t.fluid); t.water = t.water + amount end
+	t.checkOverlayAfterAnimalEat = function() end
+	return t
+end
+function BUILT()
+	local function put(x, y, thing) table.insert(at(x, y, 0).furniture, thing); return thing end
+	-- near rj: a trough without its part, one with feed (no part by design), a whole one half full
+	TROUGH_BROKEN = put(100, 101, trough("broken trough", nil, 0))
+	put(100, 104, trough("trough with feed", nil, 2))
+	TROUGH_WHOLE = put(101, 104, trough("whole trough", {}, 0))
+	TROUGH_WHOLE.water = 15
+	-- a rain collector that lost only that part, one that lost every part, a whole one
+	BARREL_PART = put(99, 101, builtThing("Rain Collector Barrel", "carpentry_02_54", nil, true))
+	BARREL_ALL = put(99, 103, builtThing("Rain Collector Barrel", "carpentry_02_54", nil, false))
+	put(98, 103, builtThing("Rain Collector Barrel", "carpentry_02_54", {}, true))
+	-- not ours to judge: the side square of a wide tank, a chair, a thing with no entity script
+	put(98, 101, builtThing("Tank", "industry_02_10", nil, true))
+	put(98, 102, builtThing("Chair", "furniture_01_1", nil, true))
+	put(97, 102, builtThing("Wall", "walls_01_1", nil, false))
+end
+
+-- rj holds, wears and has attached things that remember what is done to them
+function GEARED()
+	local function worn(it) return { getLocation = function() return "loc" end, getItem = function() return it end } end
+	local axe = wearing(item("Base.Axe", "Axe"), 3, 10)
+	axe.class = "HandWeapon"
+	axe.applyMaxSharpness = function() axe.sharp = 1 end
+	axe.setTimesRepaired = function(self, v) axe.repaired = v end
+	local jacket = wearing(item("Base.Jacket_Padded", "Padded Jacket"), 10, 10)
+	jacket.class = "Clothing"
+	jacket.holes = 2
+	jacket.isDirty = function() return false end
+	jacket.isBloody = function() return false end
+	jacket.getHolesNumber = function() return jacket.holes end
+	jacket.fullyRestore = function() jacket.holes = 0 end
+	local shoes = wearing(item("Base.Shoes_Black", "Black Shoes"), 10, 10)
+	local knife = wearing(item("Base.HuntingKnife", "Hunting Knife"), 5, 10)
+	rj.getPrimaryHandItem = function() return axe end
+	rj.getSecondaryHandItem = function() return axe end
+	rj.getWornItems = function() return list({ worn(jacket), worn(shoes) }) end
+	rj.getAttachedItems = function() return list({ worn(knife) }) end
+	GEAR_ITEMS = { axe = axe, jacket = jacket, shoes = shoes, knife = knife }
+end
+
+-- animals: a hungry cow and a thirsty hen near rj, a deer (wild), a dead one, one far from everybody
+ANIMALS = {}
+function getAnimal(id) return ANIMALS[id] end
+function ANIMALS_HERE()
+	local function animal(id, kind, name, x, y, hunger, thirst, wild, dead)
+		local a = { id = id, hunger = hunger, thirst = thirst }
+		a.getAnimalID = function() return id end
+		a.getAnimalType = function() return kind end
+		a.getData = function() return { getBreed = function() return { getName = function() return "holstein" end } end } end
+		a.getFullName = function() return name end
+		a.getCustomName = function() return id == 1 and "Bessie" or nil end
+		a.getX = function() return x + 0.5 end
+		a.getY = function() return y + 0.5 end
+		a.getZ = function() return 0 end
+		a.getHealth = function() return 0.8 end
+		a.isFemale = function() return true end
+		a.isBaby = function() return false end
+		a.isWild = function() return wild == true end
+		a.isDead = function() return dead == true end
+		a.getDZone = function() return id == 1 and { getName = function() return "North field" end } or nil end
+		a.getStats = function() return {
+			get = function(self, s) if s == CharacterStat.HUNGER then return a.hunger end return a.thirst end,
+			set = function(self, s, v) if s == CharacterStat.HUNGER then a.hunger = v else a.thirst = v end end,
+		} end
+		ANIMALS[id] = a
+		local sq = at(x, y, 0)
+		if sq then table.insert(sq.animals, a) end
+		return a
+	end
+	animal(1, "cow", "Cow", 101, 101, 0.9, 0.2)
+	animal(2, "hen", "Hen", 102, 103, 0.1, 0.75)
+	animal(3, "deer", "Deer", 100, 105, 0.5, 0.5, true)
+	animal(4, "hen", "Hen", 103, 103, 1, 1, false, true)
+	animal(5, "cow", "Cow", 110, 110, 0.6, 0.6)
+	TRANSLATIONS.IGUI_AnimalType_cow = "Cow"
+	TRANSLATIONS.IGUI_Breed_holstein = "Holstein"
 end

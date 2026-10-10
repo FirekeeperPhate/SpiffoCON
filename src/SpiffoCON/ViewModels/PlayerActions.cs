@@ -204,6 +204,17 @@ public sealed class PlayerActions(MainViewModel main)
         : BridgeInfo(player) is not { } info ? "The bridge does not list this player (online?)."
         : main.Bridge.VehicleOfProblem(info);
 
+    /// <summary>Why what a player holds and wears can't be repaired at once (null: it can): bridge v15, player in the game and alive.</summary>
+    public string? GearProblem(string player) => main.Bridge.V15Problem ?? PlayerProblem(player);
+
+    public async Task RepairGearAsync(string player)
+    {
+        if (BridgeInfo(player) is not { } info)
+            return;
+        if (await main.Bridge.RepairGearAsync(info.Username) is { } result)
+            main.StatusText = result;
+    }
+
     /// <summary>Why a player's containers without their liquid part can't be looked for (null: they can): bridge v14, player in the game.</summary>
     public string? FluidsProblem(string player) =>
         main.Bridge.V14Problem ?? (BridgeInfo(player) is null ? "The bridge does not list this player (online?)." : null);

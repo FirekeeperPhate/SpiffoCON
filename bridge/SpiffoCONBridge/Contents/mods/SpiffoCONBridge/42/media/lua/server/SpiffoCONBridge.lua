@@ -2,7 +2,8 @@
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
 -- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
 -- put items on the ground, remove wrecks, set hair and beard, cure the zombie infection, replace the
--- containers that lost their liquid part) and keeps the deaths of players.
+-- containers that lost their liquid part, repair what a player carries, feed and water the animals) and
+-- keeps the deaths of players.
 -- Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
@@ -12,7 +13,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 14
+local VERSION = 15
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -562,6 +563,45 @@ local function itemAction(username, action, fullType, container)
 	return { done = done, skipped = skipped }
 end
 
+-- repairgear <username>: what the player holds, wears and has attached, each as new (bridge v15): the
+-- repair of itemaction on every one of them, in one go
+local function repairGear(username)
+	local p = requireLivingPlayer(username)
+	local items, seen = {}, {}
+	local function add(item)
+		if item and not seen[item] then
+			seen[item] = true
+			items[#items + 1] = item
+		end
+	end
+	try(function() add(p:getPrimaryHandItem()) add(p:getSecondaryHandItem()) end)
+	try(function()
+		local worn = p:getWornItems()
+		for i = 0, worn:size() - 1 do add(worn:get(i):getItem()) end
+	end)
+	try(function()
+		local attached = p:getAttachedItems()
+		for i = 0, attached:size() - 1 do add(attached:get(i):getItem()) end
+	end)
+	local done, names = 0, array()
+	for _, item in ipairs(items) do
+		-- only what was not as new is counted and named
+		local worn = try(function() return item:getCondition() < item:getConditionMax() end)
+			or try(function() return item:isDirty() or item:isBloody() end)
+			or try(function() return item:getHolesNumber() > 0 end)
+		if try(ITEM_ACTIONS.repair, item) == true then
+			item:syncItemFields()
+			if worn then
+				done = done + 1
+				names[#names + 1] = try(function() return item:getDisplayName() end) or item:getFullType()
+			end
+		end
+	end
+	try(function() syncVisuals(p) end)
+	audit("repaired what " .. username .. " wears and holds (" .. #items .. " items, " .. done .. " needed it)")
+	return { items = #items, repaired = done, names = names }
+end
+
 -- ids are runtime ids, given again to other vehicles as areas unload and load: when SpiffoCON
 -- says which model it means (bridge v3), a different vehicle under that id is refused
 local function requireVehicle(id, expectedScript)
@@ -1023,11 +1063,222 @@ local function replaceOnSquare(sq, object)
 	return true
 end
 
+-- ---- animals (bridge v15) ----
+-- The animals of the players (not the wild ones) on the squares the server has loaded around them. Hunger and
+-- thirst are stats of the animal, 0 (fine) to 1; the game's own cheats set them the same way
+-- (Commands.animal.setHunger / setThirst). Animals inside a hutch or a trailer are not on a square: not listed.
+
+local function animalInfo(a)
+	local kind = try(function() return a:getAnimalType() end)
+	local breed = try(function() return a:getData():getBreed():getName() end)
+	return {
+		id = try(function() return a:getAnimalID() end),
+		type = kind,
+		typeName = kind and try(function() return getTextOrNull("IGUI_AnimalType_" .. kind) end) or kind,
+		breed = breed and (try(function() return getTextOrNull("IGUI_Breed_" .. breed) end) or breed) or nil,
+		name = try(function() return a:getCustomName() end) or try(function() return a:getFullName() end),
+		x = try(function() return math.floor(a:getX()) end),
+		y = try(function() return math.floor(a:getY()) end),
+		z = try(function() return math.floor(a:getZ()) end),
+		health = try(function() return hundredths(a:getHealth()) end),
+		hunger = try(function() return hundredths(a:getStats():get(CharacterStat.HUNGER)) end),
+		thirst = try(function() return hundredths(a:getStats():get(CharacterStat.THIRST)) end),
+		female = try(function() return a:isFemale() end),
+		baby = try(function() return a:isBaby() end),
+		zone = try(function() local zone = a:getDZone() return zone and zone:getName() end),
+	}
+end
+
+-- calls visit(animal) for every animal of the players within the radius of each player online, once each;
+-- returns the ground squares looked at
+local function eachAnimal(radius, visit)
+	local seenSquares, seenAnimals, loaded = {}, {}, 0
+	local online = getOnlinePlayers()
+	for i = 0, online:size() - 1 do
+		local p = online:get(i)
+		loaded = loaded + eachSquare(math.floor(p:getX()), math.floor(p:getY()), radius, function(sq)
+			local key = sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ()
+			if seenSquares[key] then return end
+			seenSquares[key] = true
+			local animals = try(function() return sq:getAnimals() end)
+			if not animals then return end
+			for n = 0, animals:size() - 1 do
+				local a = animals:get(n)
+				if not seenAnimals[a] and not try(function() return a:isWild() end) and not try(function() return a:isDead() end) then
+					seenAnimals[a] = true
+					visit(a)
+				end
+			end
+		end)
+	end
+	return loaded
+end
+
+local function animalRadius(action, radius)
+	radius = tonumber(radius)
+	if not radius or not (radius >= 0) then error(action .. " needs a radius") end
+	return math.max(1, math.min(MAX_AREA_RADIUS, math.floor(radius)))
+end
+
+-- animals <radius>
+local function listAnimals(radius)
+	radius = animalRadius("animals", radius)
+	local list = array()
+	local loaded = eachAnimal(radius, function(a) list[#list + 1] = animalInfo(a) end)
+	return { animals = list, loaded = loaded, radius = radius }
+end
+
+local function feedAnimal(a)
+	a:getStats():set(CharacterStat.HUNGER, 0)
+	a:getStats():set(CharacterStat.THIRST, 0)
+	return true
+end
+
+-- feedanimals <radius> [id]: hunger and thirst to nothing, for every animal listed or for the one with that id
+local function feedAnimals(radius, id)
+	radius = animalRadius("feedanimals", radius)
+	id = tonumber(id)
+	local fed = 0
+	if id then
+		local a = getAnimal(id)
+		if not a then error("no animal with id " .. tostring(id) .. " (it may be in an area no player has loaded)") end
+		feedAnimal(a)
+		fed = 1
+		audit("fed and watered the animal " .. (try(function() return a:getFullName() end) or tostring(id)))
+	else
+		eachAnimal(radius, function(a)
+			if try(feedAnimal, a) then fed = fed + 1 end
+		end)
+		audit("fed and watered " .. fed .. " animals within " .. radius .. " squares of the players online")
+	end
+	return { fed = fed }
+end
+
+-- filltroughs <radius>: water to the top in every trough within the radius of the players online that holds
+-- water (one with feed in it is left: water would mean throwing the feed away), as the game's own
+-- "add water" does (Commands.feedingThrough.addWaterDebug)
+local function fillTroughs(radius)
+	radius = animalRadius("filltroughs", radius)
+	local filled, withFeed, full, seen = 0, 0, 0, {}
+	local online = getOnlinePlayers()
+	for i = 0, online:size() - 1 do
+		local p = online:get(i)
+		eachSquare(math.floor(p:getX()), math.floor(p:getY()), radius, function(sq)
+			local key = sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ()
+			if seen[key] then return end
+			seen[key] = true
+			local things = sq:getObjects()
+			for n = 0, things:size() - 1 do
+				local trough = things:get(n)
+				if instanceof(trough, "IsoFeedingTrough") then
+					if not try(function() return trough:getFluidContainer() end) then
+						withFeed = withFeed + 1
+					else
+						local missing = try(function() return trough:getMaxWater() - trough:getWater() end) or 0
+						if missing > 0.01 then
+							if try(function()
+								trough:addWater(FluidType.Water, missing)
+								trough:sendSyncEntity(nil)
+								trough:checkOverlayAfterAnimalEat()
+								return true
+							end) then filled = filled + 1 end
+						else
+							full = full + 1
+						end
+					end
+				end
+			end
+		end)
+	end
+	audit("filled " .. filled .. " troughs with water within " .. radius .. " squares of the players online")
+	return { filled = filled, withFeed = withFeed, full = full }
+end
+
+-- Built things hold water the same way, and lose it the same way (bridge v15).
+-- A feeding trough (IsoFeedingTrough) has the part unless it holds feed: its own code drops it when feed goes
+-- in and makes it again when the last of it is taken out; without it nothing can be poured in (addWater
+-- fails on the missing part). Anything else built from an entity script that gives it a FluidContainer (a
+-- rain collector) should have one.
+
+-- the entity script of the sprite of an object, when it gives the object a FluidContainer: asked once per sprite
+local builtScripts = {}
+local function fluidScriptOf(object)
+	local sprite = try(function() return object:getSprite():getName() end)
+	if not sprite then return nil end
+	local known = builtScripts[sprite]
+	if known == nil then
+		known = try(function()
+			local info = SpriteConfigManager.getObjectInfoFromSprite(sprite)
+			local script = info and info:getScript() and info:getScript():getParent()
+			local part = script and script:getComponentScriptFor(ComponentType.FluidContainer)
+			if not part then return nil end
+			if part:isoMasterOnly() then
+				-- a part only the main square of an object carries (GameEntityFactory.instanceComponents): the
+				-- sprite says whether it is that square. A rain collector is one square, its own main one.
+				local face = info:getFaceForSprite(sprite)
+				local tile = face and face:getTileInfoForSprite(sprite)
+				if not (tile and tile:isMaster()) then return nil end
+			end
+			return script
+		end) or false
+		builtScripts[sprite] = known
+	end
+	return known or nil
+end
+
+-- "trough" or "built" for a built thing that should hold liquids and can not; nil for everything else
+local function lostBuiltPart(object)
+	local trough = instanceof(object, "IsoFeedingTrough")
+	if not trough and not fluidScriptOf(object) then return nil end
+	-- only when the game answered: a call that fails is not "it has none"
+	local asked, part = pcall(function() return object:getFluidContainer() end)
+	if not asked or part ~= nil then return nil end
+	if trough then
+		-- with feed in it a trough has no water part, by design
+		local feed = try(function() local c = object:getContainer() return c ~= nil and not c:isEmpty() end)
+		if feed then return nil end
+		return "trough"
+	end
+	return "built"
+end
+
+-- the part made again in place, and told to the clients as the game does after it changes a trough
+-- (Commands.feedingThrough.addWaterDebug: createFluidContainer, sendSyncEntity)
+local function restoreBuilt(object, kind)
+	if kind == "trough" then
+		object:createFluidContainer()
+	else
+		local script = fluidScriptOf(object)
+		if object:hasComponents() then
+			-- the other parts are there: only this one, from the script (GameEntityFactory.instanceComponents)
+			local part = ComponentType.FluidContainer:CreateComponentFromScript(script:getComponentScriptFor(ComponentType.FluidContainer))
+			GameEntityFactory.AddComponent(object, true, part)
+		else
+			-- none left: all of them, as a rain collector of the map gets them (MORainCollectorBarrel)
+			GameEntityFactory.CreateIsoObjectEntity(object, script, false)
+		end
+	end
+	if object:getFluidContainer() == nil then return false end
+	object:sendSyncEntity(nil)
+	if kind == "trough" then try(function() object:checkOverlayAfterAnimalEat() end) end
+	return true
+end
+
+-- what to call a built thing in the reply
+local function builtName(object, kind)
+	if kind == "trough" then return "Feeding Trough" end
+	return try(function() return object:getProperties():get("CustomName") end)
+		or try(function() return object:getName() end)
+		or "Built container"
+end
+
 -- fixfluids <apply: 0 | 1> <radius> [username]: the containers that lost their liquid part, in the
 -- inventories of the players online (of that player only, with a username), on the squares within the radius
 -- of each of them (on the ground or on furniture), and inside the crates, shelves and fridges there. With
 -- apply 1 each is replaced by a new, empty one of the same type in the same place; one that is worn or
 -- attached is left and counted. With apply 0 it only counts, so SpiffoCON can say what before asking.
+-- Since bridge v15 also the built things there (a feeding trough, a rain collector): their part is made
+-- again in place, nothing is replaced.
 local function fixFluids(apply, radius, username)
 	apply = apply == "1"
 	radius = tonumber(radius)
@@ -1042,20 +1293,23 @@ local function fixFluids(apply, radius, username)
 	end
 
 	local found, fixed, skipped, failed = 0, 0, 0, 0
-	local inInventories, onSquares, inContainers = 0, 0, 0
+	local inInventories, onSquares, inContainers, built = 0, 0, 0, 0
 	-- what was found, by where and type: { where, fullType, name, count }
 	local list, rows = array(), {}
-	local function note(where, item)
+	local function noteAs(where, fullType, name)
 		found = found + 1
-		local fullType = item:getFullType()
 		local key = where .. "\t" .. fullType
 		local row = rows[key]
 		if not row then
-			row = { where = where, fullType = fullType, name = try(function() return item:getDisplayName() end) or fullType, count = 0 }
+			row = { where = where, fullType = fullType, name = name, count = 0 }
 			rows[key] = row
 			list[#list + 1] = row
 		end
 		row.count = row.count + 1
+	end
+	local function note(where, item)
+		local fullType = item:getFullType()
+		noteAs(where, fullType, try(function() return item:getDisplayName() end) or fullType)
 	end
 	local function done(ok)
 		if ok then fixed = fixed + 1 else failed = failed + 1 end
@@ -1100,6 +1354,13 @@ local function fixFluids(apply, radius, username)
 			local things = sq:getObjects()
 			for i = 0, things:size() - 1 do
 				local thing = things:get(i)
+				local kind = lostBuiltPart(thing)
+				if kind then
+					local name = builtName(thing, kind)
+					noteAs("", "built:" .. name, name)
+					built = built + 1
+					if apply then done(try(restoreBuilt, thing, kind) == true) end
+				end
 				local count = try(function() return thing:getContainerCount() end) or 0
 				for c = 0, count - 1 do
 					local container = try(function() return thing:getContainerByIndex(c) end)
@@ -1122,7 +1383,7 @@ local function fixFluids(apply, radius, username)
 	end
 	return {
 		found = found, fixed = fixed, skipped = skipped, failed = failed,
-		inInventories = inInventories, onSquares = onSquares, inContainers = inContainers,
+		inInventories = inInventories, onSquares = onSquares, inContainers = inContainers, built = built,
 		players = #players, loaded = loaded, radius = radius, items = list,
 	}
 end
@@ -1891,6 +2152,10 @@ local actions = {
 	removewrecks = removeWrecks,
 	fixfluids = fixFluids,
 	itemaction = itemAction,
+	repairgear = repairGear,
+	animals = listAnimals,
+	feedanimals = feedAnimals,
+	filltroughs = fillTroughs,
 	removecorpses = removeCorpses,
 	removegrounditems = removeGroundItems,
 	stopfires = stopFires,
