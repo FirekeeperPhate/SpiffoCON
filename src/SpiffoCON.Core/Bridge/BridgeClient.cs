@@ -333,6 +333,13 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     public async Task<BridgeGearRepair> RepairGearAsync(string username) =>
         (await SendAsync("repairgear", username).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeGearRepair) ?? new BridgeGearRepair();
 
+    /// <summary>
+    /// Hunger, thirst, tiredness, exertion, stress, panic, boredom, unhappiness, pain, drunkenness and sickness
+    /// of a player back to nothing (bridge v16). Returns how many of the game's stats were reset.
+    /// </summary>
+    public async Task<int> RestoreNeedsAsync(string username) =>
+        (await SendAsync("restoreneeds", username).ConfigureAwait(false)).GetProperty("restored").GetInt32();
+
     static string Number(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>The animals of the players (not the wild ones) within a radius of each player online (bridge v15).</summary>
@@ -755,6 +762,12 @@ public sealed record BridgeSkill
 
     /// <summary>Bridge v12: the experience the next level takes from the start of this one (null at the last level).</summary>
     public double? NextXp { get; init; }
+
+    /// <summary>
+    /// Bridge v16: all the experience each level takes, level 1 first (ten of them); null with an older bridge.
+    /// What setting a level needs: the game's own admin window adds, or takes away, the difference with addxp.
+    /// </summary>
+    public List<double>? Totals { get; init; }
 }
 
 public sealed record BridgeSafehouse

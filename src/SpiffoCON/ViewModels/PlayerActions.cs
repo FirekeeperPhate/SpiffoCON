@@ -204,6 +204,25 @@ public sealed class PlayerActions(MainViewModel main)
         : BridgeInfo(player) is not { } info ? "The bridge does not list this player (online?)."
         : main.Bridge.VehicleOfProblem(info);
 
+    /// <summary>Why a player's needs can't be taken away (null: they can): bridge v16, player in the game and alive.</summary>
+    public string? NeedsProblem(string player) => main.Bridge.V16Problem ?? PlayerProblem(player);
+
+    public async Task RestoreNeedsAsync(string player)
+    {
+        if (BridgeInfo(player) is not { } info)
+            return;
+        if (await main.Bridge.RestoreNeedsAsync(info.Username) is { } result)
+            main.StatusText = result;
+    }
+
+    /// <summary>
+    /// A skill brought to a level: the experience added, or taken away, is the difference (RCON addxp, as the
+    /// game's own admin window does it).
+    /// </summary>
+    public Task SetLevelAsync(string player, string perkId, string skill, int level, int amount) =>
+        RunAsync(player, PlayerCommands.AddXp(player, perkId, amount, useMultiplier: false),
+            $"{skill} of {player} to level {level} ({(amount > 0 ? "+" : "")}{amount} XP)");
+
     /// <summary>Why what a player holds and wears can't be repaired at once (null: it can): bridge v15, player in the game and alive.</summary>
     public string? GearProblem(string player) => main.Bridge.V15Problem ?? PlayerProblem(player);
 

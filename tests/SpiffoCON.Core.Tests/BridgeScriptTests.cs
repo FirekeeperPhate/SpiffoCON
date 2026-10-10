@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(15, await _client.PingAsync());
+        Assert.Equal(16, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -831,6 +831,40 @@ public sealed class BridgeScriptTests
         Assert.Equal(40, Lua("TROUGH_WHOLE.water"));
         Assert.Equal(["syncEntity whole trough"], Told());
         Assert.Equal((0, 2, 1), await _client.FillTroughsAsync(5));
+    }
+
+    [Fact]
+    public async Task The_needs_of_a_player_are_taken_away_and_their_game_is_told()
+    {
+        _game.DoString("rj.stats[CharacterStat.THIRST] = 0.8 rj.stats[CharacterStat.ENDURANCE] = 0.2");
+        var before = (await _client.CharacterAsync("rj", details: true)).Details!;
+        Assert.Equal((0.26, 0.8, 0.5), (Math.Round(before.Stats["hunger"] ?? -1, 2), before.Stats["thirst"] ?? -1, before.Stats["panic"] ?? -1));
+
+        // the eleven stats this game has of the eighteen asked for; the two with a bit of their own are sent
+        Assert.Equal(11, await _client.RestoreNeedsAsync("rj"));
+        Assert.Equal(["syncPlayerStats rj 3"], Told());
+        var after = (await _client.CharacterAsync("rj", details: true)).Details!;
+        Assert.Equal((0.0, 0.0, 0.0, 1.0), (after.Stats["hunger"] ?? -1, after.Stats["thirst"] ?? -1, after.Stats["panic"] ?? -1, after.Stats["endurance"] ?? -1));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.RestoreNeedsAsync("ghost"));
+    }
+
+    [Fact]
+    public async Task Each_skill_says_what_every_level_takes_so_that_a_level_can_be_set()
+    {
+        var axe = (await _client.CharacterAsync("rj", details: true)).Details!.Skills.Single(s => s.Name == "Axe");
+        Assert.Equal(10, axe.Totals!.Count);
+        // level 4 with 870 XP: what the levels take is what the game says
+        Assert.Equal((4, 870.0, 750.0), (axe.Level, axe.Xp, axe.Totals[3]));
+
+        // up: the difference, rounded up; down: taken away; level 0: all of it
+        Assert.Equal((int)Math.Ceiling(axe.Totals[5] - 870), SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(axe.Xp!.Value, axe.Totals, 6));
+        Assert.Equal((int)Math.Ceiling(axe.Totals[1] - 870), SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(axe.Xp.Value, axe.Totals, 2));
+        Assert.True(SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(axe.Xp.Value, axe.Totals, 2) < 0);
+        Assert.Equal(-870, SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(axe.Xp.Value, axe.Totals, 0));
+        Assert.Equal(-120, SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(870.4, axe.Totals, 4));
+        // no table (an older bridge), or a level that is not one
+        Assert.Null(SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(870, null, 5));
+        Assert.Null(SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(870, axe.Totals, 11));
     }
 
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>

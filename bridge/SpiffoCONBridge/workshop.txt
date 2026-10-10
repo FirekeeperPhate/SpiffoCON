@@ -1,13 +1,31 @@
 version=1
 id=3809683986
 title=SpiffoCON Bridge
-description=Server-side helper for SpiffoCON, a remote admin tool for Project Zomboid servers.
+description=Server-side helper for SpiffoCON, a free remote admin tool for Project Zomboid servers (Windows).
 description=
-description=Bridge version 15.
-description=SpiffoCON (Windows), latest release: [url=https://github.com/FirekeeperPhate/SpiffoCON/releases/latest]github.com/FirekeeperPhate/SpiffoCON/releases/latest[/url]
+description=Bridge version 16.
+description=SpiffoCON, latest release: [url=https://github.com/FirekeeperPhate/SpiffoCON/releases/latest]github.com/FirekeeperPhate/SpiffoCON/releases/latest[/url]
 description=
-description=It lets SpiffoCON read what RCON can't (player positions, inventories, vehicles and world state) and do a few admin actions. It runs on the server only and does nothing on players' games.
+description=[h2]What it is for[/h2]
+description=RCON alone tells an admin very little. With this mod on the server, SpiffoCON can also:
+description=[list]
+description=[*]show the players on the game's map, with their health, vehicle, the zombies near them and where players died;
+description=[*]open a player's sheet: health part by part, needs, traits, skills with their experience, what they wear and carry;
+description=[*]heal a player, cure a zombie infection, take hunger, thirst and tiredness away, set hair and beard;
+description=[*]repair, clean, fill or recharge the items a player carries, or remove them;
+description=[*]show a vehicle part by part and repair it (missing wheels and windows are put back), refuel it, give its key;
+description=[*]list the animals near the players, feed and water them, fill their troughs;
+description=[*]put right the buckets, bottles, troughs and rain collectors that can't hold liquids any more after a server crash;
+description=[*]clean up around a spot: zombie corpses, items on the ground, fires, wrecks;
+description=[*]set the weather and the time of day, put items on the ground, list and remove safehouses.
+description=[/list]
 description=
-description=Communication goes through files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP. Admin actions (heal, remove items, repair, refuel or remove vehicles) are written to the server's admin log.
+description=[h2]How to use it[/h2]
+description=[olist]
+description=[*]Add the mod to the server: Mods=SpiffoCONBridge and WorkshopItems=3809683986, then restart it.
+description=[*]In SpiffoCON, set the server's SFTP access: the bridge connects by itself.
+description=[/olist]
+description=
+description=It runs on the server only: players don't need it, and it does nothing on their game. It acts only on requests written into the server's Zomboid/Lua folder, so only someone who can already write the server's files can use it. Every admin action is written to the server's admin log.
 tags=Build 42;Multiplayer;Misc
 visibility=public

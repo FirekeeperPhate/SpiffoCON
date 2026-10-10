@@ -1054,6 +1054,37 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    // ---- a player's needs (bridge v16) ----
+
+    /// <summary>Why what came with bridge v16 (a player's needs) can't be done now (null: it can).</summary>
+    public string? V16Problem =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 16 ? $"This needs bridge v16 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>Takes a player's hunger, thirst, tiredness and the like away, after asking. Returns what happened.</summary>
+    internal async Task<string?> RestoreNeedsAsync(string username)
+    {
+        if (V16Problem is { } problem)
+            return problem;
+        var client = _client!;
+        if (_main.Confirm?.Invoke($"Take the needs of {username} away?\n\n"
+                + "Hunger, thirst, tiredness, exertion, stress, panic, boredom, unhappiness, pain, drunkenness and sickness go to nothing. "
+                + "Wounds stay: that is Heal completely.") != true)
+            return null;
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
+        try
+        {
+            await client.RestoreNeedsAsync(username);
+            return $"{username} is fed, rested and calm.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not do it: " + ex.Message;
+        }
+    }
+
     // ---- animals (bridge v15) ----
 
     /// <summary>How far around each player the animals and the troughs are looked for: as far as the bridge goes.</summary>

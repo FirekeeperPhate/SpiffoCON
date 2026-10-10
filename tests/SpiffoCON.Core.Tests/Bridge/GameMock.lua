@@ -390,6 +390,8 @@ CharacterStat.ZOMBIE_FEVER = stat(0, 100)
 SyncPlayerStatsPacket = { getBitMaskForStat = function(s)
 	if s == CharacterStat.ZOMBIE_INFECTION then return 4096 end
 	if s == CharacterStat.ZOMBIE_FEVER then return 8192 end
+	if s == CharacterStat.HUNGER then return 1 end
+	if s == CharacterStat.THIRST then return 2 end
 	return 0
 end }
 function syncBodyPart(part, flags) note("syncBodyPart " .. part.name) end
@@ -452,7 +454,8 @@ for _, p in ipairs(PLAYERS) do
 	p.stats = values
 	local stats = {
 		get = function(self, s) return values[s] or 0 end,
-		reset = function(self, s) values[s] = 0 end,
+		-- back to what a rested character has: endurance is full at 1
+		reset = function(self, s) values[s] = s == CharacterStat.ENDURANCE and 1 or 0 end,
 	}
 	p.getStats = function() return stats end
 end

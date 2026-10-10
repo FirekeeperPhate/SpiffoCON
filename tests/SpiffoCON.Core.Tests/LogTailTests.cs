@@ -58,6 +58,8 @@ public sealed class LogTailTests : IDisposable
     /// <summary>A folder whose next read fails (the link dropped between listing and reading).</summary>
     sealed class FailingOnce(ILogFolder inner) : ILogFolder
     {
+        public Task<IReadOnlyList<LogFileInfo>> ListArchivedAsync(int folders, CancellationToken ct = default) => inner.ListArchivedAsync(folders, ct);
+
         public bool Fail { get; set; }
 
         public string Description => inner.Description;

@@ -105,6 +105,8 @@ public static class PlayerMenu
         string? Tip(string? problem, string? what) => !online ? "Needs the player online (connect RCON)" : problem ?? what;
         Add(items, "Heal completely…", () => actions.HealAsync(player), online && actions.HealProblem(player) is null,
             Tip(actions.HealProblem(player), null));
+        Add(items, "Restore their needs…", () => actions.RestoreNeedsAsync(player), online && actions.NeedsProblem(player) is null,
+            Tip(actions.NeedsProblem(player), "Hunger, thirst, tiredness, stress, panic, boredom, pain, drunkenness and sickness to nothing; wounds stay"));
         Add(items, "Cure zombie infection…", () => actions.CureInfectionAsync(player), online && actions.CureProblem(player) is null,
             Tip(actions.CureProblem(player), "Ends the zombie infection of a bite or scratch, which Heal completely does not"));
         Add(items, "Repair what they carry…", () => actions.RepairGearAsync(player), online && actions.GearProblem(player) is null,

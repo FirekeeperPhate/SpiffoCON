@@ -175,6 +175,25 @@ public partial class CharacterWindow : Window
             Add($"To level {skill.Level + 1} (+{Number(toNext)} XP)", toNext, "What is missing to the next level");
         foreach (var amount in new[] { 25, 100, 500, 2500 })
             Add($"+{Number(amount)} XP", amount);
+        // straight to a level, up or down (bridge v16 says what each level takes)
+        menu.Items.Add(new Separator());
+        bool can = _vm.CanSetLevel(skill);
+        var levels = new MenuItem
+        {
+            Header = "Set level",
+            IsEnabled = can,
+            ToolTip = can ? "Adds, or takes away, the experience between now and the start of that level"
+                : "Setting a level needs bridge v16, which says what each level takes",
+        };
+        ToolTipService.SetShowOnDisabled(levels, true);
+        for (int level = 0; level <= 10; level++)
+        {
+            int target = level;
+            var entry = new MenuItem { Header = level.ToString(System.Globalization.CultureInfo.InvariantCulture), IsChecked = level == skill.Level };
+            entry.Click += async (_, _) => await _vm.SetLevelAsync(skill, target);
+            levels.Items.Add(entry);
+        }
+        menu.Items.Add(levels);
         Open(menu);
     }
 }

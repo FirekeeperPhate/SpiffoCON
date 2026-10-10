@@ -220,6 +220,14 @@ instead.
     feeding troughs filled with water (one with feed in it is left). Animals inside a hutch or a
     trailer are not on the map and are not listed.
 
+  Bridge v16 adds:
+  - *Restore their needs…* in the player menu: hunger, thirst, tiredness, exertion, stress, panic,
+    boredom, unhappiness, pain, drunkenness and sickness go to nothing (wounds stay: that is *Heal
+    completely*);
+  - what every level of a skill takes, so that a level can be set from Character details (the **+**
+    of a skill, *Set level*): up or down, by adding or taking away the difference with `addxp`, as
+    the game's own admin window does. Going down is asked first.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.
@@ -244,7 +252,8 @@ instead.
 - Player menu: right-click a player wherever players are listed (the sidebar, Players, map
   markers, Bridge, Accounts, chat lines in Logs): their Character details, show in the Players tab or on the map,
   teleport to another player or bring one here, give a kit, lightning / thunder /
-  horde, full heal and cure of the zombie infection, the vehicle they are in (its details, a complete repair),
+  horde, full heal, their needs taken away (bridge v16) and cure of the zombie infection, the vehicle they are in
+  (its details, a complete repair),
   what they carry repaired at once (bridge v15), the containers that lost their liquid part (bridge v14),
   clean up around them, hair and beard (bridge),
   god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the name. Each
@@ -268,6 +277,13 @@ instead.
   100%, a tyre inflated, the tank filled) or *Put back* when it is missing; no question asked for
   one part. The whole vehicle can be repaired, refuelled, given a key of to a player online, shown
   on the map or removed. It follows the bridge's refreshes; one window per vehicle.
+- Crash notice: when SpiffoCON connects, and when the server answers again after going away, it reads
+  how the run before the current one ended. A server that stops as it should ends its debug log with
+  its shutdown lines ("Shutdown handling finished"); one that crashed, was killed or lost power just
+  stops writing. In that case the Console tab says so, with the last lines of that log, and a
+  notification is shown (under *Connection lost and server back*). Each start of the server is judged
+  once. It needs the Logs folder over SFTP, where the server keeps the logs of earlier runs in
+  `logs_<date>` folders.
 - SFTP probe (optional): looks for `Server/*.ini`, workshop folders
   (`content/108600`), `Zomboid/mods` and logs. The SSH host key is saved at the first
   connection and checked afterwards. With SFTP on, connecting also connects the bridge,

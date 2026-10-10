@@ -81,6 +81,20 @@ public static class PlayerCommands
 
     public static string VoiceBan(string player, bool on) => $"voiceban {Q(player)} {Flag(on)}";
 
+    /// <summary>
+    /// The experience to add (or, when negative, to take away) to bring a skill to a level, the way the game's
+    /// own admin window sets one: the difference between what that level takes in all and what the player has.
+    /// Rounded up, so that the level is reached and not missed by a fraction. Null when the level is not 0 to 10
+    /// or the bridge did not give what the levels take.
+    /// </summary>
+    public static int? XpToLevel(double currentXp, IReadOnlyList<double>? totals, int level)
+    {
+        if (level < 0 || level > 10 || totals is null || totals.Count < level)
+            return null;
+        double target = level == 0 ? 0 : totals[level - 1];
+        return (int)Math.Ceiling(target - currentXp);
+    }
+
     /// <summary>"-true" makes the server apply the XP multiplier.</summary>
     public static string AddXp(string player, string perkId, int amount, bool useMultiplier) =>
         $"addxp {Q(player)} {perkId}={amount}" + (useMultiplier ? " -true" : "");

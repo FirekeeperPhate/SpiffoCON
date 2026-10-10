@@ -152,6 +152,35 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
     public ObservableCollection<CharacterEquipment> Equipment { get; } = [];
     public ObservableCollection<CharacterItem> Items { get; } = [];
 
+    // what setting a level needs, by the id of the skill: the experience now and what each level takes (bridge v16)
+    Dictionary<string, (double Xp, IReadOnlyList<double> Totals)> _levels = [];
+
+    /// <summary>Whether a skill can be set to a level (bridge v16 says what the levels take).</summary>
+    public bool CanSetLevel(CharacterSkill skill) => skill.PerkId is { } id && _levels.ContainsKey(id);
+
+    /// <summary>
+    /// Brings a skill to a level, up or down: the experience added or taken away is the difference, the way
+    /// the game's own admin window does it. Going down is asked first. Then the character is read again.
+    /// </summary>
+    public async Task SetLevelAsync(CharacterSkill skill, int level)
+    {
+        if (skill.PerkId is not { } id || !_levels.TryGetValue(id, out var known)
+            || Core.Commands.PlayerCommands.XpToLevel(known.Xp, known.Totals, level) is not { } amount)
+            return;
+        string user = Info?.Username ?? Username;
+        // the level it has: left as it is, with what was gained in it
+        if (amount == 0 || level == skill.Level)
+        {
+            _main.StatusText = $"{skill.Name} of {user} is at level {level} already.";
+            return;
+        }
+        if (amount < 0 && _main.Confirm?.Invoke($"Lower {skill.Name} of {user} from level {skill.Level} to {level}?\n\n"
+                + $"{(-amount).ToString("#,0", CultureInfo.InvariantCulture)} XP are taken away.") != true)
+            return;
+        await Actions.SetLevelAsync(user, id, skill.Name, level, amount);
+        await RefreshAsync();
+    }
+
     /// <summary>The icon the Catalog has for an item (base game and the mods loaded), if any.</summary>
     string? IconOf(string? fullType) => string.IsNullOrEmpty(fullType) ? null : _main.Catalog.Find(fullType)?.IconPath;
 
@@ -328,6 +357,7 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
         HealthText = HasHealth ? $"{Health:0} of 100" : "";
         if (details is null)
         {
+            _levels = [];
             // bridge v2 to v6: the inventory only
             Notice = _main.Bridge.BridgeVersion < 7
                 ? $"Health, traits and skills need bridge v7 (the server runs v{_main.Bridge.BridgeVersion})."
@@ -371,6 +401,9 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
         StatsNote = Stats.Count == 0 ? "Fed, rested and calm: nothing to report." : "";
         Traits = string.Join(", ", details.Traits);
 
+        _levels = details.Skills
+            .Where(s => s is { Id: not null, Xp: not null, Totals.Count: >= 10 })
+            .GroupBy(s => s.Id!).ToDictionary(g => g.Key, g => (g.First().Xp!.Value, (IReadOnlyList<double>)g.First().Totals!));
         var groups = details.Skills
             .GroupBy(s => s.Category ?? "")
             .Select(g => new CharacterSkillGroup(g.Key, g.Select(Skill).ToList()))

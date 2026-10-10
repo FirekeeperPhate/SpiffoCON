@@ -79,6 +79,12 @@ public sealed class ServerProfile : INotifyPropertyChanged
     /// <summary>The server's Zomboid/Logs folder found over SFTP.</summary>
     public string? SftpLogsFolder { get; set; }
 
+    /// <summary>
+    /// The debug log of the run of the server whose start was already looked at (did the run before it stop
+    /// as it should?): each start is judged once.
+    /// </summary>
+    public string? LastRunChecked { get; set; }
+
     /// <summary>The server's Zomboid/Lua folder, where the bridge mod exchanges files.</summary>
     public string? SftpLuaFolder { get; set; }
 

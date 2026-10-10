@@ -2,8 +2,8 @@
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
 -- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
 -- put items on the ground, remove wrecks, set hair and beard, cure the zombie infection, replace the
--- containers that lost their liquid part, repair what a player carries, feed and water the animals) and
--- keeps the deaths of players.
+-- containers that lost their liquid part, repair what a player carries, feed and water the animals, take a
+-- player's hunger, thirst and tiredness away) and keeps the deaths of players.
 -- Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
@@ -13,7 +13,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 15
+local VERSION = 16
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -600,6 +600,31 @@ local function repairGear(username)
 	try(function() syncVisuals(p) end)
 	audit("repaired what " .. username .. " wears and holds (" .. #items .. " items, " .. done .. " needed it)")
 	return { items = #items, repaired = done, names = names }
+end
+
+-- ---- a player's needs (bridge v16) ----
+-- Each stat back to what a rested, fed, calm character has (Stats.reset: endurance is full at 1, the others
+-- are nothing at 0), and told to the player's game as the game's own actions tell it (syncPlayerStats with
+-- the stat's bit, as in cureInfection below and ISDrinkFromBottle). Not the body: wounds are Heal's.
+local NEEDS = { "HUNGER", "THIRST", "FATIGUE", "ENDURANCE", "STRESS", "PANIC", "BOREDOM", "UNHAPPINESS", "PAIN",
+	"INTOXICATION", "SICKNESS", "FOOD_SICKNESS", "ANGER", "DISCOMFORT", "IDLENESS", "NICOTINE_WITHDRAWAL", "POISON", "WETNESS" }
+
+-- restoreneeds <username>
+local function restoreNeeds(username)
+	local p = requireLivingPlayer(username)
+	local stats = p:getStats()
+	local mask, done = 0, 0
+	for _, name in ipairs(NEEDS) do
+		-- a name this version of the game does not have is skipped
+		local stat = CharacterStat[name]
+		if stat and try(function() stats:reset(stat) return true end) then
+			done = done + 1
+			mask = mask + (try(function() return SyncPlayerStatsPacket.getBitMaskForStat(stat) end) or 0)
+		end
+	end
+	if mask > 0 then syncPlayerStats(p, mask) end
+	audit("restored the needs of " .. username)
+	return { restored = done }
 end
 
 -- ids are runtime ids, given again to other vehicles as areas unload and load: when SpiffoCON
@@ -1609,6 +1634,13 @@ local function playerDetails(username)
 					xp = xp and round(xp, 0.01),
 					levelXp = xp and before and round(math.max(0, xp - before), 0.01),
 					nextXp = next and next > 0 and round(next, 0.01) or nil,
+					-- bridge v16: all the experience each level takes, 1 to 10, so that a level can be set: the
+					-- game's own admin window does it by adding (or taking) the difference with addxp
+					totals = try(function()
+						local totals = array()
+						for target = 1, 10 do totals[target] = round(perk:getTotalXpForLevel(target), 0.01) end
+						return totals
+					end),
 				}
 			end
 		end
@@ -2153,6 +2185,7 @@ local actions = {
 	fixfluids = fixFluids,
 	itemaction = itemAction,
 	repairgear = repairGear,
+	restoreneeds = restoreNeeds,
 	animals = listAnimals,
 	feedanimals = feedAnimals,
 	filltroughs = fillTroughs,

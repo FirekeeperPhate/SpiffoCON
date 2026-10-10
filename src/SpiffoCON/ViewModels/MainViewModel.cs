@@ -618,6 +618,8 @@ public sealed partial class MainViewModel : ObservableObject
         if (StatusText == connected)
             StatusText = summary;
 
+        await CheckPreviousRunAsync();
+
         // then the server's mods over SFTP, so the Catalog is ready (mods unchanged since last time are skipped)
         if (!Catalog.IsLoading)
         {
@@ -625,6 +627,39 @@ public sealed partial class MainViewModel : ObservableObject
             // the catalog's own commands reset the status bar to "Connected to…"
             if (!_shutDown && IsSessionActive && (StatusText == connected || StatusText == summary))
                 StatusText = summary + (loaded ? " · mods loaded (Catalog tab)" : " · mods not loaded (see the Catalog tab)");
+        }
+    }
+
+    /// <summary>
+    /// Says so when the run of the server before the one going on did not stop as it should: its log ends
+    /// without the shutdown lines, so it crashed, was killed, or lost power, and what was not saved is gone
+    /// (and containers put down may have lost their liquid part). Each start of the server is judged once.
+    /// </summary>
+    async Task CheckPreviousRunAsync()
+    {
+        try
+        {
+            if (!Logs.IsOpen || await Logs.CheckPreviousRunAsync() is not { } run || _shutDown)
+                return;
+            if (_profile.LastRunChecked == run.CurrentFile)
+                return;
+            _profile.LastRunChecked = run.CurrentFile;
+            SaveProfile();
+            if (run.Clean)
+                return;
+            var english = System.Globalization.CultureInfo.InvariantCulture;
+            string when = run.Ended is { } ended ? $" Its last line is of {ended.ToString("d MMM, HH:mm:ss", english)}." : "";
+            Log(ConsoleKind.Warning, "The server did not stop as it should before its last start: the log of the run before "
+                + $"({run.File}) ends without the shutdown lines, so it crashed or was killed.{when} What was not saved is lost; "
+                + "containers that were put down may have lost their liquid part (Bridge tab: Fix liquid containers…). Its last lines:\n"
+                + string.Join("\n", run.LastLines.Select(l => "  " + l)));
+            Notify(NotificationKind.Connection, "The server crashed",
+                $"{_profile.DisplayName} did not stop as it should before its last start{(run.Ended is { } at ? $" ({at.ToString("d MMM, HH:mm", english)})" : "")}. See the Console tab.");
+            StatusText = "The server did not stop as it should before its last start: see the Console tab.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // a look nobody asked for
         }
     }
 
@@ -706,6 +741,8 @@ public sealed partial class MainViewModel : ObservableObject
                 _connectionLost = false;
                 Log(ConsoleKind.Info, "Connected again.");
                 Notify(NotificationKind.Connection, "Server back", $"{_profile.DisplayName} answers again.");
+                // a new run of the server: did the one before stop as it should?
+                _ = CheckPreviousRunAsync();
                 if (_expectingShutdown)
                 {
                     _expectingShutdown = false;

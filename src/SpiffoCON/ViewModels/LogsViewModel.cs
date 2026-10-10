@@ -155,6 +155,36 @@ public sealed partial class LogsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// How the run of the server before the one going on ended, from its own log; null when it can't be told
+    /// (no Logs folder open, no earlier run, the folder not answering).
+    /// </summary>
+    internal async Task<PreviousRun?> CheckPreviousRunAsync()
+    {
+        if (_folder is not { } folder || _closed)
+            return null;
+        // one reader at a time on the folder's connection: after the poll going on, if there is one
+        for (int i = 0; _polling && i < 100; i++)
+            await Task.Delay(100);
+        if (_polling || _closed || !ReferenceEquals(folder, _folder))
+            return null;
+        _polling = true;
+        try
+        {
+            using var timeout = new CancellationTokenSource(PollTimeout);
+            return await ShutdownCheck.CheckAsync(folder, timeout.Token);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // asked by nobody: if it can't be read now, the next start of the server is looked at again
+            return null;
+        }
+        finally
+        {
+            _polling = false;
+        }
+    }
+
     [RelayCommand]
     private async Task OpenFolderAsync()
     {

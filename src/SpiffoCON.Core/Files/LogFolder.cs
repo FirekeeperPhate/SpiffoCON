@@ -37,6 +37,26 @@ public interface ILogFolder : IDisposable
 
     /// <summary>Up to <paramref name="maxBytes"/> bytes from <paramref name="offset"/>.</summary>
     Task<byte[]> ReadAsync(string name, long offset, int maxBytes, CancellationToken ct = default);
+
+    /// <summary>
+    /// The logs of earlier runs, which the server moves into logs_&lt;date&gt; folders at each start: those of
+    /// the newest <paramref name="folders"/> of them. Their names carry the folder
+    /// ("logs_2026-10-10/2026-10-10_09-45_chat.txt") and can be read with <see cref="ReadAsync"/>.
+    /// </summary>
+    Task<IReadOnlyList<LogFileInfo>> ListArchivedAsync(int folders, CancellationToken ct = default);
+}
+
+/// <summary>What the two kinds of folder share about the logs put away.</summary>
+static class ArchivedLogs
+{
+    public static bool IsArchive(string name) => name.StartsWith("logs_", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The newest folders: their names are dates, so the order of the names is the order of time.</summary>
+    public static IEnumerable<string> Newest(IEnumerable<string> names, int folders) =>
+        names.Where(IsArchive).OrderByDescending(n => n, StringComparer.OrdinalIgnoreCase).Take(Math.Max(0, folders));
+
+    public static LogFileInfo? InFolder(string folder, string file, long size) =>
+        LogFileInfo.FromName(file, size) is { } info ? info with { Name = folder + "/" + file } : null;
 }
 
 public sealed class LocalLogFolder(string path) : ILogFolder
@@ -84,6 +104,17 @@ public sealed class LocalLogFolder(string path) : ILogFolder
         return read == buffer.Length ? buffer : buffer[..read];
     }
 
+    public Task<IReadOnlyList<LogFileInfo>> ListArchivedAsync(int folders, CancellationToken ct = default)
+    {
+        var files = new List<LogFileInfo>();
+        var root = new DirectoryInfo(path);
+        foreach (var name in ArchivedLogs.Newest(root.EnumerateDirectories().Select(d => d.Name), folders))
+            foreach (var f in new DirectoryInfo(Path.Combine(path, name)).EnumerateFiles("*.txt"))
+                if (ArchivedLogs.InFolder(name, f.Name, f.Length) is { } info)
+                    files.Add(info);
+        return Task.FromResult<IReadOnlyList<LogFileInfo>>(files);
+    }
+
     public void Dispose() { }
 }
 
@@ -124,6 +155,22 @@ public sealed class SftpLogFolder(SftpSettings settings, string remotePath) : IL
         await foreach (var f in client.ListDirectoryAsync(remotePath, ct).ConfigureAwait(false))
             if (f.IsRegularFile && LogFileInfo.FromName(f.Name, f.Length) is { } info)
                 files.Add(info);
+        return files;
+    }
+
+    public async Task<IReadOnlyList<LogFileInfo>> ListArchivedAsync(int folders, CancellationToken ct = default)
+    {
+        var client = await ClientAsync(ct).ConfigureAwait(false);
+        var root = remotePath.TrimEnd('/');
+        var names = new List<string>();
+        await foreach (var f in client.ListDirectoryAsync(root, ct).ConfigureAwait(false))
+            if (f.IsDirectory && ArchivedLogs.IsArchive(f.Name))
+                names.Add(f.Name);
+        var files = new List<LogFileInfo>();
+        foreach (var name in ArchivedLogs.Newest(names, folders))
+            await foreach (var f in client.ListDirectoryAsync(root + "/" + name, ct).ConfigureAwait(false))
+                if (f.IsRegularFile && ArchivedLogs.InFolder(name, f.Name, f.Length) is { } info)
+                    files.Add(info);
         return files;
     }
 
