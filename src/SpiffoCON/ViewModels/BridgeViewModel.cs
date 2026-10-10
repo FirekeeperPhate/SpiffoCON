@@ -929,6 +929,44 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Does something to the items of a row of a player's inventory (from the character window, bridge v14):
+    /// repair, clean, fill, empty, recharge. Only emptying is asked first: the rest takes nothing away. Returns
+    /// what happened.
+    /// </summary>
+    internal async Task<string?> ItemActionAsync(string owner, BridgeItem item, BridgeClient.ItemAction action)
+    {
+        if (V14Problem is { } problem)
+            return problem;
+        var client = _client!;
+        string what = item.Count == 1 ? item.Name : $"{item.Count} × {item.Name}";
+        if (action == BridgeClient.ItemAction.Empty
+            && _main.Confirm?.Invoke($"Empty {what} of {owner}?\n\nThe liquid inside is lost.") != true)
+            return null;
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
+        try
+        {
+            var (done, skipped) = await client.ItemActionAsync(owner, action, item.FullType, string.IsNullOrEmpty(item.Container) ? null : item.Container);
+            string verb = action switch
+            {
+                BridgeClient.ItemAction.Repair => "repaired",
+                BridgeClient.ItemAction.Clean => "cleaned",
+                BridgeClient.ItemAction.Fill => "filled with water",
+                BridgeClient.ItemAction.Empty => "emptied",
+                _ => "recharged",
+            };
+            if (done == 0)
+                return $"{item.Name} of {owner} can't be {verb}: it does not apply to this item.";
+            return $"{(done == 1 ? item.Name : $"{done} × {item.Name}")} of {owner} {verb}."
+                + (skipped > 0 ? $" {skipped} left: it does not apply to {(skipped == 1 ? "it" : "them")}." : "");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not do it: " + ex.Message;
+        }
+    }
+
     /// <summary>Why the containers that lost their liquid part can't be looked for now (null: they can): bridge v14.</summary>
     public string? V14Problem =>
         _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."

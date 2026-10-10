@@ -198,6 +198,12 @@ instead.
   of the same type in the same place (one put down keeps its spot and the way it is turned). One that
   is worn or attached to a belt is left. Built things (a rain collector, a trough) are not looked at.
 
+  Bridge v14 also says the state of the items a player carries (the condition of weapons, clothes and
+  anything damaged, what is left of a battery or a lighter, how full a container is, blood and dirt)
+  and does things to them, for the menu on an item in Character details: repair (as new: the
+  condition, the head of a tool, the edge of a blade; clothes mended and washed), clean, fill with
+  water, empty, recharge. Each is told to the player's game the way the game's own actions do it.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.
@@ -232,7 +238,9 @@ instead.
   with everything in one place: who and where they are, health (with bridge v11 part by part:
   bites, bleeding, fractures, bandages...), needs and moods, traits, skills (the level, with bridge v12 the
   experience towards the next one, and a + that adds some: `addxp`), what they wear, hold
-  and have attached (bridge v11), the inventory with its remove buttons (items show the icon the Catalog has for them), the account (last
+  and have attached (bridge v11), the inventory with its remove buttons (items show the icon the Catalog has for them and, with
+  bridge v14, their state; a right click on an item, or on something worn or held, repairs, cleans, fills,
+  empties or recharges it, gives one more, removes it, or shows it in the Catalog), the account (last
   connection, kicks and bans, when the Accounts tab was read) and every action of the player menu
   as a column of buttons on the right. It follows the bridge's refreshes; one window per player, several can stay open.
 - Vehicle details (bridge v13): *Their vehicle…* in the player menu and in Character details, or a

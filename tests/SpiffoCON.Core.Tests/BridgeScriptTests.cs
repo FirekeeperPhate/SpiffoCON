@@ -702,6 +702,59 @@ public sealed class BridgeScriptTests
         await Assert.ThrowsAsync<BridgeException>(() => _client.FixFluidsAsync(apply: true, radius: 5, username: "ghost"));
     }
 
+    [Fact]
+    public async Task The_inventory_says_the_state_of_the_items_and_they_can_be_repaired_cleaned_filled_and_recharged()
+    {
+        _game.DoString("GEAR()");
+        const string bag = "Inventory > Tool Bag";
+        async Task<BridgeItem> Row(string fullType) =>
+            (await _client.InventoryAsync("rj")).Single(i => i.Container == bag && i.FullType == fullType);
+
+        // a row is the worst of its items; what does not apply is not there
+        var axes = await Row("Base.WoodAxe");
+        Assert.Equal((2, 0.4, true, true), (axes.Count, axes.Condition, axes.Washable, axes.Dirty));
+        Assert.Equal(((double?)null, (double?)null), (axes.Uses, axes.Fill));
+        Assert.Equal((0.5, true, true), ((await Row("Base.Jacket_Padding")) is var j ? (j.Condition, j.Washable, j.Dirty) : default));
+        Assert.Equal((0.3, (double?)null), ((await Row("Base.Battery")) is var b ? (b.Uses, b.Condition) : default));
+        Assert.Equal((0.25, true), ((await Row("Base.Bucket")) is var w ? (w.Fill, w.Water) : default));
+        Assert.False((await Row("Base.PetrolCan")).Water);
+        var nails = await Row("Base.Nails");
+        Assert.Equal(((double?)null, (double?)null, (double?)null, (bool?)null), (nails.Condition, nails.Uses, nails.Fill, nails.Washable));
+        Told();
+
+        // repair: both axes as new, each told to the player's game
+        Assert.Equal((2, 0), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Repair, "Base.WoodAxe", bag));
+        Assert.Equal(["syncFields Wood Axe", "syncFields Wood Axe"], Told());
+        Assert.True(_game.DoString("local ok = true for _, it in ipairs(GEAR_BAG.getItems().items) do if it.fullType == 'Base.WoodAxe' then "
+            + "ok = ok and it.condition == 10 and it.head == 10 and it.sharp == 1 and it.repaired == 0 and it.broken == false end end return ok").Boolean);
+        // still bloody: that is Clean
+        Assert.Equal((1.0, true), ((await Row("Base.WoodAxe")) is var a ? (a.Condition, a.Dirty) : default));
+        Assert.Equal((2, 0), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Clean, "Base.WoodAxe", bag));
+        Assert.False((await Row("Base.WoodAxe")).Dirty);
+        Told();
+
+        // clothes: mended and washed at once, and what the others see of the player is sent again
+        Assert.Equal((1, 0), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Repair, "Base.Jacket_Padding", bag));
+        Assert.Equal(["syncFields Padded Jacket", "syncVisuals rj"], Told());
+        Assert.Equal(0, Lua("(function() for _, it in ipairs(GEAR_BAG.getItems().items) do if it.fullType == 'Base.Jacket_Padding' then return it.holes + it.dirt end end end)()"));
+        Assert.Equal((1.0, false), ((await Row("Base.Jacket_Padding")) is var m ? (m.Condition, m.Dirty) : default));
+
+        // a battery full again; a bucket to the top with water, then emptied; a gas can takes no water
+        Assert.Equal((1, 0), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Recharge, "Base.Battery", bag));
+        Assert.Equal(1.0, (await Row("Base.Battery")).Uses);
+        Assert.Equal((1, 0), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Fill, "Base.Bucket", bag));
+        Assert.Equal(1.0, (await Row("Base.Bucket")).Fill);
+        Assert.Equal((1, 0), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Empty, "Base.Bucket", bag));
+        Assert.Equal(0.0, (await Row("Base.Bucket")).Fill);
+        Assert.Equal((0, 1), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Fill, "Base.PetrolCan", bag));
+        Assert.Equal(0.5, (await Row("Base.PetrolCan")).Fill);
+
+        // what does not apply is left and said; what is not there is refused
+        Assert.Equal((0, 1), await _client.ItemActionAsync("rj", BridgeClient.ItemAction.Recharge, "Base.Nails", bag));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.ItemActionAsync("rj", BridgeClient.ItemAction.Repair, "Base.WoodAxe", "Inventory"));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.ItemActionAsync("ghost", BridgeClient.ItemAction.Repair, "Base.WoodAxe", bag));
+    }
+
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>
     sealed class GameFiles(Script game) : IBridgeFiles
     {

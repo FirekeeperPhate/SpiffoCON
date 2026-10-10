@@ -100,6 +100,23 @@ public sealed partial class CatalogViewModel : ObservableObject
     /// <summary>The entry for an item or vehicle id, in the catalog now loaded.</summary>
     internal CatalogEntry? Find(string fullType) => _byType.GetValueOrDefault(fullType);
 
+    /// <summary>Brings an item into view in the list, whatever was being looked for: the search is its id.</summary>
+    internal bool Show(string fullType)
+    {
+        if (Find(fullType) is not { } entry)
+            return false;
+        KindFilter = 0;
+        SourceFilter = AllSources;
+        if (entry.Hidden)
+            ShowHidden = true;
+        Search = entry.FullType;
+        // the search waits a moment before it filters: now, so that the entry is there to select
+        _searchDelay.Stop();
+        ApplyFilter();
+        Selected = entry;
+        return true;
+    }
+
     void SetEntries(IReadOnlyList<CatalogEntry> entries)
     {
         SpiffoCON.Controls.IconConverter.Clear();

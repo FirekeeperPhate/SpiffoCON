@@ -299,6 +299,33 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return (data.GetProperty("removed").GetInt32(), data.TryGetProperty("skippedWorn", out var s) ? s.GetInt32() : 0);
     }
 
+    /// <summary>What <see cref="ItemActionAsync"/> can do to the items of a row.</summary>
+    public enum ItemAction
+    {
+        /// <summary>As new: condition, the head of a tool, the edge of a blade; clothes mended and washed.</summary>
+        Repair,
+
+        /// <summary>Blood and dirt off clothes, bags and weapons.</summary>
+        Clean,
+
+        /// <summary>Water to the top, where water can go.</summary>
+        Fill,
+        Empty,
+
+        /// <summary>A battery, a lighter: full again.</summary>
+        Recharge,
+    }
+
+    /// <summary>
+    /// Does something to the items of one type a player has in one container (bridge v14), and tells the
+    /// player's game. Returns how many it was done to, and how many it does not apply to.
+    /// </summary>
+    public async Task<(int Done, int Skipped)> ItemActionAsync(string username, ItemAction action, string fullType, string? container = null)
+    {
+        var data = await SendAsync("itemaction", username, action.ToString().ToLowerInvariant(), fullType, container ?? "").ConfigureAwait(false);
+        return (data.GetProperty("done").GetInt32(), data.TryGetProperty("skipped", out var s) ? s.GetInt32() : 0);
+    }
+
     // the script name makes bridge v3 refuse another vehicle that got the same runtime id meanwhile
     /// <summary>
     /// Repairs a vehicle completely. With bridge v13 the parts that were gone (a wheel, a window, the
@@ -880,6 +907,25 @@ public sealed record BridgeItem
     public string Name { get; init; } = "";
     public int Count { get; init; }
     public bool Equipped { get; init; }
+
+    // Bridge v14: the state of the items of the row, the worst of them; each null when it does not apply
+    // (or with an older bridge).
+
+    /// <summary>0 (broken) to 1 (new): weapons, clothes, and anything damaged.</summary>
+    public double? Condition { get; init; }
+
+    /// <summary>What is left of something that runs down (a battery, a lighter), 0 to 1.</summary>
+    public double? Uses { get; init; }
+
+    /// <summary>How full something that holds liquids is, 0 to 1.</summary>
+    public double? Fill { get; init; }
+
+    /// <summary>Whether water can be added to it (false: a can of petrol).</summary>
+    public bool? Water { get; init; }
+
+    /// <summary>Clothes, bags and weapons: blood and dirt can be taken off.</summary>
+    public bool? Washable { get; init; }
+    public bool? Dirty { get; init; }
 }
 
 public sealed record BridgeVehicle

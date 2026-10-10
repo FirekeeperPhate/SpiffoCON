@@ -27,7 +27,7 @@ public sealed record CharacterSkill(string Name, int Level, string XpText, strin
 }
 
 /// <summary>Something held, worn or attached; the icon is the Catalog's, when it knows the item.</summary>
-public sealed record CharacterEquipment(string Group, string Slot, string Name, string ConditionText, double? Condition, string? IconPath = null);
+public sealed record CharacterEquipment(string Group, string Slot, string Name, string ConditionText, double? Condition, string? IconPath = null, string? FullType = null);
 
 /// <summary>A row of the inventory: what the bridge listed, with the Catalog's icon when it knows the item.</summary>
 public sealed record CharacterItem(BridgeItem Item, string? IconPath)
@@ -38,6 +38,47 @@ public sealed record CharacterItem(BridgeItem Item, string? IconPath)
     public string Name => Item.Name;
     public int Count => Item.Count;
     public bool Equipped => Item.Equipped;
+
+    /// <summary>"62% · dirty", "30% left", "25% full": the worst of the items of the row (bridge v14), or nothing to say.</summary>
+    public string StateText
+    {
+        get
+        {
+            var parts = new List<string>();
+            static string P(double v) => Math.Round(v * 100).ToString("0", CultureInfo.InvariantCulture) + "%";
+            if (Item.Condition is { } condition)
+                parts.Add(P(condition));
+            if (Item.Uses is { } uses)
+                parts.Add(P(uses) + " left");
+            if (Item.Fill is { } fill)
+                parts.Add(fill <= 0 ? "empty" : P(fill) + " full");
+            if (Item.Dirty == true)
+                parts.Add("dirty");
+            return string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>What the state is about, for the tooltip.</summary>
+    public string StateTip
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Item.Condition is not null)
+                parts.Add("condition (100% is new)");
+            if (Item.Uses is not null)
+                parts.Add("what is left of it");
+            if (Item.Fill is not null)
+                parts.Add("how full it is");
+            if (Item.Dirty == true)
+                parts.Add("blood or dirt on it");
+            return parts.Count == 0 ? "" : char.ToUpperInvariant(string.Join(", ", parts)[0]) + string.Join(", ", parts)[1..]
+                + (Count > 1 ? ": the worst of the " + Count.ToString(CultureInfo.InvariantCulture) : "") + ". Right-click for what can be done";
+        }
+    }
+
+    /// <summary>Worn out or nearly: shown in red.</summary>
+    public bool IsPoor => Item.Condition is < 0.35;
 }
 
 /// <summary>
@@ -363,7 +404,7 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
             Sync(Equipment, equipment.Select(e => new CharacterEquipment(
                 e.Kind switch { "hand" => "In hand", "worn" => "Worn", "attached" => "Attached", _ => e.Kind },
                 Slot(e.Slot), e.Name,
-                e.Condition is { } c ? $"{c:P0}" : "", e.Condition, IconOf(e.FullType))).ToList());
+                e.Condition is { } c ? $"{c:P0}" : "", e.Condition, IconOf(e.FullType), e.FullType)).ToList());
             EquipmentNote = equipment.Count == 0 ? "Nothing worn, held or attached." : "";
         }
         else
@@ -411,6 +452,66 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
         await Actions.AddXpAsync(Info?.Username ?? Username, skill.PerkId, skill.Name, amount);
         await RefreshAsync();
     }
+
+    /// <summary>Why the items can't be repaired, cleaned, filled or recharged (null: they can): bridge v14.</summary>
+    public string? ItemActionsProblem => _main.Bridge.V14Problem;
+
+    /// <summary>Whether RCON can be used now (Give one more).</summary>
+    public bool CanGive => _main.IsSessionActive && Online;
+
+    /// <summary>The row of the inventory an equipped thing is in: the main inventory, by its type.</summary>
+    public CharacterItem? RowOf(CharacterEquipment equipment) =>
+        equipment.FullType is null ? null
+        : Items.FirstOrDefault(i => i.FullType == equipment.FullType && i.Equipped)
+            ?? Items.FirstOrDefault(i => i.FullType == equipment.FullType && i.Container == "Inventory");
+
+    /// <summary>Repair, clean, fill, empty or recharge the items of a row (bridge v14), then read again.</summary>
+    public async Task ItemActionAsync(CharacterItem item, BridgeClient.ItemAction action)
+    {
+        if (Info is not { } info)
+            return;
+        if (await _main.Bridge.ItemActionAsync(info.Username, item.Item, action) is { } result)
+            _main.StatusText = result;
+        await RefreshAsync();
+    }
+
+    /// <summary>One more of an item, into the main inventory (RCON additem), then read again.</summary>
+    public async Task GiveOneMoreAsync(CharacterItem item)
+    {
+        string user = Info?.Username ?? Username;
+        if (!_main.IsSessionActive)
+        {
+            _main.StatusText = "Not connected.";
+            return;
+        }
+        var reply = await _main.RunAsync(Core.Commands.PlayerCommands.AddItem(user, item.FullType, 1));
+        _main.StatusText = $"One more {item.Name} for {user}: " + (reply is null
+            ? "failed, see the console."
+            : Core.Commands.PlayerCommands.InterpretAddItem(reply, user) switch
+            {
+                Core.Commands.CommandOutcome.Success => reply.Trim(),
+                Core.Commands.CommandOutcome.Failed => "failed: " + reply.Trim(),
+                _ => "sent, the server gave no reply.",
+            });
+        await RefreshAsync();
+    }
+
+    /// <summary>The item in the Catalog tab (to give more of it, or put it in a kit).</summary>
+    public void ShowInCatalog(CharacterItem item)
+    {
+        if (_main.Catalog.Show(item.FullType))
+            _main.ShowTab("Catalog");
+        else
+            _main.StatusText = $"The Catalog does not know {item.FullType}: load the server's mods there.";
+    }
+
+    public void CopyId(CharacterItem item)
+    {
+        Services.SafeClipboard.SetText(item.FullType);
+        _main.StatusText = $"Copied: {item.FullType}";
+    }
+
+    public Task RemoveAsync(CharacterItem item, bool all) => RemoveAsync(item, all ? item.Count : 1);
 
     [RelayCommand]
     private async Task RemoveOneAsync(CharacterItem? item) => await RemoveAsync(item, 1);

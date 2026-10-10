@@ -86,6 +86,75 @@ public partial class CharacterWindow : Window
         menu.IsOpen = true;
     }
 
+    // right-click on a row of the inventory: what can be done to those items
+    void Inventory_MouseRightButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject source
+            && ItemsControl.ContainerFromElement(InventoryList, source) is ListViewItem { DataContext: CharacterItem item } row)
+        {
+            InventoryList.SelectedItem = item;
+            OpenItemMenu(item, row);
+            e.Handled = true;
+        }
+    }
+
+    // on something held, worn or attached: the same menu, for the row of the inventory it is in
+    void Equipment_MouseRightButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: CharacterEquipment equipment } row && _vm.RowOf(equipment) is { } item)
+        {
+            OpenItemMenu(item, row);
+            e.Handled = true;
+        }
+    }
+
+    void OpenItemMenu(CharacterItem item, FrameworkElement target)
+    {
+        var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.MousePoint };
+        string title = (item.Count == 1 ? item.Name : $"{item.Name} × {item.Count}")
+            + (item.Container is "Inventory" or "" ? "" : $"  ({item.ContainerShort})");
+        menu.Items.Add(new MenuItem { Header = title, IsEnabled = false, FontWeight = FontWeights.SemiBold });
+
+        void Add(string header, Func<Task> action, bool enabled = true, string? tip = null)
+        {
+            var entry = new MenuItem { Header = header, IsEnabled = enabled, ToolTip = tip };
+            ToolTipService.SetShowOnDisabled(entry, true);
+            entry.Click += async (_, _) => await action();
+            menu.Items.Add(entry);
+        }
+        // through the bridge (v14): each is there when the row has something to do it to
+        var problem = _vm.ItemActionsProblem;
+        void Bridge(string header, Core.Bridge.BridgeClient.ItemAction action, bool applies, string what)
+        {
+            if (problem is null && !applies)
+                return;
+            Add(header, () => _vm.ItemActionAsync(item, action), problem is null, problem ?? what);
+        }
+        string all = item.Count > 1 ? $" (all {item.Count})" : "";
+        Bridge("Repair" + all, Core.Bridge.BridgeClient.ItemAction.Repair, item.Item.Condition is not null,
+            "As new: the condition, the head of a tool, the edge of a blade; clothes are mended, their patches taken off, and washed");
+        Bridge("Clean" + all, Core.Bridge.BridgeClient.ItemAction.Clean, item.Item.Washable == true,
+            "Blood and dirt off, and dry");
+        Bridge("Fill with water" + all, Core.Bridge.BridgeClient.ItemAction.Fill, item.Item is { Fill: < 1, Water: not false },
+            "Water to the top, on what is in it already (a container that takes no water is left)");
+        Bridge("Empty…" + all, Core.Bridge.BridgeClient.ItemAction.Empty, item.Item.Fill is > 0,
+            "The liquid inside is thrown away (asked first)");
+        Bridge("Recharge" + all, Core.Bridge.BridgeClient.ItemAction.Recharge, item.Item.Uses is not null,
+            "Full again: a battery, a lighter, a spool of thread");
+        if (menu.Items.Count > 1)
+            menu.Items.Add(new Separator());
+
+        Add("Give one more", () => _vm.GiveOneMoreAsync(item), _vm.CanGive,
+            _vm.CanGive ? "A new one into their main inventory (RCON additem)" : "Needs the player online (connect RCON)");
+        Add("Remove one…", () => _vm.RemoveAsync(item, all: false));
+        if (item.Count > 1)
+            Add($"Remove all {item.Count}…", () => _vm.RemoveAsync(item, all: true));
+        menu.Items.Add(new Separator());
+        Add("Show in the Catalog", () => { _vm.ShowInCatalog(item); return Task.CompletedTask; });
+        Add("Copy the id", () => { _vm.CopyId(item); return Task.CompletedTask; }, tip: item.FullType);
+        Open(menu);
+    }
+
     // English text whatever the PC's culture: "2,500"
     static string Number(int value) => value.ToString("#,0", System.Globalization.CultureInfo.InvariantCulture);
 

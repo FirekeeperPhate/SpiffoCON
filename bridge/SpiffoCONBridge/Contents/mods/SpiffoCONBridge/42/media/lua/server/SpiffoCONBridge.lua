@@ -171,7 +171,54 @@ local function bagLabel(parent, name, seen)
 	return parent .. " > " .. name .. (seen[name] > 1 and (" #" .. seen[name]) or "")
 end
 
--- items grouped by container and type: { container, fullType, name, count, equipped }
+local function hundredths(v) return math.floor(v * 100 + 0.5) / 100 end
+
+-- bridge v14: what there is to say about an item, for the menu on it. condition (0 to 1) for what wears out
+-- and shows it (weapons, clothes, anything damaged), uses for what runs down (a battery, a lighter), fill for
+-- what holds liquids (and water: whether water can be added), washable and dirty for clothes and weapons.
+local function itemState(item)
+	local s = {}
+	local max = try(function() return item:getConditionMax() end)
+	local condition = try(function() return item:getCondition() end)
+	local weapon, clothing = instanceof(item, "HandWeapon"), instanceof(item, "Clothing")
+	if max and max > 0 and condition and (condition < max or weapon or clothing) then
+		s.condition = hundredths(condition / max)
+	end
+	if try(function() return item:IsDrainable() end) then
+		local uses = try(function() return item:getMaxUses() end)
+		if uses and uses > 0 then s.uses = try(function() return hundredths(item:getCurrentUses() / uses) end) end
+	end
+	local part = try(function() return item:getFluidContainer() end)
+	if part then
+		local capacity = try(function() return part:getCapacity() end)
+		if capacity and capacity > 0 then s.fill = try(function() return hundredths(part:getAmount() / capacity) end) end
+		-- whether water can go in (not into a can of petrol): Fill is offered only then
+		s.water = try(function() return part:canAddFluid(Fluid.Water) end) == true
+	end
+	if clothing then
+		s.washable = true
+		s.dirty = try(function() return item:isDirty() or item:isBloody() end) == true
+	elseif weapon then
+		s.washable = true
+		s.dirty = (try(function() return item:getBloodLevel() end) or 0) > 0
+	end
+	return s
+end
+
+-- a row is several items: the worst of each is what it says
+local function addState(entry, s)
+	for _, key in ipairs({ "condition", "uses", "fill" }) do
+		if s[key] and (entry[key] == nil or s[key] < entry[key]) then entry[key] = s[key] end
+	end
+	if s.fill then entry.water = entry.water or s.water or false end
+	if s.washable then
+		entry.washable = true
+		entry.dirty = entry.dirty or s.dirty or false
+	end
+end
+
+-- items grouped by container and type: { container, fullType, name, count, equipped } and, since bridge v14,
+-- their state (itemState)
 local function addItems(result, container, label, player)
 	local items = container:getItems()
 	local grouped = {}
@@ -187,6 +234,7 @@ local function addItems(result, container, label, player)
 			order[#order + 1] = fullType
 		end
 		entry.count = entry.count + 1
+		addState(entry, itemState(item))
 		if player and (try(function() return player:isEquipped(item) end) or try(function() return item:isEquipped() end)) then
 			entry.equipped = true
 		end
@@ -421,6 +469,97 @@ local function removeItem(username, fullType, count, container)
 	end
 	if removed > 0 then audit("removed " .. removed .. " x " .. fullType .. " from " .. username) end
 	return { removed = removed, skippedWorn = skipped }
+end
+
+-- ---- things done to the items of a player (bridge v14) ----
+-- Each changes the items on the server and tells their owner with InventoryItem.syncItemFields: the packet
+-- carries the condition, the head condition, the sharpness, the times repaired, the uses, the dirt, blood and
+-- wetness, the holes and patches of clothes, and the liquid inside. Each returns whether it applies to the item.
+local ITEM_ACTIONS = {
+	-- as new: the condition, the head of a tool, the edge of a blade, and no memory of earlier repairs; clothes
+	-- with Clothing.fullyRestore, which also mends the holes, takes off the patches and washes them
+	repair = function(item)
+		local max = item:getConditionMax()
+		if not max or max <= 0 then return false end
+		if instanceof(item, "Clothing") then try(function() item:fullyRestore() end) end
+		try(function() item:setBroken(false) end)
+		item:setCondition(max)
+		try(function() if item:hasHeadCondition() then item:setHeadCondition(item:getHeadConditionMax()) end end)
+		try(function() item:applyMaxSharpness() end)
+		try(function() item:setTimesRepaired(0) end)
+		return true
+	end,
+	-- blood and dirt off, as washing does (ISWashClothing:complete), but dry
+	clean = function(item)
+		local clothing, bag = instanceof(item, "Clothing"), instanceof(item, "InventoryContainer")
+		if not (clothing or bag or instanceof(item, "HandWeapon")) then return false end
+		if clothing or bag then
+			try(function()
+				local parts = BloodClothingType.getCoveredParts(item:getBloodClothingType())
+				if parts then
+					for i = 0, parts:size() - 1 do
+						item:setBlood(parts:get(i), 0)
+						item:setDirt(parts:get(i), 0)
+					end
+				end
+			end)
+		end
+		if clothing then
+			try(function() item:setDirtiness(0) end)
+			try(function() item:setWetness(0) end)
+		end
+		try(function() item:setBloodLevel(0) end)
+		return true
+	end,
+	-- water to the top, where water can go (not into a can of petrol)
+	fill = function(item)
+		local part = item:getFluidContainer()
+		if not part or not part:canAddFluid(Fluid.Water) then return false end
+		local free = part:getFreeCapacity()
+		if free > 0 then part:addFluid(Fluid.Water, free) end
+		return true
+	end,
+	empty = function(item)
+		local part = item:getFluidContainer()
+		if not part then return false end
+		part:Empty()
+		return true
+	end,
+	-- a battery, a lighter, a spool of thread: full again
+	recharge = function(item)
+		if not item:IsDrainable() then return false end
+		local uses = item:getMaxUses()
+		if not uses or uses <= 0 then return false end
+		item:setCurrentUses(uses)
+		return true
+	end,
+}
+
+-- itemaction <username> <action> <fullType> [container]: repair | clean | fill | empty | recharge, on the
+-- items of that type listed under that container (as removeitem: every bag is a container of its own)
+local function itemAction(username, action, fullType, container)
+	local p = requirePlayer(username)
+	local act = ITEM_ACTIONS[action]
+	if not act then error("itemaction: unknown action " .. tostring(action)) end
+	if not fullType or fullType == "" then error("itemaction needs the type of the item") end
+	if container == "" then container = nil end
+	local found = {}
+	collect(p:getInventory(), "Inventory", fullType, container, found)
+	if #found == 0 then error(username .. " has no " .. fullType .. (container and (" in " .. container) or "") .. " any more: refresh") end
+	local done, skipped, visuals = 0, 0, false
+	for _, item in ipairs(found) do
+		if try(act, item) == true then
+			done = done + 1
+			item:syncItemFields()
+			if instanceof(item, "Clothing") then visuals = true end
+		else
+			skipped = skipped + 1
+		end
+	end
+	-- what the others see of the clothes the player wears (as ISWashClothing:complete)
+	if visuals then try(function() syncVisuals(p) end) end
+	if done > 0 then audit(action .. " " .. done .. " x " .. fullType .. " of " .. username) end
+	return { done = done, skipped = skipped }
 end
 
 -- ids are runtime ids, given again to other vehicles as areas unload and load: when SpiffoCON
@@ -1751,6 +1890,7 @@ local actions = {
 	zombiecells = zombieCells,
 	removewrecks = removeWrecks,
 	fixfluids = fixFluids,
+	itemaction = itemAction,
 	removecorpses = removeCorpses,
 	removegrounditems = removeGroundItems,
 	stopfires = stopFires,

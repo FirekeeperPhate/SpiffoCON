@@ -699,3 +699,73 @@ function BROKEN_FLUIDS()
 	CRATE = crate
 	PLACE(at(110, 110, 0), fluidItem("Base.Bucket", "Bucket", false), 0.5, 0.5, 0, false)
 end
+
+-- ---- bridge v14: the state of items, and what can be done to them ----
+Fluid = { Water = "Water" }
+BloodClothingType = { getCoveredParts = function(kind) return list({ "Torso", "Arms" }) end }
+function syncVisuals(p) note("syncVisuals " .. p.getUsername()) end
+-- an item that wears out: condition of max, told to its owner when it changes
+local function wearing(it, condition, max)
+	it.condition, it.max = condition, max
+	it.getCondition = function() return it.condition end
+	it.getConditionMax = function() return it.max end
+	it.setCondition = function(self, v) it.condition = v end
+	it.setBroken = function(self, v) it.broken = v end
+	it.syncItemFields = function() note("syncFields " .. it.name) end
+	it.IsDrainable = function() return it.maxUses ~= nil end
+	it.getMaxUses = function() return it.maxUses end
+	it.getCurrentUses = function() return it.uses end
+	it.setCurrentUses = function(self, v) it.uses = v end
+	it.getBloodLevel = function() return it.blood or 0 end
+	it.setBloodLevel = function(self, v) it.blood = v end
+	return it
+end
+-- the part that holds liquids, with what the bridge asks of it
+local function liquid(amount, capacity, takesWater)
+	local f = { amount = amount }
+	f.getCapacity = function() return capacity end
+	f.getAmount = function() return f.amount end
+	f.getFreeCapacity = function() return capacity - f.amount end
+	f.canAddFluid = function(self, fluid) return takesWater end
+	f.addFluid = function(self, fluid, v) assert(fluid == Fluid.Water); f.amount = f.amount + v end
+	f.Empty = function() f.amount = 0 end
+	return f
+end
+-- set up by the tests that want them: rj with things in every state, in a bag of their own
+function GEAR()
+	local kit = bag("Base.Bag_ToolBag", "Tool Bag")
+	rj.inventory:AddItem(kit)
+	local function put(it) kit.inner:AddItem(it); return it end
+	-- two axes, one worse than the other: blunt, repaired three times, bloody
+	for _, condition in ipairs({ 4, 7 }) do
+		local axe = put(wearing(item("Base.WoodAxe", "Wood Axe"), condition, 10))
+		axe.class = "HandWeapon"
+		axe.head, axe.sharp, axe.repaired, axe.blood = 2, 0.2, 3, 0.5
+		axe.hasHeadCondition = function() return true end
+		axe.getHeadConditionMax = function() return 10 end
+		axe.setHeadCondition = function(self, v) axe.head = v end
+		axe.applyMaxSharpness = function() axe.sharp = 1 end
+		axe.setTimesRepaired = function(self, v) axe.repaired = v end
+	end
+	-- a jacket with holes, dirty
+	local jacket = put(wearing(item("Base.Jacket_Padding", "Padded Jacket"), 5, 10))
+	jacket.class = "Clothing"
+	jacket.holes, jacket.dirt, jacket.wet = 2, 0.6, 30
+	jacket.isDirty = function() return jacket.dirt > 0 end
+	jacket.isBloody = function() return false end
+	jacket.fullyRestore = function() jacket.holes, jacket.dirt, jacket.condition = 0, 0, jacket.max end
+	jacket.getBloodClothingType = function() return "Jacket" end
+	jacket.setBlood = function() end
+	jacket.setDirt = function() end
+	jacket.setDirtiness = function(self, v) jacket.dirt = v end
+	jacket.setWetness = function(self, v) jacket.wet = v end
+	-- a battery half spent, a bucket with a little water, a can that takes no water, and whole nails
+	local battery = put(wearing(item("Base.Battery", "Battery"), 10, 10))
+	battery.maxUses, battery.uses = 10, 3
+	local bucket = put(wearing(item("Base.Bucket", "Bucket"), 10, 10))
+	bucket.fluid = liquid(2.5, 10, true)
+	local can = put(wearing(item("Base.PetrolCan", "Gas Can"), 10, 10))
+	can.fluid = liquid(4, 8, false)
+	put(wearing(item("Base.Nails", "Nails"), 10, 10))
+	GEAR_BAG = kit.inner
+end
