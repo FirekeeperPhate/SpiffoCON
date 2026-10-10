@@ -109,11 +109,29 @@
             <!-- traits and skills -->
             <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Margin="0,0,10,0">
                 <StackPanel>
-                    <Border Style="{StaticResource Card}" Visibility="{Binding Traits, Converter={StaticResource NullToCollapsed}}">
-                        <StackPanel>
-                            <TextBlock Text="Traits" Style="{StaticResource CardTitle}" />
-                            <TextBlock Text="{Binding Traits}" TextWrapping="Wrap" />
-                        </StackPanel>
+                    <Border Style="{StaticResource Card}" Visibility="{Binding HasSheet, Converter={StaticResource BoolToVisibility}}">
+                        <DockPanel>
+                            <!-- gives a trait or takes one away: the game's own list, read when asked (bridge v16) -->
+                            <Button DockPanel.Dock="Right" Content="Change…" VerticalAlignment="Top" FontSize="11" Padding="8,1" MinHeight="0" Margin="8,0,0,0"
+                                    Click="Traits_Click" ToolTip="Give a trait or take one away, as the game's own admin window does (bridge v16)" />
+                            <StackPanel>
+                                <TextBlock Text="Traits" Style="{StaticResource CardTitle}" />
+                                <TextBlock x:Name="TraitsText" Text="{Binding Traits}" TextWrapping="Wrap"
+                                           Visibility="{Binding Traits, Converter={StaticResource NullToCollapsed}}" />
+                                <TextBlock Text="None.">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource Note}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Traits}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </DockPanel>
                     </Border>
                     <Border Style="{StaticResource Card}" Visibility="{Binding Skills.Count, Converter={StaticResource PositiveToVisible}}">
                         <StackPanel>

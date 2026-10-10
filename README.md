@@ -218,12 +218,19 @@ instead.
     kind, position, health, hunger and thirst, the hungry and thirsty ones first; one or all of
     them fed and watered (hunger and thirst to nothing, as the game's own cheats set them), and the
     feeding troughs filled with water (one with feed in it is left). Animals inside a hutch or a
-    trailer are not on the map and are not listed.
+    trailer are not on the map: they are listed since bridge v16.
 
   Bridge v16 adds:
   - *Restore their needs…* in the player menu: hunger, thirst, tiredness, exertion, stress, panic,
-    boredom, unhappiness, pain, drunkenness and sickness go to nothing (wounds stay: that is *Heal
-    completely*);
+    boredom, unhappiness, pain, drunkenness, sickness and a cold go to nothing (wounds stay: that is
+    *Heal completely*);
+  - traits: *Change…* on the traits of Character details gives a trait or takes one away, from the
+    game's own list, as its admin window does (the trait and the experience boost that goes with
+    it; traits that exclude each other are not checked);
+  - the name the game shows for each item of the inventory when it says more than the name of the
+    type: "Empty Bucket", "Bucket of Water", "Jacket (Worn)". A container that lost its liquid
+    part shows as a plain "Bucket", so it is told apart at a glance;
+  - the animals inside a hutch or a trailer in the animals list, where the hutch or the trailer is;
   - what every level of a skill takes, so that a level can be set from Character details (the **+**
     of a skill, *Set level*): up or down, by adding or taking away the difference with `addxp`, as
     the game's own admin window does. Going down is asked first.

@@ -155,6 +155,33 @@ public partial class CharacterWindow : Window
         Open(menu);
     }
 
+    // "Change…" on the traits: the ones to give (good and bad apart, as the game lists them) and the ones to take away
+    async void Traits_Click(object sender, RoutedEventArgs e)
+    {
+        var button = (Button)sender;
+        if (await _vm.ReadTraitsAsync() is not { } traits || !IsVisible)
+            return;
+        var menu = new ContextMenu { PlacementTarget = button, Placement = PlacementMode.Bottom };
+        MenuItem Group(string header, IEnumerable<Core.Bridge.BridgeTrait> list, bool add)
+        {
+            var group = new MenuItem { Header = header };
+            foreach (var trait in list.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase))
+            {
+                var entry = new MenuItem { Header = trait.Name, ToolTip = string.IsNullOrWhiteSpace(trait.Description) ? null : new TextBlock { Text = trait.Description, MaxWidth = 360, TextWrapping = TextWrapping.Wrap } };
+                entry.Click += async (_, _) => await _vm.SetTraitAsync(trait, add);
+                group.Items.Add(entry);
+            }
+            group.IsEnabled = group.Items.Count > 0;
+            return group;
+        }
+        var missing = traits.Where(t => !t.Has).ToList();
+        menu.Items.Add(Group("Give a good trait", missing.Where(t => !t.IsNegative), add: true));
+        menu.Items.Add(Group("Give a bad trait", missing.Where(t => t.IsNegative), add: true));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Group("Take away", traits.Where(t => t.Has), add: false));
+        Open(menu);
+    }
+
     // English text whatever the PC's culture: "2,500"
     static string Number(int value) => value.ToString("#,0", System.Globalization.CultureInfo.InvariantCulture);
 

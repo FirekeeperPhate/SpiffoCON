@@ -1499,7 +1499,7 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Header="Zone" Width="140" DisplayMemberBinding="{Binding Zone}" />
+                                        <GridViewColumn Header="Where" Width="140" DisplayMemberBinding="{Binding WhereText}" />
                                         <GridViewColumn Width="80">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>

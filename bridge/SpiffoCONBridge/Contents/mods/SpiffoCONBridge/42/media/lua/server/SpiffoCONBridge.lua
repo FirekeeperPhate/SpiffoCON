@@ -236,6 +236,11 @@ local function addItems(result, container, label, player)
 		end
 		entry.count = entry.count + 1
 		addState(entry, itemState(item))
+		-- bridge v16: the name the game shows in the inventory, which says more than the name of the type: "Empty
+		-- Bucket", "Bucket of Water", "Jacket (Worn)". Given when all the items of the row agree on it. A
+		-- container that lost its liquid part shows there as a plain "Bucket": told apart at a glance.
+		local shown = try(function() return item:getName() end)
+		if entry.count == 1 then entry.shown = shown elseif entry.shown ~= shown then entry.shown = false end
 		if player and (try(function() return player:isEquipped(item) end) or try(function() return item:isEquipped() end)) then
 			entry.equipped = true
 		end
@@ -245,7 +250,12 @@ local function addItems(result, container, label, player)
 			addItems(result, inner, bagLabel(label, entry.name, bags), nil)
 		end
 	end
-	for _, fullType in ipairs(order) do result[#result + 1] = grouped[fullType] end
+	for _, fullType in ipairs(order) do
+		local entry = grouped[fullType]
+		-- nothing more to say than the name of the type, or the items differ
+		if not entry.shown or entry.shown == entry.name then entry.shown = nil end
+		result[#result + 1] = entry
+	end
 end
 
 local function inventory(username)
@@ -623,8 +633,76 @@ local function restoreNeeds(username)
 		end
 	end
 	if mask > 0 then syncPlayerStats(p, mask) end
-	audit("restored the needs of " .. username)
-	return { restored = done }
+	-- a cold is not a stat: the body keeps it (BodyDamage.saveMainFields), and the whole body is sent to the
+	-- player's game as after a cure
+	local cold = false
+	try(function()
+		local body = p:getBodyDamage()
+		cold = body:isHasACold() or body:getColdStrength() > 0
+		body:setHasACold(false)
+		body:setColdStrength(0)
+		body:setCatchACold(0)
+		sendDamage(p)
+	end)
+	audit("restored the needs of " .. username .. (cold and " (and their cold)" or ""))
+	return { restored = done, cold = cold }
+end
+
+-- ---- traits (bridge v16) ----
+-- As the game's own admin window adds and removes one (ISPlayerStatsUI.onAddTrait / onRemoveTrait): the
+-- trait in or out of the character's traits, its experience boost with it; then the traits are sent to the
+-- player's game (sendSyncPlayerFields, the bit of the traits: ISReadABook sends them the same way).
+local SYNC_TRAITS = 2
+
+-- a trait as the game describes it; id is what settrait takes ("base:brave")
+local function traitInfo(def)
+	return {
+		id = tostring(def:getType()),
+		name = try(function() return def:getLabel() end) or try(function() return def:getUIName() end) or tostring(def:getType()),
+		cost = try(function() return def:getCost() end),
+		description = try(function() return def:getDescription() end),
+	}
+end
+
+local function eachTrait(visit)
+	local all = CharacterTraitDefinition.getTraits()
+	for i = 0, all:size() - 1 do visit(all:get(i)) end
+end
+
+-- traits <username>: every trait of the game, with whether that player has it
+local function listTraits(username)
+	local p = requirePlayer(username)
+	local list = array()
+	eachTrait(function(def)
+		local info = traitInfo(def)
+		info.has = try(function() return p:hasTrait(def:getType()) end) == true
+		list[#list + 1] = info
+	end)
+	return list
+end
+
+-- settrait <username> <id> <add | remove>
+local function setTrait(username, id, what)
+	local p = requireLivingPlayer(username)
+	if what ~= "add" and what ~= "remove" then error("settrait needs add or remove") end
+	local found
+	eachTrait(function(def) if tostring(def:getType()) == id then found = def end end)
+	if not found then error("the game has no trait " .. tostring(id)) end
+	local trait = found:getType()
+	local has = p:hasTrait(trait)
+	local name = traitInfo(found).name
+	if what == "add" then
+		if has then error(username .. " has " .. name .. " already") end
+		p:getCharacterTraits():add(trait)
+		p:modifyTraitXPBoost(trait, false)
+	else
+		if not has then error(username .. " does not have " .. name) end
+		p:getCharacterTraits():remove(trait)
+		p:modifyTraitXPBoost(trait, true)
+	end
+	sendSyncPlayerFields(p, SYNC_TRAITS)
+	audit((what == "add" and "gave " or "took from ") .. username .. " the trait " .. name)
+	return { name = name, has = p:hasTrait(trait) }
 end
 
 -- ids are runtime ids, given again to other vehicles as areas unload and load: when SpiffoCON
@@ -1093,7 +1171,7 @@ end
 -- thirst are stats of the animal, 0 (fine) to 1; the game's own cheats set them the same way
 -- (Commands.animal.setHunger / setThirst). Animals inside a hutch or a trailer are not on a square: not listed.
 
-local function animalInfo(a)
+local function animalInfo(a, place, holder)
 	local kind = try(function() return a:getAnimalType() end)
 	local breed = try(function() return a:getData():getBreed():getName() end)
 	return {
@@ -1102,9 +1180,12 @@ local function animalInfo(a)
 		typeName = kind and try(function() return getTextOrNull("IGUI_AnimalType_" .. kind) end) or kind,
 		breed = breed and (try(function() return getTextOrNull("IGUI_Breed_" .. breed) end) or breed) or nil,
 		name = try(function() return a:getCustomName() end) or try(function() return a:getFullName() end),
-		x = try(function() return math.floor(a:getX()) end),
-		y = try(function() return math.floor(a:getY()) end),
-		z = try(function() return math.floor(a:getZ()) end),
+		-- in a hutch or a trailer it is not on the map: where the hutch or the trailer is
+		x = try(function() return math.floor((holder or a):getX()) end),
+		y = try(function() return math.floor((holder or a):getY()) end),
+		z = try(function() return math.floor((holder or a):getZ()) end),
+		-- bridge v16: "hutch" or "trailer" for one that is inside one
+		place = place,
 		health = try(function() return hundredths(a:getHealth()) end),
 		hunger = try(function() return hundredths(a:getStats():get(CharacterStat.HUNGER)) end),
 		thirst = try(function() return hundredths(a:getStats():get(CharacterStat.THIRST)) end),
@@ -1114,10 +1195,18 @@ local function animalInfo(a)
 	}
 end
 
--- calls visit(animal) for every animal of the players within the radius of each player online, once each;
--- returns the ground squares looked at
+-- calls visit(animal, place, holder) for every animal of the players within the radius of each player online,
+-- once each; returns the ground squares looked at. Since bridge v16 also the animals that are not on the
+-- map: inside a hutch (IsoHutch.getAnimalInside and its nest boxes; place "hutch", holder the hutch) and in
+-- the trailers and vehicles loaded (BaseVehicle.getAnimals; place "trailer", holder the vehicle).
 local function eachAnimal(radius, visit)
 	local seenSquares, seenAnimals, loaded = {}, {}, 0
+	local function see(a, place, holder)
+		if a and not seenAnimals[a] and not try(function() return a:isWild() end) and not try(function() return a:isDead() end) then
+			seenAnimals[a] = true
+			visit(a, place, holder)
+		end
+	end
 	local online = getOnlinePlayers()
 	for i = 0, online:size() - 1 do
 		local p = online:get(i)
@@ -1126,12 +1215,37 @@ local function eachAnimal(radius, visit)
 			if seenSquares[key] then return end
 			seenSquares[key] = true
 			local animals = try(function() return sq:getAnimals() end)
-			if not animals then return end
-			for n = 0, animals:size() - 1 do
-				local a = animals:get(n)
-				if not seenAnimals[a] and not try(function() return a:isWild() end) and not try(function() return a:isDead() end) then
-					seenAnimals[a] = true
-					visit(a)
+			if animals then
+				for n = 0, animals:size() - 1 do see(animals:get(n)) end
+			end
+			local things = sq:getObjects()
+			for n = 0, things:size() - 1 do
+				local hutch = things:get(n)
+				-- a hutch is several squares: its animals are asked of the main one
+				if instanceof(hutch, "IsoHutch") and not try(function() return hutch:isSlave() end) then
+					try(function()
+						local inside = ArrayList.new()
+						inside:addAll(hutch:getAnimalInside():values())
+						for k = 0, inside:size() - 1 do see(inside:get(k), "hutch", hutch) end
+					end)
+					-- each box asked on its own: one that fails does not hide the others
+					local boxes = try(function() return hutch:getMaxNestBox() end) or 0
+					for box = 0, boxes do
+						see(try(function() return hutch:getAnimalInNestBox(box) end), "hutch", hutch)
+					end
+				end
+			end
+		end)
+	end
+	-- what is loaded is near a player: every vehicle the server has, whatever the radius
+	if loaded > 0 then
+		try(function()
+			local vehicles = loadedVehicles()
+			for i = 0, vehicles:size() - 1 do
+				local v = vehicles:get(i)
+				local animals = try(function() return v:getAnimals() end)
+				if animals then
+					for n = 0, animals:size() - 1 do see(animals:get(n), "trailer", v) end
 				end
 			end
 		end)
@@ -1149,7 +1263,7 @@ end
 local function listAnimals(radius)
 	radius = animalRadius("animals", radius)
 	local list = array()
-	local loaded = eachAnimal(radius, function(a) list[#list + 1] = animalInfo(a) end)
+	local loaded = eachAnimal(radius, function(a, place, holder) list[#list + 1] = animalInfo(a, place, holder) end)
 	return { animals = list, loaded = loaded, radius = radius }
 end
 
@@ -1165,7 +1279,12 @@ local function feedAnimals(radius, id)
 	id = tonumber(id)
 	local fed = 0
 	if id then
-		local a = getAnimal(id)
+		-- among those listed first (one in a hutch or a trailer is not in the world for getAnimal)
+		local a
+		eachAnimal(radius, function(candidate)
+			if not a and try(function() return candidate:getAnimalID() end) == id then a = candidate end
+		end)
+		a = a or getAnimal(id)
 		if not a then error("no animal with id " .. tostring(id) .. " (it may be in an area no player has loaded)") end
 		feedAnimal(a)
 		fed = 1
@@ -1611,6 +1730,16 @@ local function playerDetails(username)
 		end
 	end)
 	info.traits = traits
+	-- bridge v16: the same with their ids, for taking one away
+	info.traitList = try(function()
+		local list = array()
+		local known = p:getCharacterTraits():getKnownTraits()
+		for i = 0, known:size() - 1 do
+			local def = CharacterTraitDefinition.getCharacterTraitDefinition(known:get(i))
+			if def then list[#list + 1] = traitInfo(def) end
+		end
+		return list
+	end)
 
 	local skills = array()
 	try(function()
@@ -2186,6 +2315,8 @@ local actions = {
 	itemaction = itemAction,
 	repairgear = repairGear,
 	restoreneeds = restoreNeeds,
+	traits = listTraits,
+	settrait = setTrait,
 	animals = listAnimals,
 	feedanimals = feedAnimals,
 	filltroughs = fillTroughs,

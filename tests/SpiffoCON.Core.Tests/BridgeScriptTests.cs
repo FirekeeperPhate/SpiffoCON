@@ -841,8 +841,13 @@ public sealed class BridgeScriptTests
         Assert.Equal((0.26, 0.8, 0.5), (Math.Round(before.Stats["hunger"] ?? -1, 2), before.Stats["thirst"] ?? -1, before.Stats["panic"] ?? -1));
 
         // the eleven stats this game has of the eighteen asked for; the two with a bit of their own are sent
-        Assert.Equal(11, await _client.RestoreNeedsAsync("rj"));
-        Assert.Equal(["syncPlayerStats rj 3"], Told());
+        Assert.Equal((11, false), await _client.RestoreNeedsAsync("rj"));
+        Assert.Equal(["syncPlayerStats rj 3", "sendDamage rj"], Told());
+        // a cold is the body's: taken away too, and said
+        _game.DoString("local b = rj.getBodyDamage() b.cold, b.coldStrength = true, 40");
+        Assert.Equal((11, true), await _client.RestoreNeedsAsync("rj"));
+        Assert.True(_game.DoString("local b = rj.getBodyDamage() return b.cold == false and b.coldStrength == 0 and b.catching == 0").Boolean);
+        Told();
         var after = (await _client.CharacterAsync("rj", details: true)).Details!;
         Assert.Equal((0.0, 0.0, 0.0, 1.0), (after.Stats["hunger"] ?? -1, after.Stats["thirst"] ?? -1, after.Stats["panic"] ?? -1, after.Stats["endurance"] ?? -1));
         await Assert.ThrowsAsync<BridgeException>(() => _client.RestoreNeedsAsync("ghost"));
@@ -865,6 +870,74 @@ public sealed class BridgeScriptTests
         // no table (an older bridge), or a level that is not one
         Assert.Null(SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(870, null, 5));
         Assert.Null(SpiffoCON.Core.Commands.PlayerCommands.XpToLevel(870, axe.Totals, 11));
+    }
+
+    [Fact]
+    public async Task The_inventory_gives_the_name_the_game_shows_when_it_says_more()
+    {
+        _game.DoString("rj.inventory:AddItem(FLUID_ITEM('Base.Bucket', 'Bucket', true)) "
+            + "rj.inventory:AddItem(FLUID_ITEM('Base.WaterBottle', 'Water Bottle', true)) "
+            + "rj.inventory:AddItem(FLUID_ITEM('Base.WaterBottle', 'Water Bottle', false)) "
+            + "rj.inventory:AddItem(FLUID_ITEM('Base.OldPot', 'Pot', false))");
+        var items = (await _client.InventoryAsync("rj")).Where(i => i.Container == "Inventory").ToList();
+        // a whole, empty bucket is an "Empty Bucket"; one that lost its liquid part is a plain "Pot": nothing to add
+        var bucket = items.Single(i => i.FullType == "Base.Bucket");
+        Assert.Equal(("Bucket", "Empty Bucket", "Empty Bucket"), (bucket.Name, bucket.Shown, bucket.ShownName));
+        var pot = items.Single(i => i.FullType == "Base.OldPot");
+        Assert.Equal(("Pot", (string?)null, "Pot"), (pot.Name, pot.Shown, pot.ShownName));
+        // two of a type that the game names differently (one whole, one not): the name of the type
+        var bottles = items.Single(i => i.FullType == "Base.WaterBottle");
+        Assert.Equal((2, (string?)null), (bottles.Count, bottles.Shown));
+        // what has nothing more to say keeps its name, and bags are still listed under it
+        Assert.Null(items.Single(i => i.FullType == "Base.Axe").Shown);
+        Assert.Contains(await _client.InventoryAsync("rj"), i => i.Container == "Inventory > School Bag");
+    }
+
+    [Fact]
+    public async Task A_trait_is_given_and_taken_away_and_the_players_game_is_told()
+    {
+        _game.DoString("TRAITS()");
+        var all = await _client.TraitsAsync("rj");
+        Assert.Equal(["Brave", "Fast Reader", "Strong", "Clumsy"], all.Select(t => t.Name));
+        Assert.Equal(["base:brave", "base:fastreader"], all.Where(t => t.Has).Select(t => t.Id));
+        var clumsy = all.Single(t => t.Id == "base:clumsy");
+        Assert.Equal((-2, true, "Clumsy: what it does"), (clumsy.Cost, clumsy.IsNegative, clumsy.Description));
+        // the sheet has them with their ids
+        var sheet = (await _client.CharacterAsync("rj", details: true)).Details!;
+        Assert.Equal(["base:brave", "base:fastreader"], sheet.TraitList!.Select(t => t.Id));
+        Told();
+
+        Assert.Equal("Strong", await _client.SetTraitAsync("rj", "base:strong", add: true));
+        Assert.Equal(["syncFields rj 2"], Told());
+        Assert.Equal("Brave", await _client.SetTraitAsync("rj", "base:brave", add: false));
+        Assert.Equal(["base:fastreader", "base:strong"], (await _client.TraitsAsync("rj")).Where(t => t.Has).Select(t => t.Id));
+        Assert.Equal("base:strong on, base:brave off", _game.DoString("return table.concat(rj.boosts, ', ')").String);
+
+        // twice is refused, and so is a trait the game does not have or a player who is not there
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetTraitAsync("rj", "base:strong", add: true));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetTraitAsync("rj", "base:brave", add: false));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetTraitAsync("rj", "base:flying", add: true));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SetTraitAsync("ghost", "base:strong", add: true));
+    }
+
+    [Fact]
+    public async Task Animals_in_a_hutch_or_a_trailer_are_listed_where_those_are_and_can_be_fed()
+    {
+        _game.DoString("ANIMALS_INSIDE()");
+        var animals = (await _client.AnimalsAsync(5)).Animals;
+        Assert.Equal([21, 22, 23], animals.Select(a => a.Id!.Value).Order());
+        var inside = animals.Single(a => a.Id == 21);
+        Assert.Equal(("hutch", 103, 101, "in a hutch", 0.7), (inside.Place, inside.X, inside.Y, inside.WhereText, inside.Hunger));
+        Assert.Equal("hutch", animals.Single(a => a.Id == 22).Place);
+        var sheep = animals.Single(a => a.Id == 23);
+        Assert.Equal(("trailer", 105, 100, "in a trailer"), (sheep.Place, sheep.X, sheep.Y, sheep.WhereText));
+
+        // one by its id, though it is not in the world; then all of them
+        Assert.Equal(1, await _client.FeedAnimalsAsync(5, id: 23));
+        Assert.Equal(0, Lua("KEPT[3].hunger"));
+        Assert.Equal(0.7, Lua("KEPT[1].hunger"));
+        Assert.Equal(3, await _client.FeedAnimalsAsync(5));
+        Assert.Equal(0, Lua("KEPT[1].hunger + KEPT[2].hunger"));
     }
 
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>

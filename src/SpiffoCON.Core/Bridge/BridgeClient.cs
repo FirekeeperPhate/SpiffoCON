@@ -337,8 +337,26 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     /// Hunger, thirst, tiredness, exertion, stress, panic, boredom, unhappiness, pain, drunkenness and sickness
     /// of a player back to nothing (bridge v16). Returns how many of the game's stats were reset.
     /// </summary>
-    public async Task<int> RestoreNeedsAsync(string username) =>
-        (await SendAsync("restoreneeds", username).ConfigureAwait(false)).GetProperty("restored").GetInt32();
+    public async Task<(int Restored, bool Cold)> RestoreNeedsAsync(string username)
+    {
+        var data = await SendAsync("restoreneeds", username).ConfigureAwait(false);
+        // a cold is kept by the body, not as a stat: taken away with the rest, and said when there was one
+        return (data.GetProperty("restored").GetInt32(), data.TryGetProperty("cold", out var cold) && cold.ValueKind == JsonValueKind.True);
+    }
+
+    /// <summary>Every trait of the game, with whether an online player has it (bridge v16).</summary>
+    public async Task<IReadOnlyList<BridgeTrait>> TraitsAsync(string username) =>
+        Deserialize(await SendAsync("traits", username).ConfigureAwait(false), BridgeJson.Default.ListBridgeTrait);
+
+    /// <summary>
+    /// Gives a trait to a player, or takes it away (bridge v16), as the game's own admin window does, and tells
+    /// the player's game. Returns the trait's name.
+    /// </summary>
+    public async Task<string> SetTraitAsync(string username, string traitId, bool add)
+    {
+        var data = await SendAsync("settrait", username, traitId, add ? "add" : "remove").ConfigureAwait(false);
+        return data.TryGetProperty("name", out var name) ? name.GetString() ?? traitId : traitId;
+    }
 
     static string Number(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
@@ -691,6 +709,9 @@ public sealed record BridgePlayerDetails
     // a bridge that leaves a list out gets an empty one: the generated deserializer would set null
     public List<string> Traits { get => _traits ?? []; init => _traits = value; }
     readonly List<string>? _traits;
+
+    /// <summary>Bridge v16: the same traits with their ids, for taking one away; null with an older bridge.</summary>
+    public List<BridgeTrait>? TraitList { get; init; }
     public List<BridgeSkill> Skills { get => _skills ?? []; init => _skills = value; }
     readonly List<BridgeSkill>? _skills;
 
@@ -921,6 +942,26 @@ public sealed record BridgeFluidFix
         .Select(g => $"{g.Count} × {g.Name}"));
 }
 
+/// <summary>Bridge v16: a trait of the game.</summary>
+public sealed record BridgeTrait
+{
+    /// <summary>What settrait takes ("base:brave").</summary>
+    public string Id { get; init; } = "";
+
+    /// <summary>The name players see, in the server's language.</summary>
+    public string Name { get; init; } = "";
+
+    /// <summary>The points it costs at character creation: negative for the ones that give points back.</summary>
+    public int? Cost { get; init; }
+    public string? Description { get; init; }
+
+    /// <summary>In the list of all traits: whether the player has it.</summary>
+    public bool Has { get; init; }
+
+    /// <summary>A drawback: it gives points back when a character is made.</summary>
+    [JsonIgnore] public bool IsNegative => Cost is < 0;
+}
+
 /// <summary>Bridge v15: what repairing a player's gear did.</summary>
 public sealed record BridgeGearRepair
 {
@@ -971,6 +1012,18 @@ public sealed record BridgeAnimal
 
     /// <summary>The animal zone (pasture) it belongs to, if any.</summary>
     public string? Zone { get; init; }
+
+    /// <summary>Bridge v16: "hutch" or "trailer" for an animal inside one (its position is the hutch's, the trailer's).</summary>
+    public string? Place { get; init; }
+
+    /// <summary>The zone, or where it is kept: "in a hutch", "in a trailer".</summary>
+    [JsonIgnore]
+    public string WhereText => Place switch
+    {
+        "hutch" => "in a hutch" + (string.IsNullOrEmpty(Zone) ? "" : " · " + Zone),
+        "trailer" => "in a trailer",
+        _ => Zone ?? "",
+    };
 
     static string Percent(double? v) => v is { } value ? Math.Round(Math.Clamp(value, 0, 1) * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%" : "";
 
@@ -1024,6 +1077,15 @@ public sealed record BridgeItem
     public string Name { get; init; } = "";
     public int Count { get; init; }
     public bool Equipped { get; init; }
+
+    /// <summary>
+    /// Bridge v16: the name the game shows in the inventory when it says more than <see cref="Name"/> ("Empty
+    /// Bucket", "Bucket of Water", "Jacket (Worn)"); null when it is the same, or the items of the row differ.
+    /// </summary>
+    public string? Shown { get; init; }
+
+    /// <summary>The name to show: the game's own when the bridge gives it.</summary>
+    [JsonIgnore] public string ShownName => string.IsNullOrEmpty(Shown) ? Name : Shown;
 
     // Bridge v14: the state of the items of the row, the worst of them; each null when it does not apply
     // (or with an older bridge).
@@ -1246,5 +1308,6 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgePartRepair))]
 [JsonSerializable(typeof(BridgeFluidFix))]
 [JsonSerializable(typeof(BridgeGearRepair))]
+[JsonSerializable(typeof(List<BridgeTrait>))]
 [JsonSerializable(typeof(BridgeAnimals))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

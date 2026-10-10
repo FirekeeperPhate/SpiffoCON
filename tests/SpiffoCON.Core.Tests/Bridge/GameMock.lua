@@ -56,6 +56,8 @@ local function item(fullType, name)
 	it.getDisplayName = function() return name end
 	it.getContainer = function() return it.container end
 	it.isEquipped = function() return false end
+	-- bridge v16: the name the game shows: what holds liquids says whether it is empty, the rest its own name
+	it.getName = function() return it.shown or (it.fluid and ((it.fluid.amount or 0) > 0 and (name .. " of Water") or ("Empty " .. name))) or name end
 	-- bridge v14: the part that holds liquids (it.fluid), and whether the script of the type gives one
 	it.getFluidContainer = function() return it.fluid end
 	it.getScriptItem = function() return { getComponentScriptFor = function(self, kind)
@@ -898,4 +900,92 @@ function ANIMALS_HERE()
 	animal(5, "cow", "Cow", 110, 110, 0.6, 0.6)
 	TRANSLATIONS.IGUI_AnimalType_cow = "Cow"
 	TRANSLATIONS.IGUI_Breed_holstein = "Holstein"
+end
+
+-- ---- bridge v16: the cold, traits, animals that are not on the map ----
+function sendSyncPlayerFields(p, mask) note("syncFields " .. p.getUsername() .. " " .. mask) end
+for _, p in ipairs(PLAYERS) do
+	local body = p.getBodyDamage()
+	body.cold, body.coldStrength = false, 0
+	body.isHasACold = function() return body.cold end
+	body.getColdStrength = function() return body.coldStrength end
+	body.setHasACold = function(self, v) body.cold = v end
+	body.setColdStrength = function(self, v) body.coldStrength = v end
+	body.setCatchACold = function(self, v) body.catching = v end
+end
+-- the traits of the game: three good ones and a bad one; rj has the first two
+function TRAITS()
+	local defs = {}
+	local function def(id, label, cost)
+		local d = {}
+		d.getType = function() return id end
+		d.getLabel = function() return label end
+		d.getCost = function() return cost end
+		d.getDescription = function() return label .. ": what it does" end
+		defs[#defs + 1] = d
+		return d
+	end
+	def("base:brave", "Brave", 4)
+	def("base:fastreader", "Fast Reader", 2)
+	def("base:strong", "Strong", 10)
+	def("base:clumsy", "Clumsy", -2)
+	CharacterTraitDefinition.getTraits = function() return list(defs) end
+	CharacterTraitDefinition.getCharacterTraitDefinition = function(trait)
+		for _, d in ipairs(defs) do if d.getType() == trait then return d end end
+		return nil
+	end
+	for _, p in ipairs(PLAYERS) do
+		local mine = p.getUsername() == "rj" and { "base:brave", "base:fastreader" } or {}
+		p.boosts = {}
+		p.hasTrait = function(self, trait) for _, t in ipairs(mine) do if t == trait then return true end end return false end
+		p.getCharacterTraits = function() return {
+			getKnownTraits = function() return list(mine) end,
+			add = function(self, trait) mine[#mine + 1] = trait end,
+			remove = function(self, trait) for i, t in ipairs(mine) do if t == trait then table.remove(mine, i) return end end end,
+		} end
+		p.modifyTraitXPBoost = function(self, trait, removing) p.boosts[#p.boosts + 1] = trait .. (removing and " off" or " on") end
+	end
+end
+
+-- two hens in a hutch near rj (one in a nest box), a sheep in a trailer; the second square of the hutch
+-- is asked nothing
+function ANIMALS_INSIDE()
+	local function kept(id, kind, hunger)
+		local a = { hunger = hunger, thirst = 0.1 }
+		a.getAnimalID = function() return id end
+		a.getAnimalType = function() return kind end
+		a.getData = function() return { getBreed = function() return { getName = function() return "leghorn" end } end } end
+		a.getFullName = function() return kind end
+		a.getCustomName = function() return nil end
+		a.getX = function() error("not on the map") end
+		a.getHealth = function() return 1 end
+		a.isFemale = function() return true end
+		a.isBaby = function() return false end
+		a.isWild = function() return false end
+		a.isDead = function() return false end
+		a.getDZone = function() return nil end
+		a.getStats = function() return {
+			get = function(self, s) if s == CharacterStat.HUNGER then return a.hunger end return a.thirst end,
+			set = function(self, s, v) if s == CharacterStat.HUNGER then a.hunger = v else a.thirst = v end end,
+		} end
+		ANIMALS[id] = nil
+		return a
+	end
+	local henA, henB, sheep = kept(21, "hen", 0.7), kept(22, "hen", 0.2), kept(23, "ewe", 0.9)
+	KEPT = { henA, henB, sheep }
+	local function hutch(x, y, slave)
+		local h = { class = "IsoHutch" }
+		h.isSlave = function() return slave end
+		h.getX = function() return x end
+		h.getY = function() return y end
+		h.getZ = function() return 0 end
+		h.getAnimalInside = function() return { values = function() return list({ henA }) end } end
+		h.getMaxNestBox = function() return 2 end
+		h.getAnimalInNestBox = function(self, box) return box == 1 and henB or nil end
+		table.insert(at(x, y, 0).furniture, h)
+	end
+	hutch(103, 101, false)
+	hutch(104, 101, true)
+	local trailer = VEHICLES[1]
+	trailer.getAnimals = function() return list({ sheep }) end
 end

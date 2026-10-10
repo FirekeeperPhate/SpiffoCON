@@ -35,7 +35,8 @@ public sealed record CharacterItem(BridgeItem Item, string? IconPath)
     public string Container => Item.Container;
     public string ContainerShort => Item.ContainerShort;
     public string FullType => Item.FullType;
-    public string Name => Item.Name;
+    /// <summary>As the game shows it when the bridge says (v16): "Empty Bucket", "Bucket of Water"; else the name of the type.</summary>
+    public string Name => Item.ShownName;
     public int Count => Item.Count;
     public bool Equipped => Item.Equipped;
 
@@ -154,6 +155,33 @@ public sealed partial class CharacterViewModel : ObservableObject, IDisposable
 
     // what setting a level needs, by the id of the skill: the experience now and what each level takes (bridge v16)
     Dictionary<string, (double Xp, IReadOnlyList<double> Totals)> _levels = [];
+
+    /// <summary>Why the traits can't be changed (null: they can): bridge v16.</summary>
+    public string? TraitsProblem => _main.Bridge.V16Problem;
+
+    /// <summary>Every trait of the game with whether this character has it; null (and the status bar says why) when it can't be read.</summary>
+    public async Task<IReadOnlyList<BridgeTrait>?> ReadTraitsAsync()
+    {
+        if (Info is not { } info)
+        {
+            _main.StatusText = $"{Username} is not in the game.";
+            return null;
+        }
+        var (traits, problem) = await _main.Bridge.ReadTraitsAsync(info.Username);
+        if (problem is not null)
+            _main.StatusText = problem;
+        return traits;
+    }
+
+    /// <summary>Gives a trait or takes it away (asked first), then reads the character again.</summary>
+    public async Task SetTraitAsync(BridgeTrait trait, bool add)
+    {
+        if (Info is not { } info)
+            return;
+        if (await _main.Bridge.SetTraitAsync(info.Username, trait, add) is { } result)
+            _main.StatusText = result;
+        await RefreshAsync();
+    }
 
     /// <summary>Whether a skill can be set to a level (bridge v16 says what the levels take).</summary>
     public bool CanSetLevel(CharacterSkill skill) => skill.PerkId is { } id && _levels.ContainsKey(id);

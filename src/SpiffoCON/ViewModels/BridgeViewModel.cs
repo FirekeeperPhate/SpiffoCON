@@ -1069,19 +1069,59 @@ public sealed partial class BridgeViewModel : ObservableObject
             return problem;
         var client = _client!;
         if (_main.Confirm?.Invoke($"Take the needs of {username} away?\n\n"
-                + "Hunger, thirst, tiredness, exertion, stress, panic, boredom, unhappiness, pain, drunkenness and sickness go to nothing. "
+                + "Hunger, thirst, tiredness, exertion, stress, panic, boredom, unhappiness, pain, drunkenness, sickness and a cold go to nothing. "
                 + "Wounds stay: that is Heal completely.") != true)
             return null;
         if (!ReferenceEquals(client, _client))
             return ConnectionChanged;
         try
         {
-            await client.RestoreNeedsAsync(username);
-            return $"{username} is fed, rested and calm.";
+            var (_, cold) = await client.RestoreNeedsAsync(username);
+            return $"{username} is fed, rested and calm." + (cold ? " Their cold is gone too." : "");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return "The bridge could not do it: " + ex.Message;
+        }
+    }
+
+    // ---- traits (bridge v16) ----
+
+    /// <summary>Every trait of the game with whether the player has it, for the character window; null and why not.</summary>
+    internal async Task<(IReadOnlyList<BridgeTrait>? Traits, string? Problem)> ReadTraitsAsync(string username)
+    {
+        if (V16Problem is { } problem)
+            return (null, problem);
+        try
+        {
+            return (await _client!.TraitsAsync(username), null);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return (null, "The bridge could not list the traits: " + ex.Message);
+        }
+    }
+
+    /// <summary>Gives a trait to a player or takes it away, after asking. Returns what happened.</summary>
+    internal async Task<string?> SetTraitAsync(string username, BridgeTrait trait, bool add)
+    {
+        if (V16Problem is { } problem)
+            return problem;
+        var client = _client!;
+        if (_main.Confirm?.Invoke((add ? $"Give {username} the trait {trait.Name}?" : $"Take the trait {trait.Name} away from {username}?")
+                + "\n\nAs the game's own admin window does it: the trait and the experience boost that goes with it. "
+                + "Traits that exclude each other (Strong and Weak) are not checked.") != true)
+            return null;
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
+        try
+        {
+            string name = await client.SetTraitAsync(username, trait.Id, add);
+            return add ? $"{username} has the trait {name} now." : $"{username} has lost the trait {name}.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not change the trait: " + ex.Message;
         }
     }
 
