@@ -929,6 +929,79 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    /// <summary>Why the containers that lost their liquid part can't be looked for now (null: they can): bridge v14.</summary>
+    public string? V14Problem =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 14 ? $"This needs bridge v14 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>How far around each player the containers put down or stored are looked at.</summary>
+    public const int FluidsRadius = 50;
+
+    /// <summary>What Fix liquid containers is for, for its tooltips.</summary>
+    public const string FixFluidsTip =
+        "Buckets, bottles and pots that lost the part that holds liquids: after a server crash one that was put down shows as a plain "
+        + "\"Bucket\" (not \"Empty Bucket\") and can't be filled any more. Counted first, then replaced with new, empty ones where they are";
+
+    /// <summary>
+    /// Counts the containers that lost their liquid part, asks, and replaces them with whole ones where they
+    /// are: what the players online carry (one player, with <paramref name="username"/>), and what is put down
+    /// or stored within <see cref="FluidsRadius"/> squares of each. Returns what happened, to show where it was asked.
+    /// </summary>
+    internal async Task<string?> FixFluidsAsync(string? username = null)
+    {
+        if (V14Problem is { } problem)
+            return problem;
+        var client = _client!;
+        string who = username is null ? "the players online" : username;
+        string around = username is null ? "each of them" : "them";
+        string carry = username is null ? "carry" : "carries";
+        static string S(int n) => n == 1 ? "" : "s";
+        try
+        {
+            var count = await client.FixFluidsAsync(apply: false, FluidsRadius, username);
+            if (count.Players == 0)
+                return "Nobody is online: the server only keeps the surroundings of players, and what they carry.";
+            if (count.Found == 0)
+                return $"No container has lost its liquid part: looked at what {who} {carry} and at {FluidsRadius} squares around {around}.";
+            var where = new List<string>();
+            if (count.InInventories > 0)
+            {
+                var carriers = count.Items.Where(i => i.Where.Length > 0).GroupBy(i => i.Where).Select(g => $"{g.Key}: {g.Sum(i => i.Count)}");
+                where.Add($"{count.InInventories} carried ({string.Join(", ", carriers)})");
+            }
+            if (count.OnSquares > 0)
+                where.Add($"{count.OnSquares} put down on the ground or on furniture");
+            if (count.InContainers > 0)
+                where.Add($"{count.InContainers} in crates, shelves or fridges");
+            string question = $"{count.Found} container{S(count.Found)} lost the part that holds liquids, and can't be filled: {count.Describe()}.\n\n"
+                + $"{string.Join(", ", where)}; looked at what {who} {carry} and at {FluidsRadius} squares around {around}.\n\n"
+                + (count.Found == 1 ? "Replace it with a new, empty one of the same type, in the same place?"
+                    : "Replace each with a new, empty one of the same type, in the same place?")
+                + (count.Skipped > 0 ? $"\n\n{count.Skipped} worn or attached (a bottle on a belt) will be left: the player has to take it off first." : "");
+            if (_main.Confirm?.Invoke(question) != true)
+                return null;
+            if (!ReferenceEquals(client, _client))
+                return ConnectionChanged;
+            var done = await client.FixFluidsAsync(apply: true, FluidsRadius, username);
+            return (done.Fixed == 0 ? "No container replaced." : $"{done.Fixed} container{S(done.Fixed)} replaced with {(done.Fixed == 1 ? "a whole one" : "whole ones")}.")
+                + (done.Skipped > 0 ? $" {done.Skipped} worn or attached left as {(done.Skipped == 1 ? "it is" : "they are")}." : "")
+                + (done.Failed > 0 ? $" {done.Failed} could not be replaced: the game made no whole item of that type." : "");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not look at the containers: " + ex.Message;
+        }
+    }
+
+    /// <summary>Fix liquid containers, for everybody online (the Bridge tab's button).</summary>
+    [RelayCommand]
+    private async Task FixFluidsOfAllAsync()
+    {
+        if (await FixFluidsAsync() is { } result)
+            StatusText = result;
+    }
+
     /// <summary>Puts out the fires within a radius, on every floor (no question: nothing is lost).</summary>
     internal async Task<string?> StopFiresAsync(int x, int y, int radius, string where, string? aroundPlayer = null)
     {

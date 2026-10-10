@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(13, await _client.PingAsync());
+        Assert.Equal(14, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -654,6 +654,52 @@ public sealed class BridgeScriptTests
 
         await Assert.ThrowsAsync<BridgeException>(() => _client.RepairPartAsync(7, "Base.PickUpTruck", "Wings"));
         await Assert.ThrowsAsync<BridgeException>(() => _client.RepairPartAsync(7, "Base.CarNormal", "Battery"));
+    }
+
+    [Fact]
+    public async Task Containers_that_lost_their_liquid_part_are_counted_then_replaced_where_they_are()
+    {
+        _game.DoString("BROKEN_FLUIDS()");
+
+        // counting touches nothing: rj carries three (one in a bag, one on the belt), kate one; near rj one lies
+        // on a table and one is in a crate, with a pot of a type the game no longer makes. The whole bucket put
+        // down next to them has its part on the object, as the game keeps it: not one of them
+        var count = await _client.FixFluidsAsync(apply: false, radius: 5);
+        Assert.Equal((7, 0, 1, 0), (count.Found, count.Fixed, count.Skipped, count.Failed));
+        Assert.Equal((4, 1, 2), (count.InInventories, count.OnSquares, count.InContainers));
+        Assert.Equal((2, 5), (count.Players, count.Radius));
+        Assert.Equal("4 × Bucket, 2 × Water Bottle, 1 × Pot", count.Describe());
+        Assert.Equal(["kate", "rj", "rj"], count.Items.Where(i => i.Where != "").Select(i => i.Where).Order());
+        Assert.Empty(Told());
+
+        // replaced: out and in for the ones carried or in the crate; the one on the table put down again at
+        // the same spot, turned the same way, still "placed by a player"
+        var done = await _client.FixFluidsAsync(apply: true, radius: 5);
+        Assert.Equal((7, 5, 1, 1), (done.Found, done.Fixed, done.Skipped, done.Failed));
+        var told = Told();
+        Assert.Equal(4, told.Count(l => l.StartsWith("sendRemove ")));
+        Assert.Equal(4, told.Count(l => l.StartsWith("sendAdd new ")));
+        Assert.Contains("removeGround Bucket", told);
+        Assert.Single(told, l => l.StartsWith("sendPlaced new Base.Bucket "));
+        Assert.Equal(0.95, Lua("(function() local o = GROUND_AT(101, 103, 1)[1].offsets return o[1] + o[2] + o[3] end)()"), 6);
+        Assert.Equal(1, Lua("#GROUND_AT(101, 103, 1)"));
+        Assert.Equal(90, Lua("GROUND_AT(101, 103, 1)[1].getItem().rotation[3]"));
+        Assert.True(_game.DoString("local o = GROUND_AT(101, 103, 1)[1] return o.fluid ~= nil and o.extended and o.keep").Boolean);
+        // the whole one next to it was left alone, and the crate still has its four things
+        Assert.Equal("Empty Bucket", _game.DoString("return GROUND_AT(101, 102, 0)[1].name").String);
+        Assert.Equal(4, Lua("CRATE.count()"));
+
+        // what is left: the bottle on the belt and the pot nothing can be made for
+        var after = await _client.FixFluidsAsync(apply: false, radius: 5);
+        Assert.Equal((2, 1), (after.Found, after.Skipped));
+        Assert.Equal("1 × Pot, 1 × Water Bottle", after.Describe());
+
+        // a wider look finds the one that was too far; one player only: what they carry, and around them
+        Assert.Equal(3, (await _client.FixFluidsAsync(apply: false, radius: 20)).Found);
+        _game.DoString("kate.inventory:AddItem(FLUID_ITEM('Base.Bucket', 'Bucket', false))");
+        var kate = await _client.FixFluidsAsync(apply: true, radius: 20, username: "kate");
+        Assert.Equal((1, 1, 1, 0), (kate.Players, kate.Found, kate.Fixed, kate.Loaded));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.FixFluidsAsync(apply: true, radius: 5, username: "ghost"));
     }
 
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>

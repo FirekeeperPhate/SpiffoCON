@@ -1354,13 +1354,23 @@
                         </ListView>
 
                         <!-- on the selected player; health, skills, equipment and inventory are in Character details -->
-                        <WrapPanel Grid.Row="1" Margin="0,8,0,0" IsEnabled="{Binding HasPlayer}">
-                            <Button Content="Character details…" Command="{Binding ShowDetailsCommand}" CommandParameter="{Binding SelectedPlayer}"
-                                    ToolTip="Everything about the selected player in one window: health, skills, equipment, inventory and every action (also a double click on the row)" Margin="0,0,6,0" />
-                            <Button Content="Copy x,y,z" Command="{Binding CopyPositionCommand}" CommandParameter="{Binding SelectedPlayer}" Margin="0,0,6,0" />
-                            <Button Content="To Players tab" Command="{Binding UseInPlayersTabCommand}" CommandParameter="{Binding SelectedPlayer}"
-                                    ToolTip="Put this player and their position in the Players tab (teleport others here)" />
-                        </WrapPanel>
+                        <DockPanel Grid.Row="1" Margin="0,8,0,0">
+                            <!-- for everybody online, whoever is selected -->
+                            <Button DockPanel.Dock="Right" Content="Fix liquid containers…" Command="{Binding FixFluidsOfAllCommand}" IsEnabled="{Binding IsConnected}"
+                                    ToolTipService.ShowOnDisabled="True" ToolTipService.ShowDuration="30000">
+                                <Button.ToolTip>
+                                    <TextBlock MaxWidth="420" TextWrapping="Wrap"
+                                               Text="Buckets, bottles and pots that lost the part that holds liquids: after a server crash one that was put down shows as a plain &quot;Bucket&quot; (not &quot;Empty Bucket&quot;) and can't be filled any more. Counted first, then replaced with new, empty ones where they are: what the players online carry, and what is put down or stored within 50 squares of each (bridge v14)." />
+                                </Button.ToolTip>
+                            </Button>
+                            <WrapPanel IsEnabled="{Binding HasPlayer}">
+                                <Button Content="Character details…" Command="{Binding ShowDetailsCommand}" CommandParameter="{Binding SelectedPlayer}"
+                                        ToolTip="Everything about the selected player in one window: health, skills, equipment, inventory and every action (also a double click on the row)" Margin="0,0,6,0" />
+                                <Button Content="Copy x,y,z" Command="{Binding CopyPositionCommand}" CommandParameter="{Binding SelectedPlayer}" Margin="0,0,6,0" />
+                                <Button Content="To Players tab" Command="{Binding UseInPlayersTabCommand}" CommandParameter="{Binding SelectedPlayer}"
+                                        ToolTip="Put this player and their position in the Players tab (teleport others here)" />
+                            </WrapPanel>
+                        </DockPanel>
                     </Grid>
 
                     <Expander Grid.Row="3" Header="Vehicles in loaded areas" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}">

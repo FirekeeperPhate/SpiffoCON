@@ -187,6 +187,17 @@ instead.
     *Repair their vehicle…* of the player menu (before v13 the repair finds only the one they
     drive).
 
+  Bridge v14 finds and replaces the containers that lost their liquid part (the Bridge tab's
+  **Fix liquid containers…**, and the same in the player menu for one player). A bucket, a bottle or a
+  pot holds liquids through a part of its own; while the item is put down in the world the game keeps
+  that part on the object on the square, saved apart from the item, and after a server crash some
+  come back without it. Such a bucket shows as a plain "Bucket" (a whole one is "Empty Bucket" or
+  "Bucket of Water"), is left out of the game's *Fill* menu, and stays so. The bridge looks at what
+  the players online carry, and at what is put down or stored in crates and shelves within 50
+  squares of each; SpiffoCON says how many and where, asks, and each is replaced by a new, empty one
+  of the same type in the same place (one put down keeps its spot and the way it is turned). One that
+  is worn or attached to a belt is left. Built things (a rain collector, a trough) are not looked at.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.
@@ -212,6 +223,7 @@ instead.
   markers, Bridge, Accounts, chat lines in Logs): their Character details, show in the Players tab or on the map,
   teleport to another player or bring one here, give a kit, lightning / thunder /
   horde, full heal and cure of the zombie infection, the vehicle they are in (its details, a complete repair),
+  the containers that lost their liquid part (bridge v14),
   clean up around them, hair and beard (bridge),
   god mode, invisible, no clip, access level, voice mute, kick, ban, unban, copy the name. Each
   reply shows in the status bar.

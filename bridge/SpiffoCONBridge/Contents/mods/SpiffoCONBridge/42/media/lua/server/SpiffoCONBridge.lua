@@ -1,8 +1,8 @@
 -- SpiffoCON Bridge: lets the SpiffoCON admin tool read what RCON can't (player positions,
 -- inventories, vehicles, world state) and do a few admin actions (heal, remove items, repair,
 -- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
--- put items on the ground, remove wrecks, set hair and beard, cure the zombie infection) and keeps the
--- deaths of players.
+-- put items on the ground, remove wrecks, set hair and beard, cure the zombie infection, replace the
+-- containers that lost their liquid part) and keeps the deaths of players.
 -- Server side only; it does nothing on clients.
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
@@ -12,7 +12,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 13
+local VERSION = 14
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -793,6 +793,201 @@ local function removeGroundItems(x, y, radius, apply, safehouses, username)
 	return { found = found, removed = removed, inSafehouses = kept, onFurniture = raised, loaded = loaded, radius = radius }
 end
 
+-- ---- containers that lost their liquid part (bridge v14) ----
+-- An item that holds liquids (a bucket, a bottle, a pot) does it with a FluidContainer component. Put down
+-- in the world, the component moves from the item to the object on the square (the constructor of
+-- IsoWorldInventoryObject; removeFromSquare gives it back) and is saved with that object, apart from the
+-- item. After a server crash some come back without it, on either of the two. The item is then a plain
+-- "Bucket" for good (InventoryItem.getName falls back to the name of the item; a whole one is "Empty
+-- Bucket" or "Bucket of Water"), and the Fill menu, which lists the items with the component, leaves it out.
+
+-- whether the game's script gives this type of item a FluidContainer, asked once per type
+local holdsFluid = {}
+local function shouldHoldFluid(item)
+	local fullType = item:getFullType()
+	local known = holdsFluid[fullType]
+	if known == nil then
+		known = try(function() return item:getScriptItem():getComponentScriptFor(ComponentType.FluidContainer) ~= nil end) == true
+		holdsFluid[fullType] = known
+	end
+	return known
+end
+
+-- an item in an inventory or a container: it should hold liquids and can not
+local function lostFluidPart(item)
+	return item:getFluidContainer() == nil and shouldHoldFluid(item)
+end
+
+-- calls visit(item, container) for each such item of a container, the bags in it included
+local function eachBrokenIn(container, visit)
+	local items = container:getItems()
+	-- backwards: a replaced item leaves this list, and the new one goes to its end
+	for i = items:size() - 1, 0, -1 do
+		local item = items:get(i)
+		local inner = containerOf(item)
+		if inner then eachBrokenIn(inner, visit) end
+		if lostFluidPart(item) then visit(item, container) end
+	end
+end
+
+-- a new item of the same type, whole: nil when the game makes none, or makes it without the component too
+local function wholeOne(item)
+	local new = try(function() return instanceItem(item:getFullType()) end)
+	if not new or new:getFluidContainer() == nil then return nil end
+	-- empty, as the one it replaces: some types are made with their drink in them (a bottle of water)
+	try(function() new:getFluidContainer():Empty() end)
+	return new
+end
+
+-- in a container: out and in, each told to the clients (as removeItem above and vehicleKey below)
+local function replaceInContainer(item, container, player)
+	local new = wholeOne(item)
+	if not new then return false end
+	if player then try(function() player:removeFromHands(item) end) end
+	container:Remove(item)
+	sendRemoveItemFromContainer(container, item)
+	container:AddItem(new)
+	sendAddItemToContainer(container, new)
+	return true
+end
+
+-- on a square: the old object out as "Remove items" does, the new one where it was and turned the same way,
+-- put down as a player puts an item down (ISDropWorldItemAction:complete)
+local function replaceOnSquare(sq, object)
+	local item = object:getItem()
+	local new = wholeOne(item)
+	if not new then return false end
+	local ox, oy, oz = object:getOffX(), object:getOffY(), object:getOffZ()
+	local rx = try(function() return item:getWorldXRotation() end)
+	local ry = try(function() return item:getWorldYRotation() end)
+	local rz = try(function() return item:getWorldZRotation() end)
+	local extended = try(function() return object:isExtendedPlacement() end)
+	local keep = try(function() return object:isIgnoreRemoveSandbox() end)
+	sq:transmitRemoveItemFromSquare(object)
+	try(function() object:removeFromWorld() end)
+	try(function() object:removeFromSquare() end)
+	try(function() object:setSquare(nil) end)
+	local placed = sq:AddWorldInventoryItem(new, ox, oy, oz, false)
+	if not placed then return false end
+	try(function()
+		if rx then placed:setWorldXRotation(rx) end
+		if ry then placed:setWorldYRotation(ry) end
+		if rz then placed:setWorldZRotation(rz) end
+	end)
+	local now = placed:getWorldItem()
+	if now then
+		-- a thing put down on purpose is not litter for the sandbox's item removal
+		try(function() now:setIgnoreRemoveSandbox(keep ~= false) end)
+		try(function() now:setExtendedPlacement(extended == true) end)
+		now:transmitCompleteItemToClients()
+	end
+	return true
+end
+
+-- fixfluids <apply: 0 | 1> <radius> [username]: the containers that lost their liquid part, in the
+-- inventories of the players online (of that player only, with a username), on the squares within the radius
+-- of each of them (on the ground or on furniture), and inside the crates, shelves and fridges there. With
+-- apply 1 each is replaced by a new, empty one of the same type in the same place; one that is worn or
+-- attached is left and counted. With apply 0 it only counts, so SpiffoCON can say what before asking.
+local function fixFluids(apply, radius, username)
+	apply = apply == "1"
+	radius = tonumber(radius)
+	if not radius or not (radius >= 0) then error("fixfluids needs a radius") end
+	radius = math.max(1, math.min(MAX_AREA_RADIUS, math.floor(radius)))
+	local players = {}
+	if username and username ~= "" then
+		players[1] = requirePlayer(username)
+	else
+		local online = getOnlinePlayers()
+		for i = 0, online:size() - 1 do players[#players + 1] = online:get(i) end
+	end
+
+	local found, fixed, skipped, failed = 0, 0, 0, 0
+	local inInventories, onSquares, inContainers = 0, 0, 0
+	-- what was found, by where and type: { where, fullType, name, count }
+	local list, rows = array(), {}
+	local function note(where, item)
+		found = found + 1
+		local fullType = item:getFullType()
+		local key = where .. "\t" .. fullType
+		local row = rows[key]
+		if not row then
+			row = { where = where, fullType = fullType, name = try(function() return item:getDisplayName() end) or fullType, count = 0 }
+			rows[key] = row
+			list[#list + 1] = row
+		end
+		row.count = row.count + 1
+	end
+	local function done(ok)
+		if ok then fixed = fixed + 1 else failed = failed + 1 end
+	end
+
+	for _, p in ipairs(players) do
+		local name = p:getUsername()
+		eachBrokenIn(p:getInventory(), function(item, container)
+			note(name, item)
+			inInventories = inInventories + 1
+			-- counted also when only counting: SpiffoCON says it before asking
+			if isWornOrAttached(p, item) then
+				skipped = skipped + 1
+			elseif apply then
+				done(try(replaceInContainer, item, container, p) == true)
+			end
+		end)
+	end
+
+	-- the areas of two players next to each other overlap: each square once
+	local seen = {}
+	local loaded = 0
+	for _, p in ipairs(players) do
+		loaded = loaded + eachSquare(math.floor(p:getX()), math.floor(p:getY()), radius, function(sq)
+			local key = sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ()
+			if seen[key] then return end
+			seen[key] = true
+			local objects = sq:getWorldObjects()
+			-- backwards: replacing takes the object out of this list
+			for i = objects:size() - 1, 0, -1 do
+				local object = objects:get(i)
+				local item = try(function() return object:getItem() end)
+				-- put down, the component is on the object: gone only when neither has it (and only when the
+				-- game answered: a call that fails is not "it has none")
+				local asked, part = pcall(function() return object:getFluidContainer() end)
+				if item and asked and part == nil and lostFluidPart(item) then
+					note("", item)
+					onSquares = onSquares + 1
+					if apply then done(try(replaceOnSquare, sq, object) == true) end
+				end
+			end
+			local things = sq:getObjects()
+			for i = 0, things:size() - 1 do
+				local thing = things:get(i)
+				local count = try(function() return thing:getContainerCount() end) or 0
+				for c = 0, count - 1 do
+					local container = try(function() return thing:getContainerByIndex(c) end)
+					if container then
+						eachBrokenIn(container, function(item, holder)
+							note("", item)
+							inContainers = inContainers + 1
+							if apply then done(try(replaceInContainer, item, holder, nil) == true) end
+						end)
+					end
+				end
+			end
+		end)
+	end
+
+	if apply then
+		audit("replaced " .. fixed .. " containers that had lost their liquid part"
+			.. ((username and username ~= "") and (", " .. username .. " and " .. radius .. " squares around")
+				or (", the players online and " .. radius .. " squares around each")))
+	end
+	return {
+		found = found, fixed = fixed, skipped = skipped, failed = failed,
+		inInventories = inInventories, onSquares = onSquares, inContainers = inContainers,
+		players = #players, loaded = loaded, radius = radius, items = list,
+	}
+end
+
 -- a fire to put out: not the flame of a lit campfire or the like, which is an IsoFire too but a
 -- permanent one (as FireFighting.isSquareToExtinguish in the game's own Lua)
 local function isBurning(sq)
@@ -1555,6 +1750,7 @@ local actions = {
 	deaths = listDeaths,
 	zombiecells = zombieCells,
 	removewrecks = removeWrecks,
+	fixfluids = fixFluids,
 	removecorpses = removeCorpses,
 	removegrounditems = removeGroundItems,
 	stopfires = stopFires,

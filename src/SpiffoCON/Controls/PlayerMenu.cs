@@ -111,6 +111,8 @@ public static class PlayerMenu
             Tip(actions.VehicleDetailsProblem(player), "The vehicle they are in, part by part: conditions, what is missing, a repair for each"));
         Add(items, "Repair their vehicle…", () => actions.RepairVehicleAsync(player), online && actions.VehicleProblem(player) is null,
             Tip(actions.VehicleProblem(player), "The vehicle they are in: every part whole, the ones that are gone (a wheel, a window, the battery...) put back"));
+        Add(items, "Fix liquid containers…", () => actions.FixFluidsAsync(player), online && actions.FluidsProblem(player) is null,
+            Tip(actions.FluidsProblem(player), BridgeViewModel.FixFluidsTip + $": what they carry, and {BridgeViewModel.FluidsRadius} squares around them"));
         // through the bridge (corpses: v6, the rest: v7): what RCON has no command for, within a radius
         // of where the player is now
         var cleanUp = new MenuItem { Header = "Clean up around", IsEnabled = online && actions.CorpsesProblem(player) is null, ToolTip = actions.CorpsesProblem(player) };

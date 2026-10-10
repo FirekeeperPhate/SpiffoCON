@@ -56,8 +56,15 @@ local function item(fullType, name)
 	it.getDisplayName = function() return name end
 	it.getContainer = function() return it.container end
 	it.isEquipped = function() return false end
+	-- bridge v14: the part that holds liquids (it.fluid), and whether the script of the type gives one
+	it.getFluidContainer = function() return it.fluid end
+	it.getScriptItem = function() return { getComponentScriptFor = function(self, kind)
+		return kind == ComponentType.FluidContainer and FLUID_TYPES[fullType] and {} or nil
+	end } end
 	return it
 end
+ComponentType = { FluidContainer = "FluidContainer" }
+FLUID_TYPES = { ["Base.Bucket"] = true, ["Base.WaterBottle"] = true, ["Base.OldPot"] = true }
 local function bag(fullType, name)
 	local b = item(fullType, name)
 	b.class = "InventoryContainer"
@@ -146,7 +153,10 @@ SAFE_SQUARES = {}
 KNOWN_TYPES = { ["Base.Axe"] = true, ["Base.Nails"] = true, ["Base.WaterBottle"] = true }
 SPAWNED_AT = {}
 local function square(x, y, z)
-	local sq = { x = x, y = y, z = z, corpses = {}, ground = {}, fires = {} }
+	local sq = { x = x, y = y, z = z, corpses = {}, ground = {}, fires = {}, furniture = {} }
+	sq.getX = function() return x end
+	sq.getY = function() return y end
+	sq.getZ = function() return z end
 	sq.getStaticMovingObjects = function() return list(sq.corpses) end
 	sq.getWorldObjects = function() return list(sq.ground) end
 	sq.getChunk = function() return { getMinLevel = function() return -1 end, getMaxLevel = function() return 2 end } end
@@ -161,7 +171,8 @@ local function square(x, y, z)
 	-- as the game: any IsoFire counts, the permanent flame of a lit campfire too
 	sq.haveFire = function() return #sq.fires > 0 end
 	-- as the game with a type name: null for a type it does not know, else the item on the floor
-	sq.AddWorldInventoryItem = function(self, fullType, ox, oy, oz)
+	sq.AddWorldInventoryItem = function(self, fullType, ox, oy, oz, transmit)
+		if type(fullType) == "table" then return PLACE(sq, fullType, ox, oy, oz, transmit) end
 		assert(type(fullType) == "string" and type(ox) == "number" and type(oy) == "number" and type(oz) == "number")
 		if not KNOWN_TYPES[fullType] then return nil end
 		local object = { name = fullType, getOffZ = function() return oz end, removeFromWorld = function() end, removeFromSquare = function() end, setSquare = function() end }
@@ -170,7 +181,12 @@ local function square(x, y, z)
 		note("spawn " .. fullType)
 		return { getFullType = function() return fullType end }
 	end
-	sq.getObjects = function() return list(sq.fires) end
+	sq.getObjects = function()
+		local all = {}
+		for _, o in ipairs(sq.fires) do all[#all + 1] = o end
+		for _, o in ipairs(sq.furniture) do all[#all + 1] = o end
+		return list(all)
+	end
 	world[key(x, y, z)] = sq
 	return sq
 end
@@ -605,3 +621,81 @@ VEHICLES[1].parts[1].category = "engine"
 VEHICLES[1].parts[2].category = "tire"
 VEHICLES[1].parts[3].category = "door"
 VEHICLES[1].parts[4].category = "nodisplay"
+
+-- ---- bridge v14: containers that lost their liquid part ----
+-- whole: the item has its part (it.fluid). Put down, the part moves to the object on the square, as in the game.
+local function fluidItem(fullType, name, whole)
+	local it = item(fullType, name)
+	it.fluid = whole and { amount = 0 } or nil
+	it.rotation = { 0, 0, 0 }
+	it.getWorldXRotation = function() return it.rotation[1] end
+	it.getWorldYRotation = function() return it.rotation[2] end
+	it.getWorldZRotation = function() return it.rotation[3] end
+	it.setWorldXRotation = function(self, v) it.rotation[1] = v end
+	it.setWorldYRotation = function(self, v) it.rotation[2] = v end
+	it.setWorldZRotation = function(self, v) it.rotation[3] = v end
+	it.getWorldItem = function() return it.worldItem end
+	return it
+end
+FLUID_ITEM = fluidItem
+-- the game makes a whole one of a type that holds liquids; "Base.OldPot" is a type it no longer makes
+function instanceItem(fullType)
+	if fullType == "Base.OldPot" or not FLUID_TYPES[fullType] then error("no such item " .. tostring(fullType)) end
+	return fluidItem(fullType, "new " .. fullType, true)
+end
+local function worldObject(it, ox, oy, oz)
+	local o = { name = it.name, offsets = { ox, oy, oz }, extended = false, keep = false }
+	o.getItem = function() return it end
+	-- the part is on the object while the item lies in the world
+	o.fluid, it.fluid = it.fluid, nil
+	o.getFluidContainer = function() return o.fluid end
+	o.getOffX = function() return ox end
+	o.getOffY = function() return oy end
+	o.getOffZ = function() return oz end
+	o.isExtendedPlacement = function() return o.extended end
+	o.setExtendedPlacement = function(self, v) o.extended = v end
+	o.isIgnoreRemoveSandbox = function() return o.keep end
+	o.setIgnoreRemoveSandbox = function(self, v) o.keep = v end
+	o.removeFromWorld = function() end
+	o.removeFromSquare = function() end
+	o.setSquare = function() end
+	o.transmitCompleteItemToClients = function() note("sendPlaced " .. it.name .. " " .. ox .. "/" .. oy .. "/" .. oz) end
+	it.worldItem = o
+	return o
+end
+function PLACE(sq, it, ox, oy, oz, transmit)
+	assert(transmit == false, "put down first, sent when it is turned the right way")
+	sq.ground[#sq.ground + 1] = worldObject(it, ox, oy, oz)
+	return it
+end
+-- what the tests look at
+function GROUND_AT(x, y, z) return at(x, y, z).ground end
+
+-- set up by the tests that want them (the other tests count what lies around rj)
+function BROKEN_FLUIDS()
+	-- rj: a broken bucket in the main inventory, a broken bottle in a bag, a whole bucket, and a broken bottle
+	-- on the belt; kate (far away, where no square is loaded): a broken bucket
+	rj.inventory:AddItem(fluidItem("Base.Bucket", "Bucket", false))
+	duffelA.inner:AddItem(fluidItem("Base.WaterBottle", "Water Bottle", false))
+	rj.inventory:AddItem(fluidItem("Base.Bucket", "Empty Bucket", true))
+	local onBelt = fluidItem("Base.WaterBottle", "Water Bottle", false)
+	rj.inventory:AddItem(onBelt)
+	rj.isAttachedItem = function(self, it) return it == onBelt end
+	rj.removeFromHands = function() end
+	kate.inventory:AddItem(fluidItem("Base.Bucket", "Bucket", false))
+	-- near rj: a whole bucket put down (its part is on the object), a broken one put down with care, a crate
+	-- with a broken bucket, a whole one, and a pot of a type the game no longer makes; a broken one far away
+	PLACE(at(101, 102, 0), fluidItem("Base.Bucket", "Empty Bucket", true), 0.5, 0.5, 0, false)
+	local placed = fluidItem("Base.Bucket", "Bucket", false)
+	placed.rotation = { 0, 0, 90 }
+	PLACE(at(101, 103, 1), placed, 0.3, 0.4, 0.25, false)
+	placed.worldItem.extended, placed.worldItem.keep = true, true
+	local crate = container("crate")
+	crate:AddItem(fluidItem("Base.Bucket", "Bucket", false))
+	crate:AddItem(fluidItem("Base.Bucket", "Empty Bucket", true))
+	crate:AddItem(fluidItem("Base.OldPot", "Pot", false))
+	crate:AddItem(item("Base.Axe", "Axe"))
+	table.insert(at(99, 102, 0).furniture, { getContainerCount = function() return 1 end, getContainerByIndex = function(self, i) return crate end })
+	CRATE = crate
+	PLACE(at(110, 110, 0), fluidItem("Base.Bucket", "Bucket", false), 0.5, 0.5, 0, false)
+end

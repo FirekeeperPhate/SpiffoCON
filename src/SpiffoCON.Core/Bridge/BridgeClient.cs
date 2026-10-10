@@ -355,6 +355,20 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return data.Deserialize(BridgeJson.Default.BridgeGroundItems) ?? new BridgeGroundItems();
     }
 
+    /// <summary>
+    /// The containers that lost the part that holds liquids (bridge v14): a bucket that shows as a plain
+    /// "Bucket" and can't be filled any more. In the inventories of the players online (of one, with
+    /// <paramref name="username"/>), on the squares within <paramref name="radius"/> of each, and in the
+    /// crates and shelves there. With <paramref name="apply"/> each is replaced by a new, empty one of the same
+    /// type in the same place; without, they are only counted.
+    /// </summary>
+    public async Task<BridgeFluidFix> FixFluidsAsync(bool apply, int radius, string? username = null)
+    {
+        var data = await SendAsync("fixfluids", apply ? "1" : "0",
+            radius.ToString(System.Globalization.CultureInfo.InvariantCulture), username ?? "").ConfigureAwait(false);
+        return data.Deserialize(BridgeJson.Default.BridgeFluidFix) ?? new BridgeFluidFix();
+    }
+
     /// <summary>Puts out the fires within a radius (every floor). Returns the burning squares put out, and the loaded squares.</summary>
     public async Task<(int Stopped, int LoadedSquares)> StopFiresAsync(int x, int y, int radius, string? aroundPlayer = null)
     {
@@ -794,6 +808,50 @@ public sealed record BridgeSpawn
     readonly List<string>? _unknown;
 }
 
+/// <summary>Bridge v14: the containers that lost their liquid part, counted or replaced.</summary>
+public sealed record BridgeFluidFix
+{
+    public int Found { get; init; }
+
+    /// <summary>Replaced by a whole one.</summary>
+    public int Fixed { get; init; }
+
+    /// <summary>Left because the player wears it or has it attached (a bottle on the belt).</summary>
+    public int Skipped { get; init; }
+
+    /// <summary>Left because the game made no whole item of that type.</summary>
+    public int Failed { get; init; }
+
+    /// <summary>Of those found: carried by players, lying on a square (the ground, a table), inside crates and shelves.</summary>
+    public int InInventories { get; init; }
+    public int OnSquares { get; init; }
+    public int InContainers { get; init; }
+
+    /// <summary>The players looked at, and the ground squares the server had loaded around them.</summary>
+    public int Players { get; init; }
+    public int Loaded { get; init; }
+    public int Radius { get; init; }
+
+    public List<BridgeBrokenFluid> Items { get => _items ?? []; init => _items = value; }
+    readonly List<BridgeBrokenFluid>? _items;
+
+    /// <summary>"3 × Bucket, 1 × Water Bottle": what was found, whoever has it, the most first.</summary>
+    public string Describe() => string.Join(", ", Items
+        .GroupBy(i => i.Name)
+        .Select(g => (Name: g.Key, Count: g.Sum(i => i.Count)))
+        .OrderByDescending(g => g.Count).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+        .Select(g => $"{g.Count} × {g.Name}"));
+}
+
+public sealed record BridgeBrokenFluid
+{
+    /// <summary>The player who carries it; empty for one in the world.</summary>
+    public string Where { get; init; } = "";
+    public string FullType { get; init; } = "";
+    public string Name { get; init; } = "";
+    public int Count { get; init; }
+}
+
 public sealed record BridgeGroundItems
 {
     /// <summary>Items that would be (or were) removed.</summary>
@@ -1023,4 +1081,5 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgeRepair))]
 [JsonSerializable(typeof(BridgeVehicleDetails))]
 [JsonSerializable(typeof(BridgePartRepair))]
+[JsonSerializable(typeof(BridgeFluidFix))]
 internal sealed partial class BridgeJson : JsonSerializerContext;
