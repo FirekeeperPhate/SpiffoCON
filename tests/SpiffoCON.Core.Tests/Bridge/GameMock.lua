@@ -904,6 +904,11 @@ end
 
 -- ---- bridge v16: the cold, traits, animals that are not on the map ----
 function sendSyncPlayerFields(p, mask) note("syncFields " .. p.getUsername() .. " " .. mask) end
+-- bridge v17: what is sent to every player's game
+function sendServerCommand(module, command, args)
+	assert(type(module) == "string" and type(command) == "string" and type(args) == "table")
+	note("serverCommand " .. module .. " " .. command .. " [" .. tostring(args.author) .. "] " .. tostring(args.text))
+end
 for _, p in ipairs(PLAYERS) do
 	local body = p.getBodyDamage()
 	body.cold, body.coldStrength = false, 0

@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(16, await _client.PingAsync());
+        Assert.Equal(17, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -938,6 +938,111 @@ public sealed class BridgeScriptTests
         Assert.Equal(0.7, Lua("KEPT[1].hunger"));
         Assert.Equal(3, await _client.FeedAnimalsAsync(5));
         Assert.Equal(0, Lua("KEPT[1].hunger + KEPT[2].hunger"));
+    }
+
+    /// <summary>Everything the game was told, the logs too.</summary>
+    List<string> Logged() => _game.Globals.Get("LOG").Table.Values.Select(v => v.String).ToList();
+
+    [Fact]
+    public async Task A_chat_line_goes_to_every_game_and_into_the_chat_log()
+    {
+        var chat = await _client.ChatAsync("Phate", "  the fence is <up>,\tsee you 'there'  ");
+        Assert.Equal(("Phate", "the fence is <up>, see you 'there'", 2, false), (chat.Author, chat.Text, chat.Players, chat.Cut));
+        var logged = Logged();
+        Assert.Contains("serverCommand SpiffoCON chat [Phate] the fence is <up>, see you 'there'", logged);
+        // in the chat log as the server writes a player's message: the Logs tab reads it as one
+        var line = Assert.Single(logged, l => l.StartsWith("log chat: "))["log chat: ".Length..];
+        // the server's log ends every line with a full stop of its own (seen on a real server: two would not be read)
+        Assert.EndsWith("}", line);
+        var parsed = SpiffoCON.Core.Files.LogTail.Parse("[11-10-26 10:04:12.100] " + line + ".");
+        Assert.Equal((SpiffoCON.Core.Files.LogLineKind.Chat, "General", "Phate", "the fence is <up>, see you 'there'"),
+            (parsed.Kind, parsed.Channel, parsed.Author, parsed.Text));
+        Assert.Contains(logged, l => l.StartsWith("log admin: ") && l.EndsWith("wrote in the chat as Phate: the fence is <up>, see you 'there'"));
+    }
+
+    [Fact]
+    public async Task A_chat_line_has_a_name_that_fits_the_log_and_a_text_that_is_not_too_long()
+    {
+        // no name: Admin; what would break the log line or the brackets of the chat is taken out of it
+        Assert.Equal("Admin", (await _client.ChatAsync("  ", "hi")).Author);
+        Assert.Equal("The Admin", (await _client.ChatAsync(" [The] 'Admin'<> ", "hi")).Author);
+        Assert.Equal(32, (await _client.ChatAsync(new string('n', 40), "hi")).Author.Length);
+
+        var longOne = await _client.ChatAsync("Admin", new string('x', 520));
+        Assert.True(longOne.Cut);
+        Assert.Equal(new string('x', 500), longOne.Text);
+
+        // nothing to say: nothing is sent, nothing is logged
+        _game.DoString("LOG = {}");
+        var ex = await Assert.ThrowsAsync<BridgeException>(() => _client.ChatAsync("Admin", "   "));
+        Assert.Contains("nothing to say", ex.Message);
+        Assert.Empty(Logged());
+    }
+
+    /// <summary>The players' side of the bridge, on a stand-in of the game's chat window.</summary>
+    static Script PlayersGame()
+    {
+        var game = new Script();
+        game.DoString("""
+            function isServer() return false end
+            HANDLERS = {}
+            Events = { OnServerCommand = {
+                Add = function(f) HANDLERS[#HANDLERS + 1] = f end,
+                Remove = function(f) for i, h in ipairs(HANDLERS) do if h == f then table.remove(HANDLERS, i) return end end end } }
+            function getHourMinute() return "10:04" end
+            function getText(key) return key == "UI_chat_general_chat_title_id" and "General" or key end
+            SHOWN = {}
+            -- as the game's ISChat.addLineInChat: the line with its prefix, the author for the mute list
+            ISChat = { instance = { tabs = { { tabID = 1 }, { tabID = 0 } }, chatFont = "large", showTimestamp = true, showTitle = true, mutedUsers = {} } }
+            ISChat.addLineInChat = function(message, tabID)
+                if message:getAuthor() and ISChat.instance.mutedUsers[message:getAuthor()] then message:setText("* * *") return end
+                SHOWN[#SHOWN + 1] = { line = message:getTextWithPrefix(), tab = tabID, message = message }
+            end
+            function SERVER_SAYS(module, command, args) for _, h in ipairs(HANDLERS) do h(module, command, args) end end
+            """);
+        game.DoString(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Bridge", "SpiffoCONBridgeChat.lua")));
+        return game;
+    }
+
+    [Fact]
+    public void The_players_side_shows_the_line_in_the_general_chat_as_the_game_composes_one()
+    {
+        var game = PlayersGame();
+        game.DoString("SERVER_SAYS('SpiffoCON', 'chat', { author = 'Phate', text = 'a <LINE> b' })");
+        Assert.Equal(1, game.DoString("return #SHOWN").Number);
+        // colour and size, time, chat, author; what was typed is text, not a tag of the window
+        Assert.Equal("<RGB:1.0,0.647,0.0> <SIZE:large> [10:04][General][Phate]: a &lt;LINE&gt; b", game.DoString("return SHOWN[1].line").String);
+        Assert.Equal(0, game.DoString("return SHOWN[1].tab").Number);
+
+        // the player's chat settings are followed, also when they change after the line was shown
+        game.DoString("ISChat.instance.showTimestamp = false ISChat.instance.showTitle = false ISChat.instance.chatFont = 'small'");
+        Assert.Equal("<RGB:1.0,0.647,0.0> <SIZE:small> [Phate]: a &lt;LINE&gt; b", game.DoString("return SHOWN[1].message:getTextWithPrefix()").String);
+        // a chat mod that asks a line something else is told nothing, not stopped
+        Assert.True(game.DoString("return SHOWN[1].message:getChat() == nil and SHOWN[1].message:isServerAlert() == false").Boolean);
+    }
+
+    [Fact]
+    public void The_players_side_does_nothing_else_and_never_fails_the_game()
+    {
+        var game = PlayersGame();
+        // other mods' commands, other commands of this one, a line without text
+        game.DoString("SERVER_SAYS('Other', 'chat', { author = 'x', text = 'y' }) SERVER_SAYS('SpiffoCON', 'other', { text = 'y' }) SERVER_SAYS('SpiffoCON', 'chat', {}) SERVER_SAYS('SpiffoCON', 'chat', nil)");
+        Assert.Equal(0, game.DoString("return #SHOWN").Number);
+        // someone the player muted stays muted
+        game.DoString("ISChat.instance.mutedUsers['Phate'] = true SERVER_SAYS('SpiffoCON', 'chat', { author = 'Phate', text = 'hello' })");
+        Assert.Equal(0, game.DoString("return #SHOWN").Number);
+        // no chat window yet, or one that fails: nothing is shown and nothing is thrown
+        game.DoString("ISChat.addLineInChat = function() error('broken') end SERVER_SAYS('SpiffoCON', 'chat', { author = 'A', text = 'hello' })");
+        game.DoString("ISChat.instance = nil SERVER_SAYS('SpiffoCON', 'chat', { author = 'A', text = 'hello' })");
+        // loaded again (a Lua reload): one handler, not two
+        game.DoString(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Bridge", "SpiffoCONBridgeChat.lua")));
+        Assert.Equal(1, game.DoString("return #HANDLERS").Number);
+
+        // on the server the file does nothing at all
+        var server = new Script();
+        server.DoString("function isServer() return true end");
+        server.DoString(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Bridge", "SpiffoCONBridgeChat.lua")));
+        Assert.True(server.Globals.Get("SpiffoCONBridgeChat").IsNil());
     }
 
     /// <summary>The two files of the protocol, kept in the Lua state; a write lets the bridge poll once.</summary>

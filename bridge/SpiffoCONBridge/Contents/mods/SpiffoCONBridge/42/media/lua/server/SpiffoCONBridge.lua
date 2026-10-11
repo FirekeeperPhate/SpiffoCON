@@ -3,8 +3,9 @@
 -- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
 -- put items on the ground, remove wrecks, set hair and beard, cure the zombie infection, replace the
 -- containers that lost their liquid part, repair what a player carries, feed and water the animals, take a
--- player's hunger, thirst and tiredness away) and keeps the deaths of players.
--- Server side only; it does nothing on clients.
+-- player's hunger, thirst and tiredness away, write a line in the chat) and keeps the deaths of players.
+-- This file is the server's side. On a player's game the mod does one thing: it shows the chat lines
+-- an admin writes from SpiffoCON (client/SpiffoCONBridgeChat.lua).
 --
 -- Channel: files in the server's Zomboid/Lua folder, which SpiffoCON reads and writes over SFTP.
 --   spiffocon_in.txt   written by SpiffoCON:  "SEQ <n>", one request per line (id<TAB>action<TAB>arg...), "END <n>"
@@ -13,7 +14,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 16
+local VERSION = 17
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -2301,7 +2302,40 @@ if SpiffoCONBridgeDeath then Events.OnCharacterDeath.Remove(SpiffoCONBridgeDeath
 SpiffoCONBridgeDeath = onCharacterDeath
 Events.OnCharacterDeath.Add(onCharacterDeath)
 
+-- ---- chat (bridge v17) ----
+-- chat <author> <text>: a line in the General chat, as a player's. The server can send an alert by itself
+-- (servermsg: large in the middle of the screen); an ordinary line of chat it cannot write from Lua
+-- (zombie.network.chat.ChatServer is not open to it). So the text is sent to each player's game
+-- (sendServerCommand), where the mod's own file shows it in the chat window. It is written to the chat
+-- log in the words the server uses for a player's message, so that whoever reads the log finds it there
+-- (the log ends each line with a full stop by itself).
+local CHAT_MAX = 500
+
+-- no longer than max, and never ending on the first half of a sign the game keeps as two (an emoji)
+local function cut(s, max)
+	if #s <= max then return s end
+	local last = s:byte(max)
+	if last and last >= 0xD800 and last <= 0xDBFF then max = max - 1 end
+	return s:sub(1, max)
+end
+
+local function chat(author, text)
+	-- the name is put between quotes in the log and between brackets in the chat
+	author = tostring(author or ""):gsub("[%c'<>%[%]]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if author == "" then author = "Admin" end
+	author = cut(author, 32)
+	text = tostring(text or ""):gsub("%c", " "):gsub("^%s+", ""):gsub("%s+$", "")
+	if text == "" then error("nothing to say") end
+	text = cut(text, CHAT_MAX)
+	local online = getOnlinePlayers():size()
+	sendServerCommand("SpiffoCON", "chat", { author = author, text = text })
+	try(function() writeLog("chat", "Got message:ChatMessage{chat=General, author='" .. author .. "', text='" .. text .. "'}") end)
+	audit("wrote in the chat as " .. author .. ": " .. text)
+	return { author = author, text = text, players = online }
+end
+
 local actions = {
+	chat = chat,
 	hairstyles = hairStyles,
 	setbeard = setBeard,
 	sethaircolor = setHairColor,

@@ -1252,15 +1252,25 @@
 
                     <TextBlock Grid.Row="3" Text="{Binding StatusText}" Opacity="0.7" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
 
-                    <!-- quick broadcast -->
-                    <Grid Grid.Row="4" Margin="0,8,0,0" IsEnabled="{Binding DataContext.IsSessionActive, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <!-- a quick broadcast (RCON), or a line of chat under a name (bridge v17) -->
+                    <Grid Grid.Row="4" Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="LogMessageBox" Text="{Binding Message, UpdateSourceTrigger=PropertyChanged}" KeyDown="LogMessage_KeyDown"
-                                 ToolTip="Broadcast to all players (servermsg). Enter sends." />
-                        <Button Grid.Column="1" Content="Broadcast" Command="{Binding SendMessageCommand}" Margin="8,0,0,0" MinWidth="100" />
+                        <ComboBox x:Name="LogSendMode" SelectedIndex="{Binding SendMode}" MinWidth="124"
+                                  ToolTip="Broadcast: large on every player's screen, and in the chat (servermsg, over RCON). Chat: an ordinary line in the General chat, under the name beside (through the bridge, v17).">
+                            <ComboBoxItem Content="Broadcast" />
+                            <ComboBoxItem Content="Chat" />
+                        </ComboBox>
+                        <TextBox Grid.Column="1" x:Name="LogChatName" Text="{Binding ChatName, UpdateSourceTrigger=PropertyChanged}" Width="120" MaxLength="32" Margin="8,0,0,0"
+                                 Visibility="{Binding IsChatMode, Converter={StaticResource BoolToVisibility}}"
+                                 ToolTip="The name players see before the line: [General][this name]: …" />
+                        <TextBox Grid.Column="2" x:Name="LogMessageBox" Text="{Binding Message, UpdateSourceTrigger=PropertyChanged}" KeyDown="LogMessage_KeyDown" Margin="8,0,0,0"
+                                 ToolTip="{Binding MessageTip}" />
+                        <Button Grid.Column="3" Content="Send" Command="{Binding SendMessageCommand}" Margin="8,0,0,0" MinWidth="100" />
                     </Grid>
                 </Grid>
             </TabItem>

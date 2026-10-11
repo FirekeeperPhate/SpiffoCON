@@ -1085,6 +1085,31 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
+    // ---- chat (bridge v17) ----
+
+    /// <summary>Why a line can't be written in the chat now (null: it can).</summary>
+    public string? V17Problem =>
+        _client is null || !IsConnected ? "Writing in the chat is done through the SpiffoCON Bridge: connect it in the Bridge tab, or choose Broadcast."
+        : BridgeVersion < 17 ? $"Writing in the chat needs bridge v17 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted. Broadcast works without it."
+        : null;
+
+    /// <summary>Writes a line in the General chat under a name. Returns the line as it went (null: it did not), and what to tell.</summary>
+    internal async Task<(BridgeChat? Sent, string Status)> SendChatAsync(string author, string text)
+    {
+        if (V17Problem is { } problem)
+            return (null, problem);
+        try
+        {
+            var chat = await _client!.ChatAsync(author, text);
+            return (chat, chat.Players == 0 ? $"Written as {chat.Author}, but nobody is online to read it."
+                : $"Written in the chat as {chat.Author}{(chat.Cut ? ": too long, the end was cut" : "")}.");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return (null, "The bridge could not write in the chat: " + ex.Message);
+        }
+    }
+
     // ---- traits (bridge v16) ----
 
     /// <summary>Every trait of the game with whether the player has it, for the character window; null and why not.</summary>

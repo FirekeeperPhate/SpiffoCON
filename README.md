@@ -108,8 +108,10 @@ instead.
   the file at its next start (checked on a real B42 server, also on an existing world).
 - Logs tab: follows the server's Zomboid/Logs over SFTP (or a local folder) every 5 s:
   player chat (which RCON can't see), broadcasts, joins, admin actions and any other log
-  the server writes. Switches to the new files by itself when the server restarts, and has
-  a quick broadcast box.
+  the server writes. Switches to the new files by itself when the server restarts. The box
+  under the log answers from there: a **Broadcast** (`servermsg`: large on every player's
+  screen), or, with the bridge (v17), a line of **Chat** under a name of your choice, as a
+  player's.
 - Accounts tab: every account the server knows, online or not, from a copy of its SQLite
   databases read over SFTP (or a local Zomboid folder): role (banned included), last login,
   character name, last saved position, dead or alive, and the kick/ban history with reasons.
@@ -236,6 +238,15 @@ instead.
     of a skill, *Set level*): up or down, by adding or taking away the difference with `addxp`, as
     the game's own admin window does. Going down is asked first.
 
+  Bridge v17 adds:
+  - writing in the chat: in the Logs tab, *Chat* instead of *Broadcast* sends an ordinary line
+    to the General chat, under the name beside the box ("Admin" at first). The server can only
+    send alerts by itself, so the bridge passes the text to each player's game, where the mod
+    shows it in the chat window with the colour, time and size of the player's own chat
+    settings; a player who muted that name does not see it. It is written to the server's chat
+    log like a player's message, so the Logs tab shows it too. A chat mod that replaces the
+    game's chat window may not show it.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.
@@ -338,7 +349,8 @@ doesn't show in searches nor in hosts' mod browsers, and is added by hand.
 2. In SpiffoCON, with SFTP set, the bridge connects by itself when you connect (or press **Find
    on server** in the Bridge tab).
 
-It runs on the server only: players don't need it, and it does nothing on their game. It acts only
+It works on the server. On a player's game it does one thing: it shows the chat lines an admin
+writes from SpiffoCON (bridge v17). It acts only
 on requests SpiffoCON writes into the server's `Zomboid/Lua` folder, so only someone who can
 already write the server's files can use it. SpiffoCON checks the bridge version and greys out
 what an older bridge can't do.

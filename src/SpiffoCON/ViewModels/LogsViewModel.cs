@@ -41,6 +41,8 @@ public sealed partial class LogsViewModel : ObservableObject
     public LogsViewModel(MainViewModel main)
     {
         _main = main;
+        SendMode = main.Book.LogsSendChat ? 1 : 0;
+        ChatName = main.Book.ChatName ?? "Admin";
         View = new ListCollectionView(_lines) { Filter = Matches };
         _timer.Tick += async (_, _) => await PollAsync();
         _searchDelay.Tick += (_, _) =>
@@ -83,6 +85,38 @@ public sealed partial class LogsViewModel : ObservableObject
     }
 
     partial void OnFollowChanged(bool value) => UpdateTimer();
+
+    // ---- the box under the logs: a broadcast (servermsg) or a line of chat (bridge v17) ----
+
+    /// <summary>0: a broadcast, large on every player's screen; 1: an ordinary line in the General chat.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsChatMode), nameof(MessageTip))]
+    private int sendMode;
+
+    /// <summary>The name players see before a line written in the chat.</summary>
+    [ObservableProperty] private string chatName = "Admin";
+
+    public bool IsChatMode => SendMode == 1;
+
+    public string MessageTip => IsChatMode
+        ? "A line in the General chat, as a player's (through the bridge, v17). Enter sends."
+        : "Broadcast to all players: large on their screen, and in the chat (servermsg). Enter sends.";
+
+    partial void OnSendModeChanged(int value) => _main.Book.LogsSendChat = value == 1;
+    partial void OnChatNameChanged(string value) => _main.Book.ChatName = value;
+
+    // lines written from here that the log has not shown yet: they are not news to their own writer
+    readonly List<(string Author, string Text, DateTime At)> _own = [];
+
+    bool IsOwn(LogLine line)
+    {
+        _own.RemoveAll(o => DateTime.UtcNow - o.At > TimeSpan.FromMinutes(5));
+        int at = _own.FindIndex(o => o.Author == line.Author && o.Text == line.Text);
+        if (at < 0)
+            return false;
+        _own.RemoveAt(at);
+        return true;
+    }
     partial void OnShowServerLinesChanged(bool value) => View.Refresh();
 
     partial void OnSearchChanged(string value)
@@ -336,7 +370,7 @@ public sealed partial class LogsViewModel : ObservableObject
         if (!tail.LastPollWasBacklog)
         {
             // (not by the lines' times: the server's clock or time zone may differ from this PC's)
-            var recent = lines.Where(l => l.Kind == LogLineKind.Chat).ToList();
+            var recent = lines.Where(l => l.Kind == LogLineKind.Chat && !IsOwn(l)).ToList();
             if (recent.Count > 0)
                 ChatReceived?.Invoke(this, recent);
         }
@@ -355,6 +389,19 @@ public sealed partial class LogsViewModel : ObservableObject
         var text = Message.Trim();
         if (text.Length == 0)
             return;
+        if (IsChatMode)
+        {
+            var (sent, status) = await _main.Bridge.SendChatAsync(ChatName, text);
+            if (sent is not null)
+            {
+                Message = "";
+                _own.Add((sent.Author, sent.Text, DateTime.UtcNow));
+                await PollAsync();
+            }
+            // said last: reading the log again writes its own line there
+            StatusText = status;
+            return;
+        }
         if (!_main.IsSessionActive)
         {
             StatusText = "Connect over RCON to broadcast a message.";

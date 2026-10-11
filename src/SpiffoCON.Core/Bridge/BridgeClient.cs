@@ -358,6 +358,25 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return data.TryGetProperty("name", out var name) ? name.GetString() ?? traitId : traitId;
     }
 
+    /// <summary>
+    /// Writes a line in the General chat under a name (bridge v17), as an ordinary message: not the alert of
+    /// servermsg. The bridge sends it to each player's game, where its own file shows it, and writes it to the
+    /// chat log. The reply says the name and the text as they went (the bridge trims and may cut them).
+    /// </summary>
+    public async Task<BridgeChat> ChatAsync(string author, string text)
+    {
+        // a request is one line of values apart by tabs
+        static string OneLine(string value) => string.Join(' ', value.Split(['\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries)).Trim();
+        string asked = OneLine(text);
+        var data = await SendAsync("chat", OneLine(author), asked).ConfigureAwait(false);
+        string said = data.TryGetProperty("text", out var t) ? t.GetString() ?? asked : asked;
+        return new BridgeChat(
+            data.TryGetProperty("author", out var a) ? a.GetString() ?? author : author,
+            said,
+            data.TryGetProperty("players", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : 0,
+            said.Length < asked.Length);
+    }
+
     static string Number(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>The animals of the players (not the wild ones) within a radius of each player online (bridge v15).</summary>
@@ -941,6 +960,9 @@ public sealed record BridgeFluidFix
         .OrderByDescending(g => g.Count).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
         .Select(g => $"{g.Count} × {g.Name}"));
 }
+
+/// <summary>Bridge v17: a line written in the chat, as it went: under which name, how many were online, whether it was cut.</summary>
+public sealed record BridgeChat(string Author, string Text, int Players, bool Cut);
 
 /// <summary>Bridge v16: a trait of the game.</summary>
 public sealed record BridgeTrait

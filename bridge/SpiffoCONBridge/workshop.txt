@@ -3,7 +3,7 @@ id=3809683986
 title=SpiffoCON Bridge
 description=Server-side helper for SpiffoCON, a free remote admin tool for Project Zomboid servers (Windows).
 description=
-description=Bridge version 16.
+description=Bridge version 17.
 description=SpiffoCON, latest release: [url=https://github.com/FirekeeperPhate/SpiffoCON/releases/latest]github.com/FirekeeperPhate/SpiffoCON/releases/latest[/url]
 description=
 description=[h2]What it is for[/h2]
@@ -17,7 +17,8 @@ description=[*]show a vehicle part by part and repair it (missing wheels and win
 description=[*]list the animals near the players, feed and water them, fill their troughs;
 description=[*]put right the buckets, bottles, troughs and rain collectors that can't hold liquids any more after a server crash;
 description=[*]clean up around a spot: zombie corpses, items on the ground, fires, wrecks;
-description=[*]set the weather and the time of day, put items on the ground, list and remove safehouses.
+description=[*]set the weather and the time of day, put items on the ground, list and remove safehouses;
+description=[*]write in the chat as an ordinary line, not as an alert in the middle of the screen.
 description=[/list]
 description=
 description=[h2]How to use it[/h2]
@@ -26,6 +27,6 @@ description=[*]Add the mod to the server: Mods=SpiffoCONBridge and WorkshopItems
 description=[*]In SpiffoCON, set the server's SFTP access: the bridge connects by itself.
 description=[/olist]
 description=
-description=It runs on the server only: players don't need it, and it does nothing on their game. It acts only on requests written into the server's Zomboid/Lua folder, so only someone who can already write the server's files can use it. Every admin action is written to the server's admin log.
+description=It works on the server. On a player's game it does one thing: it shows the chat lines an admin writes from SpiffoCON. It acts only on requests written into the server's Zomboid/Lua folder, so only someone who can already write the server's files can use it. Every admin action is written to the server's admin log.
 tags=Build 42;Multiplayer;Misc
 visibility=public

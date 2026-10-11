@@ -148,6 +148,12 @@ public sealed class ServerBook
     /// <summary>A game folder chosen for the Map tab (the same on every server).</summary>
     public string? MapFolder { get; set; }
 
+    /// <summary>The box under the logs writes in the chat (bridge v17) instead of sending a broadcast.</summary>
+    public bool LogsSendChat { get; set; }
+
+    /// <summary>The name players see before a line written in the chat from SpiffoCON.</summary>
+    public string ChatName { get; set; } = "Admin";
+
     /// <summary>Look for a new SpiffoCON release once a day.</summary>
     public bool CheckForUpdates { get; set; } = true;
 
