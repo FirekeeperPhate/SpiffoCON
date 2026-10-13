@@ -3,7 +3,7 @@ id=3809683986
 title=SpiffoCON Bridge
 description=Server-side helper for SpiffoCON, a free remote admin tool for Project Zomboid servers (Windows).
 description=
-description=Bridge version 17.
+description=Bridge version 18.
 description=SpiffoCON, latest release: [url=https://github.com/FirekeeperPhate/SpiffoCON/releases/latest]github.com/FirekeeperPhate/SpiffoCON/releases/latest[/url]
 description=
 description=[h2]What it is for[/h2]

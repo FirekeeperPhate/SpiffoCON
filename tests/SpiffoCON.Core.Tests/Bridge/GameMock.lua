@@ -178,6 +178,8 @@ local function square(x, y, z)
 	sq.AddWorldInventoryItem = function(self, fullType, ox, oy, oz, transmit)
 		if type(fullType) == "table" then return PLACE(sq, fullType, ox, oy, oz, transmit) end
 		assert(type(fullType) == "string" and type(ox) == "number" and type(oy) == "number" and type(oz) == "number")
+		-- with a type name the fifth value is "age it as loot", true when left out: food as old as the world
+		if transmit ~= false then AGED = (AGED or 0) + 1 end
 		if not KNOWN_TYPES[fullType] then return nil end
 		local object = { name = fullType, getOffZ = function() return oz end, removeFromWorld = function() end, removeFromSquare = function() end, setSquare = function() end }
 		sq.ground[#sq.ground + 1] = object

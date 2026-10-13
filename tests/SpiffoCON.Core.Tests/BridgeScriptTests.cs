@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(17, await _client.PingAsync());
+        Assert.Equal(18, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -236,6 +236,8 @@ public sealed class BridgeScriptTests
         // a type the server does not know (a mod it lacks) is named once, and the rest still goes down
         Assert.Equal(["Mod.Unknown"], done.Unknown);
         Assert.Equal(["spawn Base.Axe", "spawn Base.Axe", "spawn Base.Nails", "spawn Base.Nails", "spawn Base.Nails"], Told());
+        // new, not aged as the loot the game lays out: food put down on a server months old came out rotten
+        Assert.True(_game.Globals.Get("AGED").IsNil());
         // on the floor (no height), spread over the square rather than in one pile
         // (radius 1 also takes in the can on this square and the plank upstairs next to it, which were there)
         Assert.Equal(5 + 2, (await _client.RemoveGroundItemsAsync(100, 100, 1, apply: false, safehouses: false)).Found);

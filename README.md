@@ -247,6 +247,11 @@ instead.
     log like a player's message, so the Logs tab shows it too. A chat mod that replaces the
     game's chat window may not show it.
 
+  Bridge v18 fixes:
+  - food put on the ground was rotten on a server that had run for a while: the game aged it
+    like the loot it lays out itself, as old as the world. It is put down new now, as the food
+    given to a player always was.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.

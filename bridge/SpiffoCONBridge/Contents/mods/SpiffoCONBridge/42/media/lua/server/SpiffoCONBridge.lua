@@ -14,7 +14,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 17
+local VERSION = 18
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -1877,6 +1877,9 @@ local MAX_SPAWN = 500
 -- spawnitems <x> <y> <z> <Type=count,Type=count,...>: the items on the floor of that square, as the
 -- game's own server code drops things (IsoGridSquare.AddWorldInventoryItem with a type name: on a
 -- server it sends each new object to the clients). Spread a little over the square, not in one pile.
+-- The fifth value is the game's "age it": without it the game takes true, as for the loot it lays out,
+-- and food is as old as the world (Food.setAutoAge: its days plus the months before the outbreak), so
+-- rotten on any server that has run for a while. false: new, as RCON's additem gives it (bridge v18).
 -- A type the game does not know is skipped and named in the reply. The square must be loaded, that
 -- is near a player.
 local function spawnItems(x, y, z, list)
@@ -1901,7 +1904,7 @@ local function spawnItems(x, y, z, list)
 			-- a 4 x 4 grid of places on the square, round and round
 			local ox, oy = 0.2 + (n % 4) * 0.2, 0.2 + (math.floor(n / 4) % 4) * 0.2
 			-- an unknown type gives no item; an error must not lose the count of what was already put down
-			local item = try(function() return sq:AddWorldInventoryItem(w.fullType, ox, oy, 0) end)
+			local item = try(function() return sq:AddWorldInventoryItem(w.fullType, ox, oy, 0, false) end)
 			if not item then
 				unknown[#unknown + 1] = w.fullType
 				break
