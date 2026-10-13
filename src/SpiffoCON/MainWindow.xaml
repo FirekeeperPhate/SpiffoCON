@@ -1252,36 +1252,43 @@
 
                     <TextBlock Grid.Row="3" Text="{Binding StatusText}" Opacity="0.7" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
 
-                    <!-- a quick broadcast (RCON), or a line of chat under a name (bridge v17) -->
+                    <!-- a quick broadcast (RCON), a line of chat under a name (bridge v17), or one for a single player (v18) -->
                     <Grid Grid.Row="4" Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <ComboBox x:Name="LogSendMode" SelectedIndex="{Binding SendMode}" MinWidth="124"
-                                  ToolTip="Broadcast: large on every player's screen, and in the chat (servermsg, over RCON). Chat: an ordinary line in the General chat, under the name beside (through the bridge, v17).">
+                                  ToolTip="Broadcast: large on every player's screen, and in the chat (servermsg, over RCON). Chat: an ordinary line in the General chat, under the name beside (through the bridge, v17). To a player: a line of chat only that player sees (bridge v18).">
                             <ComboBoxItem Content="Broadcast" />
                             <ComboBoxItem Content="Chat" />
+                            <ComboBoxItem Content="To a player" />
                         </ComboBox>
-                        <TextBox Grid.Column="1" x:Name="LogChatName" Text="{Binding ChatName, UpdateSourceTrigger=PropertyChanged}" Width="120" MaxLength="32" Margin="8,0,0,0"
-                                 Visibility="{Binding IsChatMode, Converter={StaticResource BoolToVisibility}}"
+                        <ComboBox Grid.Column="1" x:Name="LogChatTarget" ItemsSource="{Binding Targets}" SelectedItem="{Binding ChatTarget}" MinWidth="130" Margin="8,0,0,0"
+                                  Visibility="{Binding IsTellMode, Converter={StaticResource BoolToVisibility}}"
+                                  ToolTip="Who sees the line: one of the players online" />
+                        <TextBox Grid.Column="2" x:Name="LogChatName" Text="{Binding ChatName, UpdateSourceTrigger=PropertyChanged}" Width="120" MaxLength="32" Margin="8,0,0,0"
+                                 Visibility="{Binding HasName, Converter={StaticResource BoolToVisibility}}"
                                  ToolTip="The name players see before the line: [General][this name]: …" />
-                        <TextBox Grid.Column="2" x:Name="LogMessageBox" Text="{Binding Message, UpdateSourceTrigger=PropertyChanged}" KeyDown="LogMessage_KeyDown" Margin="8,0,0,0"
+                        <TextBox Grid.Column="3" x:Name="LogMessageBox" Text="{Binding Message, UpdateSourceTrigger=PropertyChanged}" KeyDown="LogMessage_KeyDown" Margin="8,0,0,0"
                                  ToolTip="{Binding MessageTip}" />
-                        <Button Grid.Column="3" Content="Send" Command="{Binding SendMessageCommand}" Margin="8,0,0,0" MinWidth="100" />
+                        <Button Grid.Column="4" Content="Send" Command="{Binding SendMessageCommand}" Margin="8,0,0,0" MinWidth="100" />
                     </Grid>
                 </Grid>
             </TabItem>
 
             <TabItem Header="Bridge" DataContext="{Binding Bridge}">
                 <Grid Margin="0,8,0,0">
+                    <!-- the players at the top, as tall as their list needs; the sections under them share what
+                         is left of the tab and scroll when more than one is open -->
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -1338,7 +1345,7 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <ListView ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" ItemContainerStyle="{StaticResource GridRow}" controls:PlayerMenu.Enabled="True"
-                                  MouseDoubleClick="BridgePlayers_MouseDoubleClick">
+                                  MouseDoubleClick="BridgePlayers_MouseDoubleClick" MinHeight="76" MaxHeight="236">
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="Player" Width="125" DisplayMemberBinding="{Binding Username}" />
@@ -1391,7 +1398,9 @@
                         </DockPanel>
                     </Grid>
 
-                    <Expander Grid.Row="3" Header="Vehicles in loaded areas" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}">
+                    <ScrollViewer Grid.Row="3" x:Name="BridgeSections" VerticalScrollBarVisibility="Auto" Margin="0,0,0,0">
+                    <StackPanel>
+                    <Expander Header="Vehicles in loaded areas" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}">
                         <ListView ItemsSource="{Binding Vehicles}" MaxHeight="220" ItemContainerStyle="{StaticResource GridRow}" Margin="0,6,0,0"
                                   SelectionMode="Single" MouseDoubleClick="BridgeVehicles_MouseDoubleClick">
                             <ListView.View>
@@ -1456,7 +1465,7 @@
                         </ListView>
                     </Expander>
 
-                    <Expander Grid.Row="4" Header="Animals near the players" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}" Expanded="Animals_Expanded">
+                    <Expander Header="Animals near the players" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}" Expanded="Animals_Expanded">
                         <DockPanel Margin="0,6,0,0">
                             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
                                 <Button DockPanel.Dock="Left" Command="{Binding ReadAnimalsCommand}" ToolTip="Read the animals again"
@@ -1525,6 +1534,111 @@
                             </ListView>
                         </DockPanel>
                     </Expander>
+
+                    <!-- bridge v18: read when the list is opened, and by its own button -->
+                    <Expander Header="Generators near the players" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}" Expanded="Generators_Expanded">
+                        <DockPanel Margin="0,6,0,0">
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                <Button DockPanel.Dock="Left" Command="{Binding ReadGeneratorsCommand}" ToolTip="Read the generators again"
+                                        FontFamily="{StaticResource IconFont}" Content="&#xE72C;" Padding="10,7" />
+                                <Button DockPanel.Dock="Left" Content="Refuel all…" Command="{Binding RefuelAllGeneratorsCommand}" Margin="8,0,0,0"
+                                        ToolTip="The tank of every generator listed filled to the top (asked first; bridge v18)" />
+                                <TextBlock Text="{Binding GeneratorsText}" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.75" TextWrapping="Wrap" />
+                            </DockPanel>
+                            <ListView ItemsSource="{Binding Generators}" MaxHeight="220" ItemContainerStyle="{StaticResource GridRow}" SelectionMode="Single"
+                                      Visibility="{Binding Generators.Count, Converter={StaticResource PositiveToVisible}}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Position" Width="124">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Position}" FontFamily="{StaticResource MonoFont}" FontSize="12" />
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Fuel" Width="66">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock x:Name="Value" Text="{Binding FuelText}" />
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding IsLowOnFuel}" Value="True">
+                                                            <Setter TargetName="Value" Property="Foreground" Value="#FF6B6B" />
+                                                            <Setter TargetName="Value" Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Condition" Width="86">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock x:Name="Value" Text="{Binding ConditionText}" />
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding IsWorn}" Value="True">
+                                                            <Setter TargetName="Value" Property="Foreground" Value="#FF6B6B" />
+                                                            <Setter TargetName="Value" Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="State" Width="170" DisplayMemberBinding="{Binding StateText}" />
+                                        <GridViewColumn Width="330">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Button Content="Refuel" FontSize="11" Padding="8,1" MinHeight="0" Margin="0,0,4,0" ToolTip="Fuel to the top"
+                                                                Command="{Binding DataContext.RefuelGeneratorCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" />
+                                                        <Button Content="Repair" FontSize="11" Padding="8,1" MinHeight="0" Margin="0,0,4,0" ToolTip="Condition back to 100%"
+                                                                Command="{Binding DataContext.RepairGeneratorCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" />
+                                                        <Button Content="{Binding SwitchText}" FontSize="11" Padding="8,1" MinHeight="0" Margin="0,0,4,0"
+                                                                ToolTip="On or off; one without fuel, or broken, is not turned on"
+                                                                Command="{Binding DataContext.SwitchGeneratorCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" />
+                                                        <Button Content="{Binding ConnectText}" FontSize="11" Padding="8,1" MinHeight="0"
+                                                                ToolTip="Wired to the building or not: only a connected one powers it"
+                                                                Command="{Binding DataContext.ConnectGeneratorCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </DockPanel>
+                    </Expander>
+
+                    <!-- bridge v18: the server's updates of the last minute, read again every few seconds while open -->
+                    <Expander Header="Server performance" Margin="0,8,0,0" IsEnabled="{Binding IsConnected}" Expanded="Perf_Expanded" Collapsed="Perf_Collapsed">
+                        <StackPanel Margin="0,6,0,4">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Left" Command="{Binding ReadPerfCommand}" ToolTip="Read again now (it is read every 5 s while this is open)"
+                                        FontFamily="{StaticResource IconFont}" Content="&#xE72C;" Padding="10,7" VerticalAlignment="Top" />
+                                <TextBlock x:Name="PerfSummary" Text="{Binding PerfText}" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" />
+                            </DockPanel>
+                            <ItemsControl x:Name="PerfChart" ItemsSource="{Binding PerfBars}" Height="44" Margin="0,10,0,0" HorizontalAlignment="Left"
+                                          Visibility="{Binding PerfBars.Count, Converter={StaticResource PositiveToVisible}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <!-- the bar on a strip as tall as the chart, so that the tip shows anywhere above it too -->
+                                        <Border Width="10" Height="44" Background="Transparent" ToolTip="{Binding Tip}" ToolTipService.InitialShowDelay="100">
+                                            <Rectangle Width="8" Height="{Binding Height}" Fill="{Binding Color}" RadiusX="1" RadiusY="1"
+                                                       VerticalAlignment="Bottom" HorizontalAlignment="Left" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Opacity="0.6" FontSize="11.5" TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Visibility="{Binding PerfBars.Count, Converter={StaticResource PositiveToVisible}}"
+                                       Text="One bar a second, the oldest on the left: the longest wait between two updates of the server in that second (full height: a second or more, in which nothing moved for anybody). Green up to 200 ms, amber up to half a second, red beyond. Walk a player to the spot that lags and watch: bars that grow there are the server's doing; if they stay low, the stutter is on the player's own PC." />
+                        </StackPanel>
+                    </Expander>
+                    </StackPanel>
+                    </ScrollViewer>
 
                     <TextBlock Grid.Row="6" Text="{Binding StatusText}" Margin="0,8,0,0" TextWrapping="Wrap" />
                 </Grid>

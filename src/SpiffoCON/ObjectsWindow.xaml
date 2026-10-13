@@ -1,0 +1,81 @@
+<Window x:Class="SpiffoCON.ObjectsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Title}" Width="920" Height="600" MinWidth="720" MinHeight="360"
+        WindowStartupLocation="Manual">
+    <DockPanel Margin="16,12,16,10">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Button DockPanel.Dock="Right" Command="{Binding RefreshCommand}" VerticalAlignment="Top" ToolTip="Read again now (after the player moved, or something was built or taken away)"
+                    FontFamily="{StaticResource IconFont}" Content="&#xE72C;" Padding="10,7" />
+            <StackPanel>
+                <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Opacity="0.8" Margin="0,2,0,0" TextWrapping="Wrap"
+                           Text="What stands on the squares around them, on their floor. For a thing the game no longer lets anybody pick up or dismantle: Remove takes it out of the world, as the game's own Destroy tile does." />
+            </StackPanel>
+        </DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="Within" VerticalAlignment="Center" />
+            <ComboBox x:Name="RadiusBox" ItemsSource="{Binding Radii}" SelectedItem="{Binding Radius}" MinWidth="70" Margin="8,0,8,0"
+                      ToolTip="Squares on each side of the square the player stands on" />
+            <TextBlock Text="squares" VerticalAlignment="Center" />
+            <CheckBox Content="Floors too" IsChecked="{Binding Floors}" Margin="20,0,0,0" VerticalAlignment="Center"
+                      ToolTip="The floor of each square as well: removing one leaves a hole" />
+        </StackPanel>
+        <!-- how many and when; under it what the last action said -->
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <TextBlock Text="{Binding Summary}" Opacity="0.75" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Main.StatusText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Main.StatusText}" Opacity="0.85" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <ListView x:Name="ObjectsList" ItemsSource="{Binding Objects}" ItemContainerStyle="{StaticResource GridRow}" SelectionMode="Single">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="Object" Width="250">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Label}" ToolTip="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="What" Width="90" DisplayMemberBinding="{Binding KindText}" />
+                    <GridViewColumn Header="Position" Width="120">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Position}" FontFamily="{StaticResource MonoFont}" FontSize="12" />
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Width="230">
+                        <GridViewColumnHeader Content="Sprite" ToolTip="The tile it is drawn with: the name the game's Destroy tile lists it under" />
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Sprite}" ToolTip="{Binding Sprite}" FontFamily="{StaticResource MonoFont}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Width="60" DisplayMemberBinding="{Binding ItemsText}">
+                        <GridViewColumnHeader Content="Items" ToolTip="What its containers hold: left on the ground when it is removed" />
+                    </GridViewColumn>
+                    <GridViewColumn Width="100">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="Remove…" FontSize="11" Padding="8,1" MinHeight="0"
+                                        ToolTip="Takes it out of the world for every player (asked first)"
+                                        Command="{Binding DataContext.RemoveCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                        CommandParameter="{Binding}" />
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                </GridView>
+            </ListView.View>
+            <ListView.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Remove…" Command="{Binding RemoveCommand}"
+                              CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <MenuItem Header="Copy the sprite name" Command="{Binding CopySpriteCommand}"
+                              CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                </ContextMenu>
+            </ListView.ContextMenu>
+        </ListView>
+    </DockPanel>
+</Window>

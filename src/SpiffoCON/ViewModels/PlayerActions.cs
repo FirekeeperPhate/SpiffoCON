@@ -253,6 +253,45 @@ public sealed class PlayerActions(MainViewModel main)
             : info.VehicleId is null ? "This player is not in a vehicle."
             : null);
 
+    /// <summary>Why the objects around a player can't be listed (null: they can): bridge v18, the player in the game.</summary>
+    public string? ObjectsProblem(string player) =>
+        main.Bridge.V18Problem ?? (BridgeInfo(player) is null ? "The bridge does not list this player (online?)." : null);
+
+    /// <summary>Opens the window of the objects around a player.</summary>
+    public void ShowObjects(string player)
+    {
+        if (BridgeInfo(player) is { } info)
+            main.ShowObjects?.Invoke(info.Username);
+    }
+
+    /// <summary>Why a line can't be written to a player alone (null: it can): bridge v18.</summary>
+    public string? TellProblem(string player) => main.Bridge.V18Problem;
+
+    /// <summary>The Logs tab, ready to write to this player alone.</summary>
+    public void WriteTo(string player)
+    {
+        main.Logs.ChatTarget = BridgeInfo(player)?.Username ?? player;
+        main.Logs.SendMode = 2;
+        main.ShowTab("Logs");
+    }
+
+    /// <summary>Squares on each side for removing zombies: no more than RCON's removezombies takes.</summary>
+    public IReadOnlyList<int> ZombieRadii => [10, 25, 50];
+
+    /// <summary>Why the zombies around a player can't be removed (null: they can): RCON, and a position from the bridge.</summary>
+    public string? ZombiesProblem(string player) =>
+        !main.IsSessionActive ? "Removing zombies is an RCON command: connect to the server."
+        : BridgeInfo(player)?.X is null ? "The bridge has no position for this player."
+        : null;
+
+    public async Task RemoveZombiesAsync(string player, int radius)
+    {
+        if (BridgeInfo(player) is not { X: { } x, Y: { } y } info)
+            return;
+        if (await main.Bridge.RemoveZombiesAsync(x, y, info.Z ?? 0, radius, info.Username) is { } result)
+            main.StatusText = result;
+    }
+
     /// <summary>Opens the window of the vehicle a player is in.</summary>
     public void ShowVehicle(string player)
     {

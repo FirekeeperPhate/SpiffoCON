@@ -971,6 +971,9 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Opens the character window of a player; set by the view.</summary>
     public Action<string>? ShowCharacter { get; set; }
 
+    /// <summary>Opens the window of the objects around a player; set by the view.</summary>
+    public Action<string>? ShowObjects { get; set; }
+
     /// <summary>Opens the window of a vehicle (its runtime id and model); set by the view.</summary>
     public Action<int, string?>? ShowVehicle { get; set; }
 

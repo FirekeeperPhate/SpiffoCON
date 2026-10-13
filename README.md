@@ -247,10 +247,29 @@ instead.
     log like a player's message, so the Logs tab shows it too. A chat mod that replaces the
     game's chat window may not show it.
 
-  Bridge v18 fixes:
-  - food put on the ground was rotten on a server that had run for a while: the game aged it
-    like the loot it lays out itself, as old as the world. It is put down new now, as the food
-    given to a player always was.
+  Bridge v18 adds:
+  - *Objects around them…* in the player menu: what stands on the squares around a player
+    (furniture, walls, doors, lights), in a window, with *Remove…* for each. For the thing the
+    game no longer lets anybody pick up or dismantle (half of an object made of two squares,
+    say): it goes out of the world as with the game's own *Destroy tile*, and what it held is
+    left on the ground;
+  - *Server performance* in the Bridge tab: the server's updates of the last minute, second by
+    second (it makes about ten a second), with the longest wait between two as a bar, read
+    again every 5 s while open; and the zombies, vehicles and memory it has loaded. Walk a
+    player to the spot that lags: bars that grow there are the server's doing; if they stay
+    low, the stutter is on the player's own PC;
+  - *Generators near the players* in the Bridge tab: fuel, condition, on or off, connected or
+    not; each refuelled, repaired, switched or connected, and all refuelled at once;
+  - a line of chat for one player alone: *To a player* in the box of the Logs tab, or *Write
+    to them…* in the player menu. Only that player sees it, marked *Private*;
+  - zombies removed on every floor: *Clean up around > Zombies* in the player menu and the
+    map's *Remove the zombies* count them first and clear each floor that has some (the
+    removal itself is RCON's `removezombies`; without bridge v18 it does the one floor and
+    does not count).
+
+  It also fixes the food put on the ground, which was rotten on a server that had run for a
+  while: the game aged it like the loot it lays out itself, as old as the world. It is put
+  down new now, as the food given to a player always was.
 
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to

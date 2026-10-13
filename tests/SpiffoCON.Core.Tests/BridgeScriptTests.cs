@@ -981,6 +981,154 @@ public sealed class BridgeScriptTests
         Assert.Empty(Logged());
     }
 
+    [Fact]
+    public async Task The_objects_around_a_player_are_listed_and_one_is_removed_as_the_admin_tool_does()
+    {
+        _game.DoString("OBJECTS()");
+        var around = await _client.ObjectsAsync("rj", 1);
+        Assert.Equal((100, 102, 0, 1), (around.X, around.Y, around.Z, around.Radius));
+        // not the floor, not what lies on it, not the table three squares away
+        Assert.Equal(
+            ["Wall|wall|0", "Double Fluorescent Wall Light|light|0", "Refrigerator|object|3", "Tree|tree|0", "Wooden Chair|object|0", "Wooden Chair|object|0"],
+            around.Objects.Select(o => $"{o.Label}|{o.Kind}|{o.Items}"));
+        var light = around.Objects.Single(o => o.Kind == "light");
+        Assert.Equal(("lighting_indoor_02_48", "100,102,0", 2), (light.Sprite, light.Position, light.Index));
+        // the floor when asked
+        Assert.Contains((await _client.ObjectsAsync("rj", 1, floors: true)).Objects, o => o.Kind == "floor" && o.Label == "Floor");
+        Told();
+
+        Assert.Equal(("Double Fluorescent Wall Light", 0), await _client.RemoveObjectAsync(light));
+        Assert.Contains(Logged(), l => l.StartsWith("log admin: ") && l.Contains("removed the object Double Fluorescent Wall Light (lighting_indoor_02_48) at 100, 102, 0"));
+        Assert.Equal(["removeObject lighting_indoor_02_48"], Told());
+        Assert.DoesNotContain((await _client.ObjectsAsync("rj", 1)).Objects, o => o.Kind == "light");
+
+        // what a fridge holds is left on the ground, as when a sledgehammer destroys it
+        var fridge = around.Objects.Single(o => o.Items == 3);
+        Assert.Equal(("Refrigerator", 3), await _client.RemoveObjectAsync(fridge));
+        Assert.Equal(["dump appliances_refrigeration_01_0", "removeObject appliances_refrigeration_01_0"], Told());
+
+        // the list of the square changed since it was read (the light is gone): the wall is found by its sprite
+        var wall = around.Objects.Single(o => o.Kind == "wall");
+        _game.DoString("table.insert(GROUND_AT(100, 102, 0), 1, {})");
+        Assert.Equal("walls_interior_01_25", (await _client.RemoveObjectAsync(wall with { Index = 7 })).Removed);
+        // two alike and the place no longer says which: asked to read again; gone: said so
+        var chair = around.Objects.First(o => o.Label == "Wooden Chair");
+        Assert.Contains("read the objects again", (await Assert.ThrowsAsync<BridgeException>(() => _client.RemoveObjectAsync(chair with { Index = 9 }))).Message);
+        Assert.Equal("Wooden Chair", (await _client.RemoveObjectAsync(chair)).Removed);
+        Assert.Contains("no longer there", (await Assert.ThrowsAsync<BridgeException>(() => _client.RemoveObjectAsync(light))).Message);
+        // an item on the ground is not an object of the world, a square nobody is near is not loaded
+        Assert.Contains("no longer there", (await Assert.ThrowsAsync<BridgeException>(() => _client.RemoveObjectAsync(fridge with { Index = 0, Sprite = "item_on_the_floor" }))).Message);
+        Assert.Contains("not loaded", (await Assert.ThrowsAsync<BridgeException>(() => _client.RemoveObjectAsync(light with { X = 9000 }))).Message);
+        await Assert.ThrowsAsync<BridgeException>(() => _client.ObjectsAsync("nobody", 1));
+        // never wider than a few squares, however much is asked
+        Assert.Equal(6, (await _client.ObjectsAsync("rj", 500)).Radius);
+    }
+
+    [Fact]
+    public async Task The_generators_near_the_players_are_listed_refuelled_repaired_and_switched()
+    {
+        Assert.Empty((await _client.GeneratorsAsync(50)).Generators);
+        _game.DoString("GENERATORS()");
+        var found = await _client.GeneratorsAsync(50);
+        Assert.Equal(
+            ["101,101,0 25% 40% off", "103,104,1 0% 0% off · not connected"],
+            found.Generators.OrderBy(g => g.X).Select(g => $"{g.Position} {g.FuelText} {g.ConditionText} {g.StateText}"));
+        var worn = found.Generators.Single(g => g.X == 101);
+        var dead = found.Generators.Single(g => g.X == 103);
+        Assert.True(dead.IsLowOnFuel && dead.IsWorn && !worn.IsLowOnFuel);
+
+        // out of fuel or broken it would stop at once: said, not done
+        Assert.Contains("no fuel", (await Assert.ThrowsAsync<BridgeException>(() => _client.GeneratorAsync(dead, BridgeClient.GeneratorAction.On))).Message);
+        Assert.Equal(100, (await _client.GeneratorAsync(dead, BridgeClient.GeneratorAction.Refuel)).Fuel);
+        Assert.Contains("broken", (await Assert.ThrowsAsync<BridgeException>(() => _client.GeneratorAsync(dead, BridgeClient.GeneratorAction.On))).Message);
+        Assert.Equal(100, (await _client.GeneratorAsync(dead, BridgeClient.GeneratorAction.Repair)).Condition);
+        Assert.True((await _client.GeneratorAsync(dead, BridgeClient.GeneratorAction.Connect)).Connected);
+        Told();
+        var on = await _client.GeneratorAsync(dead, BridgeClient.GeneratorAction.On);
+        Assert.True(on.On);
+        Assert.Equal("on", on.StateText);
+        Assert.Equal("Turn off", on.SwitchText);
+        // the switch is told to the players as the game's own action does
+        Assert.Equal(["syncGenerator 103,104"], Told());
+        Assert.False((await _client.GeneratorAsync(dead, BridgeClient.GeneratorAction.Off)).On);
+        Assert.False((await _client.GeneratorAsync(dead, BridgeClient.GeneratorAction.Disconnect)).Connected);
+
+        // all at once: only the one that was not full
+        Assert.Equal(1, await _client.RefuelGeneratorsAsync(50));
+        Assert.Equal(10, Lua("GEN_A.fuel + 0"));
+        Assert.Equal(0, await _client.RefuelGeneratorsAsync(50));
+
+        // nothing there, nothing loaded, nothing known to do
+        Assert.Contains("no generator", (await Assert.ThrowsAsync<BridgeException>(() => _client.GeneratorAsync(worn with { X = 100 }, BridgeClient.GeneratorAction.Refuel))).Message);
+        Assert.Contains("not loaded", (await Assert.ThrowsAsync<BridgeException>(() => _client.GeneratorAsync(worn with { X = 9000 }, BridgeClient.GeneratorAction.Refuel))).Message);
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("generator", "101", "101", "0", "explode"));
+    }
+
+    [Fact]
+    public async Task A_line_for_one_player_goes_to_that_player_alone()
+    {
+        var told = await _client.TellAsync("kate", "Phate", "  come to the gate  ");
+        Assert.Equal(("Phate", "come to the gate", 1, false), (told.Author, told.Text, told.Players, told.Cut));
+        var logged = Logged();
+        Assert.Contains("serverCommand to kate SpiffoCON chat [Phate] come to the gate (private)", logged);
+        var line = Assert.Single(logged, l => l.StartsWith("log chat: "))["log chat: ".Length..];
+        var parsed = SpiffoCON.Core.Files.LogTail.Parse("[13-10-26 10:04:12.100] " + line + ".");
+        Assert.Equal((SpiffoCON.Core.Files.LogLineKind.Chat, "Private to kate", "Phate", "come to the gate"), (parsed.Kind, parsed.Channel, parsed.Author, parsed.Text));
+
+        // nobody by that name online: nothing is sent
+        _game.DoString("LOG = {}");
+        await Assert.ThrowsAsync<BridgeException>(() => _client.TellAsync("nobody", "Phate", "hello"));
+        Assert.Contains("nothing to say", (await Assert.ThrowsAsync<BridgeException>(() => _client.TellAsync("kate", "Phate", " "))).Message);
+        Assert.Empty(Logged());
+    }
+
+    [Fact]
+    public async Task The_zombies_of_a_box_are_counted_floor_by_floor()
+    {
+        // five in a row east of rj, one at 140,140, one near kate
+        var near = await _client.ZombiesInAsync(100, 100, 10);
+        Assert.Equal((5, 10), (near.Total, near.Radius));
+        Assert.Equal([(0, 5)], near.Floors.Select(f => (f.Z, f.N)));
+        // the box is a square of squares, edges included: 101..103 only
+        Assert.Equal(3, (await _client.ZombiesInAsync(102, 100, 1)).Total);
+        Assert.Equal(1, (await _client.ZombiesInAsync(140, 140, 0)).Total);
+        var none = await _client.ZombiesInAsync(300, 300, 20);
+        Assert.Equal(0, none.Total);
+        Assert.Empty(none.Floors);
+        // one upstairs
+        _game.DoString("A_ZOMBIE.getZ = function() return 2 end");
+        Assert.Equal([(0, 4), (2, 1)], (await _client.ZombiesInAsync(100, 100, 10)).Floors.OrderBy(f => f.Z).Select(f => (f.Z, f.N)));
+    }
+
+    [Fact]
+    public async Task The_updates_of_the_server_are_noted_second_by_second()
+    {
+        // in this mock every request is one update, two seconds after the one before
+        for (int i = 0; i < 3; i++) await _client.PingAsync();
+        var perf = await _client.PerfAsync();
+        Assert.Equal((10, 2, 7, 5), (perf.Target, perf.Players, perf.Zombies, perf.Vehicles));
+        // megabytes, as a real server gives them
+        Assert.Equal((1272d, 2684d, 12.5, 480d), (perf.MemoryUsed, perf.MemoryMax, perf.UpdateAverage, perf.UpdateMax));
+        // from the second the notes began to the one before this: an update every other second, 2000 ms apart
+        Assert.Equal([0, 0, 1, 0, 1, 0, 1, 0], perf.Seconds.Select(s => s.Ticks));
+        Assert.Equal(2000, perf.WorstWait);
+        Assert.Equal(3, perf.WaitsOver(1000));
+        Assert.Equal(0, perf.WaitsOver(2000));
+        Assert.Equal(3 / 8d, perf.AverageTicks, 6);
+
+        // never more than the last minute
+        for (int i = 0; i < 40; i++) await _client.PingAsync();
+        Assert.Equal(59, (await _client.PerfAsync()).Seconds.Count);
+
+        // a server with nobody on it is paused: the hours it stood still are not a slow update
+        _game.DoString("NOW = NOW + 3 * 3600 * 1000");
+        await _client.PingAsync();
+        await _client.PingAsync();
+        var after = await _client.PerfAsync();
+        Assert.Equal(2000, after.WorstWait);
+        Assert.True(after.Seconds.Count <= 5);
+    }
+
     /// <summary>The players' side of the bridge, on a stand-in of the game's chat window.</summary>
     static Script PlayersGame()
     {
@@ -992,7 +1140,7 @@ public sealed class BridgeScriptTests
                 Add = function(f) HANDLERS[#HANDLERS + 1] = f end,
                 Remove = function(f) for i, h in ipairs(HANDLERS) do if h == f then table.remove(HANDLERS, i) return end end end } }
             function getHourMinute() return "10:04" end
-            function getText(key) return key == "UI_chat_general_chat_title_id" and "General" or key end
+            function getText(key) return ({ UI_chat_general_chat_title_id = "General", UI_chat_private_chat_title_id = "Private" })[key] or key end
             SHOWN = {}
             -- as the game's ISChat.addLineInChat: the line with its prefix, the author for the mute list
             ISChat = { instance = { tabs = { { tabID = 1 }, { tabID = 0 } }, chatFont = "large", showTimestamp = true, showTitle = true, mutedUsers = {} } }
@@ -1019,6 +1167,9 @@ public sealed class BridgeScriptTests
         // the player's chat settings are followed, also when they change after the line was shown
         game.DoString("ISChat.instance.showTimestamp = false ISChat.instance.showTitle = false ISChat.instance.chatFont = 'small'");
         Assert.Equal("<RGB:1.0,0.647,0.0> <SIZE:small> [Phate]: a &lt;LINE&gt; b", game.DoString("return SHOWN[1].message:getTextWithPrefix()").String);
+        // a line for this player alone: its own colour, and "Private" where the chat is named
+        game.DoString("ISChat.instance.showTitle = true SERVER_SAYS('SpiffoCON', 'chat', { author = 'Phate', text = 'psst', private = true })");
+        Assert.Equal("<RGB:0.85,0.6,1.0> <SIZE:small> [Private][Phate]: psst", game.DoString("return SHOWN[2].line").String);
         // a chat mod that asks a line something else is told nothing, not stopped
         Assert.True(game.DoString("return SHOWN[1].message:getChat() == nil and SHOWN[1].message:isServerAlert() == false").Boolean);
     }

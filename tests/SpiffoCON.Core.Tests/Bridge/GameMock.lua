@@ -170,8 +170,12 @@ local function square(x, y, z)
 	end
 	sq.transmitRemoveItemFromSquare = function(self, object)
 		for i, o in ipairs(sq.ground) do if o == object then table.remove(sq.ground, i); note("removeGround " .. object.name); return end end
+		-- bridge v18: an object of the world (furniture, a wall, a light) goes the same way
+		for i, o in ipairs(sq.furniture) do if o == object then table.remove(sq.furniture, i); note("removeObject " .. tostring(object.name)); return end end
 		error("object not here")
 	end
+	sq.getWall = function(self, north) if north then return sq.wallN end return sq.wallW end
+	sq.getGenerator = function() return sq.generator end
 	-- as the game: any IsoFire counts, the permanent flame of a lit campfire too
 	sq.haveFire = function() return #sq.fires > 0 end
 	-- as the game with a type name: null for a type it does not know, else the item on the floor
@@ -907,9 +911,12 @@ end
 -- ---- bridge v16: the cold, traits, animals that are not on the map ----
 function sendSyncPlayerFields(p, mask) note("syncFields " .. p.getUsername() .. " " .. mask) end
 -- bridge v17: what is sent to every player's game
-function sendServerCommand(module, command, args)
+function sendServerCommand(module, command, args, more)
+	-- to one player (bridge v18): the player comes first
+	local to = ""
+	if type(module) == "table" then to, module, command, args = "to " .. module.getUsername() .. " ", command, args, more end
 	assert(type(module) == "string" and type(command) == "string" and type(args) == "table")
-	note("serverCommand " .. module .. " " .. command .. " [" .. tostring(args.author) .. "] " .. tostring(args.text))
+	note("serverCommand " .. to .. module .. " " .. command .. " [" .. tostring(args.author) .. "] " .. tostring(args.text) .. (args.private and " (private)" or ""))
 end
 for _, p in ipairs(PLAYERS) do
 	local body = p.getBodyDamage()
@@ -995,4 +1002,65 @@ function ANIMALS_INSIDE()
 	hutch(104, 101, true)
 	local trailer = VEHICLES[1]
 	trailer.getAnimals = function() return list({ sheep }) end
+end
+-- ---- bridge v18: objects of the world, generators, how the server is doing ----
+Translator = { getMoveableDisplayName = function(name) return ({ Fridge = "Refrigerator" })[name] or name end }
+function getServerFPS() return 10 end
+function getPerformanceLocal() return { ["memory-used"] = 1272, ["memory-max"] = 2684, ["avg-update-period"] = 12.5, ["max-update-period"] = 480, fps = "n/a" } end
+
+local function worldThing(sprite, class, custom, group, floor)
+	local o = { name = sprite, class = class, boxes = {} }
+	o.getSprite = function() return { getName = function() return sprite end } end
+	o.getProperties = function() return { get = function(self, key)
+		if key == "CustomName" then return custom end
+		if key == "GroupName" then return group end
+		return nil
+	end } end
+	o.isFloor = function() return floor == true end
+	o.getContainerCount = function() return #o.boxes end
+	o.getContainerByIndex = function(self, i) return o.boxes[i + 1] end
+	o.dumpContentsInSquare = function() note("dump " .. sprite) end
+	return o
+end
+
+-- around rj (100,102): on his square a floor, a wall and half of a double wall light; beside him a fridge with
+-- three items and something lying on the floor; a tree and two chairs alike; a table too far to be listed
+function OBJECTS()
+	local function put(x, y, thing) table.insert(at(x, y, 0).furniture, thing); return thing end
+	put(100, 102, worldThing("floors_interior_01_3", nil, nil, nil, true))
+	at(100, 102, 0).wallN = put(100, 102, worldThing("walls_interior_01_25"))
+	put(100, 102, worldThing("lighting_indoor_02_48", "IsoLightSwitch", "Wall Light", "Double Fluorescent"))
+	local fridge = put(101, 102, worldThing("appliances_refrigeration_01_0", nil, "Fridge"))
+	local shelf, freezer = container("fridge"), container("freezer")
+	shelf:AddItem(item("Base.Nails", "Nails")); shelf:AddItem(item("Base.Nails", "Nails")); freezer:AddItem(item("Base.Axe", "Axe"))
+	fridge.boxes = { shelf, freezer }
+	put(101, 102, worldThing("item_on_the_floor", "IsoWorldInventoryObject"))
+	put(100, 103, worldThing("e_americanholly_1_3", "IsoTree"))
+	put(100, 103, worldThing("furniture_seating_indoor_01_8", nil, "Chair", "Wooden"))
+	put(100, 103, worldThing("furniture_seating_indoor_01_8", nil, "Chair", "Wooden"))
+	put(104, 102, worldThing("furniture_tables_high_01_0", nil, "Table"))
+end
+
+-- near rj: one a quarter full, worn, off but wired to the house; one upstairs empty, broken, not wired
+function GENERATORS()
+	local function generator(x, y, z, fuel, condition, on, connected)
+		local g = { class = "IsoGenerator", fuel = fuel, condition = condition, on = on, connected = connected }
+		g.getSquare = function() return at(x, y, z) end
+		g.getFuel = function() return g.fuel end
+		g.getMaxFuel = function() return 10 end
+		g.getFuelPercentage = function() return g.fuel * 10 end
+		g.setFuel = function(self, v) g.fuel = math.max(0, math.min(10, v)) end
+		g.getCondition = function() return g.condition end
+		g.setCondition = function(self, v) g.condition = math.max(0, math.min(100, v)) end
+		g.isActivated = function() return g.on end
+		g.setActivated = function(self, v) g.on = v end
+		g.isConnected = function() return g.connected end
+		g.setConnected = function(self, v) g.connected = v end
+		g.getTotalPowerUsing = function() return g.on and 0.0425 or 0 end
+		g.sync = function() note("syncGenerator " .. x .. "," .. y) end
+		at(x, y, z).generator = g
+		return g
+	end
+	GEN_A = generator(101, 101, 0, 2.5, 40, false, true)
+	GEN_B = generator(103, 104, 1, 0, 0, false, false)
 end

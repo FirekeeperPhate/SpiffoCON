@@ -88,21 +88,36 @@ public sealed partial class LogsViewModel : ObservableObject
 
     // ---- the box under the logs: a broadcast (servermsg) or a line of chat (bridge v17) ----
 
-    /// <summary>0: a broadcast, large on every player's screen; 1: an ordinary line in the General chat.</summary>
+    /// <summary>
+    /// 0: a broadcast, large on every player's screen; 1: an ordinary line in the General chat; 2: a line
+    /// for one player alone (bridge v18).
+    /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsChatMode), nameof(MessageTip))]
+    [NotifyPropertyChangedFor(nameof(IsChatMode), nameof(IsTellMode), nameof(HasName), nameof(MessageTip))]
     private int sendMode;
+
+    /// <summary>Who a line for one player goes to.</summary>
+    [ObservableProperty] private string? chatTarget;
+
+    /// <summary>The players online, to choose from.</summary>
+    public ObservableCollection<string> Targets => _main.OnlinePlayers;
+
+    public bool IsTellMode => SendMode == 2;
+
+    /// <summary>A line of chat goes under a name; a broadcast does not.</summary>
+    public bool HasName => SendMode != 0;
 
     /// <summary>The name players see before a line written in the chat.</summary>
     [ObservableProperty] private string chatName = "Admin";
 
     public bool IsChatMode => SendMode == 1;
 
-    public string MessageTip => IsChatMode
-        ? "A line in the General chat, as a player's (through the bridge, v17). Enter sends."
+    public string MessageTip => IsChatMode ? "A line in the General chat, as a player's (through the bridge, v17). Enter sends."
+        : IsTellMode ? "A line of chat only the chosen player sees (through the bridge, v18). Enter sends."
         : "Broadcast to all players: large on their screen, and in the chat (servermsg). Enter sends.";
 
-    partial void OnSendModeChanged(int value) => _main.Book.LogsSendChat = value == 1;
+    // a line for one player is for now: the next start is back on the chat of everybody
+    partial void OnSendModeChanged(int value) => _main.Book.LogsSendChat = value != 0;
     partial void OnChatNameChanged(string value) => _main.Book.ChatName = value;
 
     // lines written from here that the log has not shown yet: they are not news to their own writer
@@ -389,9 +404,16 @@ public sealed partial class LogsViewModel : ObservableObject
         var text = Message.Trim();
         if (text.Length == 0)
             return;
-        if (IsChatMode)
+        if (IsTellMode && string.IsNullOrWhiteSpace(ChatTarget))
         {
-            var (sent, status) = await _main.Bridge.SendChatAsync(ChatName, text);
+            StatusText = "Choose the player to write to.";
+            return;
+        }
+        if (IsChatMode || IsTellMode)
+        {
+            var (sent, status) = IsTellMode
+                ? await _main.Bridge.SendTellAsync(ChatTarget!.Trim(), ChatName, text)
+                : await _main.Bridge.SendChatAsync(ChatName, text);
             if (sent is not null)
             {
                 Message = "";

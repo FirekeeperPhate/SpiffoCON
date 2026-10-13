@@ -115,12 +115,19 @@ public static class PlayerMenu
             Tip(actions.VehicleDetailsProblem(player), "The vehicle they are in, part by part: conditions, what is missing, a repair for each"));
         Add(items, "Repair their vehicle…", () => actions.RepairVehicleAsync(player), online && actions.VehicleProblem(player) is null,
             Tip(actions.VehicleProblem(player), "The vehicle they are in: every part whole, the ones that are gone (a wheel, a window, the battery...) put back"));
+        Add(items, "Objects around them…", () => actions.ShowObjects(player), online && actions.ObjectsProblem(player) is null,
+            Tip(actions.ObjectsProblem(player), "What stands on the squares around them (furniture, walls, lights): to remove the one the game no longer lets anybody pick up"));
+        Add(items, "Write to them…", () => actions.WriteTo(player), online && actions.TellProblem(player) is null,
+            Tip(actions.TellProblem(player), "A line of chat only they see, written in the Logs tab"));
         Add(items, "Fix liquid containers…", () => actions.FixFluidsAsync(player), online && actions.FluidsProblem(player) is null,
             Tip(actions.FluidsProblem(player), BridgeViewModel.FixFluidsTip + $": what they carry, and {BridgeViewModel.FluidsRadius} squares around them"));
         // through the bridge (corpses: v6, the rest: v7): what RCON has no command for, within a radius
         // of where the player is now
         var cleanUp = new MenuItem { Header = "Clean up around", IsEnabled = online && actions.CorpsesProblem(player) is null, ToolTip = actions.CorpsesProblem(player) };
         ToolTipService.SetShowOnDisabled(cleanUp, true);
+        Sub(cleanUp.Items, "Zombies", actions.ZombiesProblem(player) is null,
+            actions.ZombieRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveZombiesAsync(player, r)))),
+            actions.ZombiesProblem(player) ?? "The zombies around them, gone for good (RCON's removezombies): with bridge v18 counted first, on every floor that has some");
         Sub(cleanUp.Items, "Zombie corpses", true,
             actions.CorpseRadii.Select(r => ((object)$"{r} squares…", (Func<Task>)(() => actions.RemoveCorpsesAsync(player, r)))),
             "On every floor; the corpses of players and animals stay");

@@ -603,9 +603,14 @@ public sealed partial class MapViewModel : ObservableObject
         if (!ReadHorde(out _, out var radius))
             return Task.CompletedTask;
         int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
-        return RunZombieCommandAsync(EventCommands.RemoveZombiesAt(x, y, 0, radius),
-            $"Remove the zombies within {radius} squares of {x}, {y}?",
-            $"Zombies within {radius} squares of {x}, {y} removed.");
+        return RemoveZombiesAtAsync(x, y, radius);
+    }
+
+    // counted first and on every floor with bridge v18, the ground floor without
+    async Task RemoveZombiesAtAsync(int x, int y, int radius)
+    {
+        if (await Bridge.RemoveZombiesAsync(x, y, 0, radius, $"{x}, {y}") is { } result)
+            StatusText = result;
     }
 
     async Task RunZombieCommandAsync(string command, string confirm, string done)

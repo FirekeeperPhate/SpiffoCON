@@ -165,6 +165,10 @@ public sealed partial class BridgeViewModel : ObservableObject
         FluidsNotice = "";
         Animals.Clear();
         AnimalsText = "";
+        Generators.Clear();
+        GeneratorsText = "";
+        PerfBars.Clear();
+        PerfText = "";
         Source = files.Description;
         StatusText = "Asking the bridge...";
         await PingAsync(_client);
@@ -1082,6 +1086,303 @@ public sealed partial class BridgeViewModel : ObservableObject
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return "The bridge could not do it: " + ex.Message;
+        }
+    }
+
+    // ---- bridge v18: objects of the world, generators, how the server is doing, zombies in a box, a line for one player ----
+
+    /// <summary>Why what came with bridge v18 can't be done now (null: it can).</summary>
+    public string? V18Problem =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 18 ? $"This needs bridge v18 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>The objects around a player, for their window; null and why not.</summary>
+    internal async Task<(BridgeObjects? Objects, string? Problem)> ReadObjectsAsync(string username, int radius, bool floors)
+    {
+        if (V18Problem is { } problem)
+            return (null, problem);
+        try
+        {
+            return (await _client!.ObjectsAsync(username, radius, floors), null);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return (null, "The bridge could not list the objects: " + ex.Message);
+        }
+    }
+
+    /// <summary>Removes an object of the world, after asking. Returns what happened (null: not asked for after all).</summary>
+    internal async Task<string?> RemoveObjectAsync(BridgeObject o)
+    {
+        if (V18Problem is { } problem)
+            return problem;
+        var client = _client!;
+        if (_main.Confirm?.Invoke($"Remove {o.Label} at {o.Position}?\n\n"
+                + (o.Kind == "floor" ? "It is the floor of that square: without it there is a hole.\n" : "")
+                + (o.Items > 0 ? $"The {o.Items} item{(o.Items == 1 ? "" : "s")} in it {(o.Items == 1 ? "is" : "are")} left on the ground.\n" : "")
+                + "It goes out of the world for every player, as with the game's own Destroy tile, and can't be brought back.") != true)
+            return null;
+        if (!ReferenceEquals(client, _client))
+            return ConnectionChanged;
+        try
+        {
+            var (removed, dumped) = await client.RemoveObjectAsync(o);
+            return $"{removed} removed at {o.Position}" + (dumped > 0 ? $": its {dumped} item{(dumped == 1 ? "" : "s")} left on the ground." : ".");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not remove it: " + ex.Message;
+        }
+    }
+
+    /// <summary>How far around each player the generators are looked for.</summary>
+    public const int GeneratorsRadius = 50;
+
+    public ObservableCollection<BridgeGenerator> Generators { get; } = [];
+
+    /// <summary>"3 generators, 1 low on fuel", or why there are none to show.</summary>
+    [ObservableProperty] private string generatorsText = "";
+
+    [RelayCommand]
+    private async Task ReadGeneratorsAsync()
+    {
+        if (V18Problem is { } problem)
+        {
+            Generators.Clear();
+            GeneratorsText = problem;
+            return;
+        }
+        var client = _client!;
+        try
+        {
+            var read = await client.GeneratorsAsync(GeneratorsRadius);
+            if (!ReferenceEquals(client, _client))
+                return;
+            Generators.Clear();
+            // the ones that need something first
+            foreach (var g in read.Generators.OrderBy(g => g.Fuel ?? 0).ThenBy(g => g.Condition ?? 0))
+                Generators.Add(g);
+            int low = read.Generators.Count(g => g.IsLowOnFuel), worn = read.Generators.Count(g => g.IsWorn), on = read.Generators.Count(g => g.On);
+            GeneratorsText = read.Loaded == 0 ? "Nobody is online: the server only keeps the surroundings of players."
+                : read.Generators.Count == 0 ? $"No generators within {read.Radius} squares of the players online."
+                : $"{read.Generators.Count} generator{(read.Generators.Count == 1 ? "" : "s")} within {read.Radius} squares of the players online: {on} on"
+                    + (low > 0 ? $", {low} low on fuel" : "") + (worn > 0 ? $", {worn} worn out" : "")
+                    + $" · read at {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            GeneratorsText = "The bridge could not list the generators: " + ex.Message;
+        }
+    }
+
+    async Task GeneratorsActionAsync(string? confirm, Func<BridgeClient, Task<string>> action)
+    {
+        if (V18Problem is { } problem)
+        {
+            StatusText = problem;
+            return;
+        }
+        var client = _client!;
+        if (confirm is not null && _main.Confirm?.Invoke(confirm) != true)
+            return;
+        if (!ReferenceEquals(client, _client))
+        {
+            StatusText = ConnectionChanged;
+            return;
+        }
+        string result;
+        try
+        {
+            result = await action(client);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            result = "The bridge could not do it: " + ex.Message;
+        }
+        await ReadGeneratorsAsync();
+        StatusText = result;
+    }
+
+    // one generator, and the click says which: no question
+    Task OneGeneratorAsync(BridgeGenerator? g, BridgeClient.GeneratorAction action, Func<BridgeGenerator, string> done) =>
+        g is null ? Task.CompletedTask : GeneratorsActionAsync(null, async c => done(await c.GeneratorAsync(g, action)));
+
+    [RelayCommand]
+    private Task RefuelGeneratorAsync(BridgeGenerator? g) =>
+        OneGeneratorAsync(g, BridgeClient.GeneratorAction.Refuel, after => $"Generator at {after.Position} refuelled: {after.FuelText}.");
+
+    [RelayCommand]
+    private Task RepairGeneratorAsync(BridgeGenerator? g) =>
+        OneGeneratorAsync(g, BridgeClient.GeneratorAction.Repair, after => $"Generator at {after.Position} repaired: {after.ConditionText}.");
+
+    [RelayCommand]
+    private Task SwitchGeneratorAsync(BridgeGenerator? g) =>
+        OneGeneratorAsync(g, g is { On: true } ? BridgeClient.GeneratorAction.Off : BridgeClient.GeneratorAction.On,
+            after => $"Generator at {after.Position} turned {(after.On ? "on" : "off")}.");
+
+    [RelayCommand]
+    private Task ConnectGeneratorAsync(BridgeGenerator? g) =>
+        OneGeneratorAsync(g, g is { Connected: true } ? BridgeClient.GeneratorAction.Disconnect : BridgeClient.GeneratorAction.Connect,
+            after => $"Generator at {after.Position} {(after.Connected ? "connected to the building" : "disconnected")}.");
+
+    [RelayCommand]
+    private Task RefuelAllGeneratorsAsync() => GeneratorsActionAsync(
+        $"Fill the tank of every generator within {GeneratorsRadius} squares of the players online?",
+        async c =>
+        {
+            int filled = await c.RefuelGeneratorsAsync(GeneratorsRadius);
+            return filled == 0 ? "No generator needed fuel." : $"{filled} generator{(filled == 1 ? "" : "s")} refuelled.";
+        });
+
+    /// <summary>A second of the server: the longest wait between two updates in it, as a bar.</summary>
+    public sealed record PerfBar(double Height, string Color, string Tip);
+
+    public ObservableCollection<PerfBar> PerfBars { get; } = [];
+
+    /// <summary>"9.8 updates a second, longest wait 180 ms…", or why there is nothing to show.</summary>
+    [ObservableProperty] private string perfText = "";
+
+    readonly DispatcherTimer _perfTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    bool _perfReading;
+
+    /// <summary>Read again every few seconds while its section is open.</summary>
+    internal void WatchPerf(bool watch)
+    {
+        _perfTimer.Tick -= PerfTimer_Tick;
+        _perfTimer.Stop();
+        if (!watch)
+            return;
+        _perfTimer.Tick += PerfTimer_Tick;
+        _perfTimer.Start();
+        _ = ReadPerfAsync();
+    }
+
+    void PerfTimer_Tick(object? sender, EventArgs e) => _ = ReadPerfAsync();
+
+    [RelayCommand]
+    private async Task ReadPerfAsync()
+    {
+        if (V18Problem is { } problem)
+        {
+            PerfBars.Clear();
+            PerfText = problem;
+            return;
+        }
+        if (_perfReading)
+            return;
+        _perfReading = true;
+        var client = _client!;
+        try
+        {
+            var perf = await client.PerfAsync();
+            if (!ReferenceEquals(client, _client))
+                return;
+            PerfBars.Clear();
+            for (int i = 0; i < perf.Seconds.Count; i++)
+            {
+                var second = perf.Seconds[i];
+                // nothing at all in a second: it stood still, whatever the wait noted after it
+                bool still = second.Ticks == 0;
+                double height = still ? PerfBarHeight : Math.Max(2, Math.Min(1, second.Worst / 1000.0) * PerfBarHeight);
+                string color = still || second.Worst > 500 ? "#E5533D" : second.Worst > 200 ? "#F2C14E" : "#4CAF50";
+                string tip = $"{perf.Seconds.Count - i} s ago: " + (still ? "no update at all" : $"{second.Ticks} update{(second.Ticks == 1 ? "" : "s")}, longest wait {second.Worst} ms");
+                PerfBars.Add(new PerfBar(height, color, tip));
+            }
+            PerfText = PerfSummary(perf);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            PerfText = "The bridge could not say how the server is doing: " + ex.Message;
+        }
+        finally
+        {
+            _perfReading = false;
+        }
+    }
+
+    /// <summary>The height of the bars, in pixels: a wait of a second or more fills it.</summary>
+    public const double PerfBarHeight = 44;
+
+    static string PerfSummary(BridgePerf perf)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (perf.Seconds.Count == 0)
+            return "The bridge has only just begun to take notes: read again in a few seconds.";
+        var parts = new List<string>
+        {
+            perf.AverageTicks.ToString("0.0", inv) + " updates a second" + (perf.Target is { } target ? $" (the game aims at {target})" : ""),
+            "longest wait " + (perf.WorstWait >= 1000 ? (perf.WorstWait / 1000.0).ToString("0.0", inv) + " s" : perf.WorstWait + " ms"),
+        };
+        int slow = perf.WaitsOver(500) + perf.Seconds.Count(s => s.Ticks == 0);
+        parts.Add(slow == 0 ? "no second with a wait over half a second" : $"{slow} second{(slow == 1 ? "" : "s")} with a wait over half a second");
+        parts.Add($"{perf.Zombies ?? 0} zombies, {perf.Vehicles ?? 0} vehicles, {perf.Players ?? 0} player{(perf.Players == 1 ? "" : "s")}");
+        if (perf.MemoryUsed is > 0 && perf.MemoryMax is > 0)
+        {
+            // the game gives megabytes
+            parts.Add($"memory {(perf.MemoryUsed.Value / 1000).ToString("0.0", inv)} of {(perf.MemoryMax.Value / 1000).ToString("0.0", inv)} GB");
+        }
+        return string.Join(" · ", parts) + $" · the last {perf.Seconds.Count} s, read at {DateTime.Now:HH:mm:ss}";
+    }
+
+    /// <summary>
+    /// Removes the zombies of a box around a square, after asking. The removal is RCON's own removezombies (it
+    /// tells the players' games), one floor at a time; with bridge v18 they are counted first and every floor
+    /// that has some is done, without it only the floor given. Returns what happened.
+    /// </summary>
+    internal async Task<string?> RemoveZombiesAsync(int x, int y, int floor, int radius, string where)
+    {
+        if (!_main.IsSessionActive)
+            return "Removing zombies is an RCON command: connect to the server first.";
+        radius = Math.Clamp(radius, 1, SpiffoCON.Core.Commands.EventCommands.MaxRadius);
+        IReadOnlyList<int> floors = [floor];
+        int? counted = null;
+        if (V18Problem is null)
+        {
+            try
+            {
+                var found = await _client!.ZombiesInAsync(x, y, radius);
+                if (found.Total == 0)
+                    return $"No zombies within {radius} squares of {where}.";
+                counted = found.Total;
+                floors = found.Floors.Select(f => f.Z).Distinct().OrderBy(z => z).ToList();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // not counted: done as without the bridge
+            }
+        }
+        string onFloors = floors.Count == 1 ? $"floor {floors[0]}" : "floors " + string.Join(", ", floors);
+        if (_main.Confirm?.Invoke(counted is { } n
+                ? $"Remove the {n} zombie{(n == 1 ? "" : "s")} within {radius} squares of {where}?\n\nOn {onFloors}. They are gone for good."
+                : $"Remove the zombies within {radius} squares of {where}?\n\nOn {onFloors} only, and not counted: with bridge v18 every floor is done and they are counted first.") != true)
+            return null;
+        foreach (int z in floors)
+        {
+            var reply = await _main.RunAsync(SpiffoCON.Core.Commands.EventCommands.RemoveZombiesAt(x, y, z, radius));
+            if (reply is null)
+                return "The command failed: see the console.";
+            if (SpiffoCON.Core.Commands.EventCommands.Interpret(reply) == SpiffoCON.Core.Commands.CommandOutcome.Failed)
+                return "The server refused: " + reply.Trim();
+        }
+        return counted is { } removed
+            ? $"{removed} zombie{(removed == 1 ? "" : "s")} removed within {radius} squares of {where} ({onFloors})."
+            : $"Zombies within {radius} squares of {where} removed ({onFloors}).";
+    }
+
+    /// <summary>Writes a line to one player alone. Returns the line as it went (null: it did not), and what to tell.</summary>
+    internal async Task<(BridgeChat? Sent, string Status)> SendTellAsync(string username, string author, string text)
+    {
+        if (V18Problem is { } problem)
+            return (null, "Writing to one player needs bridge v18: " + problem);
+        try
+        {
+            var chat = await _client!.TellAsync(username, author, text);
+            return (chat, $"Written to {username} alone as {chat.Author}{(chat.Cut ? ": too long, the end was cut" : "")}.");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return (null, "The bridge could not write to them: " + ex.Message);
         }
     }
 

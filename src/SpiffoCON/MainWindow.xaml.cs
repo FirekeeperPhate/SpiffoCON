@@ -97,7 +97,28 @@ public partial class MainWindow : Window
     readonly Dictionary<string, CharacterWindow> _characters = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>A question or a dialog belongs to the window the user is working in.</summary>
-    Window DialogOwner() => _characters.Values.Cast<Window>().Concat(_vehicles.Values).FirstOrDefault(w => w.IsActive) ?? this;
+    Window DialogOwner() => _characters.Values.Cast<Window>().Concat(_vehicles.Values).Concat(_objects.Values).FirstOrDefault(w => w.IsActive) ?? this;
+
+    // one window of objects per player
+    readonly Dictionary<string, ObjectsWindow> _objects = new(StringComparer.OrdinalIgnoreCase);
+
+    void ShowObjects(string username)
+    {
+        if (_closing || _switching)
+            return;
+        if (_objects.TryGetValue(username, out var open))
+        {
+            if (open.WindowState == WindowState.Minimized)
+                open.WindowState = WindowState.Normal;
+            open.Activate();
+            return;
+        }
+        var window = new ObjectsWindow(new ObjectsViewModel(_vm, username));
+        PlaceBeside(window, _characters.Count + _vehicles.Count + _objects.Count);
+        _objects[username] = window;
+        window.Closed += (_, _) => _objects.Remove(username);
+        window.Show();
+    }
 
     // one window per vehicle, by its runtime id
     readonly Dictionary<int, VehicleWindow> _vehicles = [];
@@ -151,7 +172,7 @@ public partial class MainWindow : Window
 
     void CloseCharacters()
     {
-        foreach (var window in _characters.Values.Cast<Window>().Concat(_vehicles.Values).ToList())
+        foreach (var window in _characters.Values.Cast<Window>().Concat(_vehicles.Values).Concat(_objects.Values).ToList())
             window.Close();
     }
 
@@ -161,6 +182,7 @@ public partial class MainWindow : Window
         DataContext = _vm;
         _vm.ShowCharacter = ShowCharacter;
         _vm.ShowVehicle = ShowVehicle;
+        _vm.ShowObjects = ShowObjects;
         _vm.SwitchRequested += OnSwitchRequested;
         _vm.NotificationRaised += (_, n) => ShowNotification(n);
         _vm.Confirm = question =>
@@ -313,6 +335,13 @@ public partial class MainWindow : Window
     // on a row: not on the scroll bar, a column header or the empty space under the rows
     // the animals are read when their list is opened (and by its own button), not at every refresh
     void Animals_Expanded(object sender, RoutedEventArgs e) => _vm.Bridge.ReadAnimalsCommand.Execute(null);
+
+    void Generators_Expanded(object sender, RoutedEventArgs e) => _vm.Bridge.ReadGeneratorsCommand.Execute(null);
+
+    // how the server is doing is read again every few seconds, while its section is open
+    void Perf_Expanded(object sender, RoutedEventArgs e) => _vm.Bridge.WatchPerf(true);
+
+    void Perf_Collapsed(object sender, RoutedEventArgs e) => _vm.Bridge.WatchPerf(false);
 
     void BridgeVehicles_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {

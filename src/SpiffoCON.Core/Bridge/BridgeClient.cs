@@ -377,6 +377,62 @@ public sealed partial class BridgeClient(IBridgeFiles files)
             said.Length < asked.Length);
     }
 
+    /// <summary>The same line as <see cref="ChatAsync"/>, shown to one player only (bridge v18).</summary>
+    public async Task<BridgeChat> TellAsync(string username, string author, string text)
+    {
+        static string OneLine(string value) => string.Join(' ', value.Split(['\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries)).Trim();
+        string asked = OneLine(text);
+        var data = await SendAsync("tell", username, OneLine(author), asked).ConfigureAwait(false);
+        string said = data.TryGetProperty("text", out var t) ? t.GetString() ?? asked : asked;
+        return new BridgeChat(data.TryGetProperty("author", out var a) ? a.GetString() ?? author : author, said, 1, said.Length < asked.Length);
+    }
+
+    // ---- bridge v18: objects of the world, generators, zombies in a box, how the server is doing ----
+
+    /// <summary>
+    /// What stands on the squares around a player, on their floor: furniture, walls, doors, lights (bridge v18).
+    /// Not the items on the ground; the floor only when asked.
+    /// </summary>
+    public async Task<BridgeObjects> ObjectsAsync(string username, int radius, bool floors = false) =>
+        (await SendAsync("objects", username, Number(radius), floors ? "1" : "0").ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeObjects) ?? new BridgeObjects();
+
+    /// <summary>
+    /// Removes an object of the world as the game's own "Destroy tile" does (bridge v18). What it held is left
+    /// on the ground. Returns its name and how many items were left there.
+    /// </summary>
+    public async Task<(string Removed, int Dumped)> RemoveObjectAsync(BridgeObject o)
+    {
+        var data = await SendAsync("removeobject", Number(o.X), Number(o.Y), Number(o.Z), Number(o.Index), o.Sprite ?? "").ConfigureAwait(false);
+        return (data.TryGetProperty("removed", out var name) ? name.GetString() ?? o.Sprite ?? "" : o.Sprite ?? "",
+            data.TryGetProperty("dumped", out var dumped) && dumped.ValueKind == JsonValueKind.Number ? dumped.GetInt32() : 0);
+    }
+
+    /// <summary>The generators within a radius of each player online (bridge v18).</summary>
+    public async Task<BridgeGenerators> GeneratorsAsync(int radius) =>
+        (await SendAsync("generators", Number(radius)).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeGenerators) ?? new BridgeGenerators();
+
+    public enum GeneratorAction { Refuel, Repair, On, Off, Connect, Disconnect }
+
+    /// <summary>Does one thing to the generator of a square (bridge v18); returns it as it is after.</summary>
+    public async Task<BridgeGenerator> GeneratorAsync(BridgeGenerator g, GeneratorAction action) =>
+        (await SendAsync("generator", Number(g.X), Number(g.Y), Number(g.Z), action.ToString().ToLowerInvariant()).ConfigureAwait(false))
+            .Deserialize(BridgeJson.Default.BridgeGenerator) ?? g;
+
+    /// <summary>Fuel to the top in every generator within a radius of the players online (bridge v18); returns how many.</summary>
+    public async Task<int> RefuelGeneratorsAsync(int radius) =>
+        (await SendAsync("refuelgenerators", Number(radius)).ConfigureAwait(false)).GetProperty("filled").GetInt32();
+
+    /// <summary>
+    /// How many zombies are in the square of squares x ± radius, y ± radius, floor by floor (bridge v18): the
+    /// box RCON's removezombies takes.
+    /// </summary>
+    public async Task<BridgeZombiesIn> ZombiesInAsync(int x, int y, int radius) =>
+        (await SendAsync("zombiesin", Number(x), Number(y), Number(radius)).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeZombiesIn) ?? new BridgeZombiesIn();
+
+    /// <summary>The server's updates of the last minute, second by second, and what it has loaded (bridge v18).</summary>
+    public async Task<BridgePerf> PerfAsync() =>
+        (await SendAsync("perf").ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgePerf) ?? new BridgePerf();
+
     static string Number(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>The animals of the players (not the wild ones) within a radius of each player online (bridge v15).</summary>
@@ -961,6 +1017,151 @@ public sealed record BridgeFluidFix
         .Select(g => $"{g.Count} × {g.Name}"));
 }
 
+/// <summary>Bridge v18: the objects around a player.</summary>
+public sealed record BridgeObjects
+{
+    public List<BridgeObject> Objects { get => _objects ?? []; init => _objects = value; }
+    readonly List<BridgeObject>? _objects;
+
+    /// <summary>The square of the player the list is around.</summary>
+    public int X { get; init; }
+    public int Y { get; init; }
+    public int Z { get; init; }
+    public int Radius { get; init; }
+}
+
+/// <summary>Bridge v18: an object of the world (not an item on the ground).</summary>
+public sealed record BridgeObject
+{
+    public int X { get; init; }
+    public int Y { get; init; }
+    public int Z { get; init; }
+
+    /// <summary>Its place in the square's list of objects when it was read.</summary>
+    public int Index { get; init; }
+
+    /// <summary>The tile it is drawn with ("lighting_indoor_02_48"); empty for a thing without one.</summary>
+    public string? Sprite { get; init; }
+
+    /// <summary>The name the game gives a thing that can be moved ("Double Fluorescent Wall Light"); null for the rest.</summary>
+    public string? Name { get; init; }
+
+    /// <summary>floor, wall, door, window, light, generator, tree, fire, built (by a player) or object.</summary>
+    public string? Kind { get; init; }
+
+    /// <summary>The items its containers hold: left on the ground when it is removed.</summary>
+    public int Items { get; init; }
+
+    public string Position => $"{X},{Y},{Z}";
+
+    /// <summary>Its name, or what it is when the game has no name for it.</summary>
+    public string Label => !string.IsNullOrEmpty(Name) ? Name : Kind switch
+    {
+        "floor" => "Floor",
+        "wall" => "Wall",
+        "door" => "Door",
+        "window" => "Window",
+        "light" => "Light",
+        "generator" => "Generator",
+        "tree" => "Tree",
+        "fire" => "Fire",
+        "built" => "Built by a player",
+        _ => "Object",
+    };
+
+    public string KindText => Kind is { Length: > 0 } kind ? kind : "object";
+
+    public string ItemsText => Items > 0 ? Items.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+}
+
+/// <summary>Bridge v18: the generators near the players.</summary>
+public sealed record BridgeGenerators
+{
+    public List<BridgeGenerator> Generators { get => _generators ?? []; init => _generators = value; }
+    readonly List<BridgeGenerator>? _generators;
+
+    /// <summary>Ground squares the server had loaded in the area looked at.</summary>
+    public int Loaded { get; init; }
+    public int Radius { get; init; }
+}
+
+public sealed record BridgeGenerator
+{
+    public int X { get; init; }
+    public int Y { get; init; }
+    public int Z { get; init; }
+
+    /// <summary>0 to 100.</summary>
+    public double? Fuel { get; init; }
+    public int? Condition { get; init; }
+    public bool On { get; init; }
+
+    /// <summary>Wired to the building: only then it powers it.</summary>
+    public bool Connected { get; init; }
+
+    /// <summary>What it powers takes this much fuel per hour (the game's own figure).</summary>
+    public double? Power { get; init; }
+
+    public string Position => $"{X},{Y},{Z}";
+    public string FuelText => Fuel is { } fuel ? fuel.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%" : "?";
+    public string ConditionText => Condition is { } condition ? condition.ToString(System.Globalization.CultureInfo.InvariantCulture) + "%" : "?";
+    public string StateText => (On ? "on" : "off") + (Connected ? "" : " · not connected");
+    public bool IsLowOnFuel => Fuel is < 20;
+    public bool IsWorn => Condition is < 30;
+
+    /// <summary>What the switch of the row does now.</summary>
+    public string SwitchText => On ? "Turn off" : "Turn on";
+    public string ConnectText => Connected ? "Disconnect" : "Connect";
+}
+
+/// <summary>Bridge v18: the zombies of a box, floor by floor.</summary>
+public sealed record BridgeZombiesIn
+{
+    public int Total { get; init; }
+    public List<BridgeZombieFloor> Floors { get => _floors ?? []; init => _floors = value; }
+    readonly List<BridgeZombieFloor>? _floors;
+    public int Radius { get; init; }
+}
+
+public sealed record BridgeZombieFloor(int Z, int N);
+
+/// <summary>Bridge v18: how the server is doing.</summary>
+public sealed record BridgePerf
+{
+    /// <summary>The last minute, oldest first; fewer when the bridge has not been running that long.</summary>
+    public List<BridgePerfSecond> Seconds { get => _seconds ?? []; init => _seconds = value; }
+    readonly List<BridgePerfSecond>? _seconds;
+
+    /// <summary>The updates a second the game aims at on a server (10).</summary>
+    public int? Target { get; init; }
+    public int? Players { get; init; }
+    public int? Zombies { get; init; }
+    public int? Vehicles { get; init; }
+
+    /// <summary>
+    /// Java memory in use, and the most the server may take, in megabytes (millions of bytes: the game's own
+    /// figures, seen on a real server).
+    /// </summary>
+    public double? MemoryUsed { get; init; }
+    public double? MemoryMax { get; init; }
+
+    /// <summary>The game's own figures for an update, in milliseconds, when it keeps them.</summary>
+    public double? UpdateAverage { get; init; }
+    public double? UpdateMax { get; init; }
+
+    /// <summary>The longest wait between two updates in the minute, in milliseconds.</summary>
+    public int WorstWait => Seconds.Count == 0 ? 0 : Seconds.Max(s => s.Worst);
+
+    /// <summary>Updates a second, on average over the minute.</summary>
+    public double AverageTicks => Seconds.Count == 0 ? 0 : Seconds.Average(s => (double)s.Ticks);
+
+    /// <summary>Waits longer than this many milliseconds.</summary>
+    public int WaitsOver(int milliseconds) => Seconds.Count(s => s.Worst > milliseconds);
+}
+
+/// <summary>One second: how many updates it had, and the longest wait before one of them (ms).</summary>
+public sealed record BridgePerfSecond(int Ticks, int Worst);
+
 /// <summary>Bridge v17: a line written in the chat, as it went: under which name, how many were online, whether it was cut.</summary>
 public sealed record BridgeChat(string Author, string Text, int Players, bool Cut);
 
@@ -1332,4 +1533,9 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgeGearRepair))]
 [JsonSerializable(typeof(List<BridgeTrait>))]
 [JsonSerializable(typeof(BridgeAnimals))]
+[JsonSerializable(typeof(BridgeObjects))]
+[JsonSerializable(typeof(BridgeGenerators))]
+[JsonSerializable(typeof(BridgeGenerator))]
+[JsonSerializable(typeof(BridgeZombiesIn))]
+[JsonSerializable(typeof(BridgePerf))]
 internal sealed partial class BridgeJson : JsonSerializerContext;

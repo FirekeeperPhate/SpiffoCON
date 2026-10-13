@@ -3,7 +3,8 @@
 -- refuel or remove vehicles, set the weather and the time, clean up an area, remove a safehouse,
 -- put items on the ground, remove wrecks, set hair and beard, cure the zombie infection, replace the
 -- containers that lost their liquid part, repair what a player carries, feed and water the animals, take a
--- player's hunger, thirst and tiredness away, write a line in the chat) and keeps the deaths of players.
+-- player's hunger, thirst and tiredness away, write a line in the chat, remove an object of the world, look
+-- after the generators) and keeps the deaths of players and how fast the server updates.
 -- This file is the server's side. On a player's game the mod does one thing: it shows the chat lines
 -- an admin writes from SpiffoCON (client/SpiffoCONBridgeChat.lua).
 --
@@ -2305,6 +2306,301 @@ if SpiffoCONBridgeDeath then Events.OnCharacterDeath.Remove(SpiffoCONBridgeDeath
 SpiffoCONBridgeDeath = onCharacterDeath
 Events.OnCharacterDeath.Add(onCharacterDeath)
 
+-- ---- objects of the world (bridge v18) ----
+-- What stands on the squares around a player: furniture, walls, doors, lights, trees. Not the items lying
+-- on the ground (those have their own clean-up), and not the floor unless asked. For the object the game
+-- no longer lets anybody pick up or dismantle (half of a thing made of two squares, say): it is listed
+-- here and removed as the game's own admin tool does ("Destroy tile": on a server, the removal of the
+-- object told to every player, IsoGridSquare.transmitRemoveItemFromSquare).
+local MAX_OBJECT_RADIUS = 6
+
+local function spriteOf(o)
+	return try(function() return o:getSprite():getName() end) or ""
+end
+
+-- the name the game shows for a thing that can be moved ("Double Fluorescent Wall Light"); nil for the rest
+local function objectName(o)
+	local props = try(function() return o:getProperties() end)
+	local custom = props and try(function() return props:get("CustomName") end)
+	if not custom or custom == "" then return nil end
+	local group = try(function() return props:get("GroupName") end)
+	local name = (group and group ~= "" and (group .. " ") or "") .. custom
+	return try(function() return Translator.getMoveableDisplayName(name) end) or name
+end
+
+-- how many items its containers hold (a fridge has two)
+local function contentsOf(o)
+	local n = 0
+	try(function()
+		for i = 0, o:getContainerCount() - 1 do n = n + o:getContainerByIndex(i):getItems():size() end
+	end)
+	return n
+end
+
+local OBJECT_KINDS = { { "IsoGenerator", "generator" }, { "IsoDoor", "door" }, { "IsoWindow", "window" }, { "IsoLightSwitch", "light" },
+	{ "IsoTree", "tree" }, { "IsoFire", "fire" }, { "IsoThumpable", "built" } }
+
+local function objectKind(sq, o, floor)
+	if floor then return "floor" end
+	for _, kind in ipairs(OBJECT_KINDS) do
+		if instanceof(o, kind[1]) then return kind[2] end
+	end
+	if try(function() return sq:getWall(true) == o or sq:getWall(false) == o end) then return "wall" end
+	return "object"
+end
+
+-- objects <username> <radius> [floors: 0 | 1]: the objects of the squares within radius (a square of
+-- squares) of the player, on the player's floor
+local function listObjects(username, radius, floors)
+	local p = requirePlayer(username)
+	radius = math.max(0, math.min(MAX_OBJECT_RADIUS, math.floor(tonumber(radius) or 1)))
+	local px, py, pz = math.floor(p:getX()), math.floor(p:getY()), math.floor(p:getZ())
+	local cell = getCell()
+	local list = array()
+	for y = py - radius, py + radius do
+		for x = px - radius, px + radius do
+			local sq = cell:getGridSquare(x, y, pz)
+			local things = sq and sq:getObjects()
+			for n = 0, (things and things:size() or 0) - 1 do
+				local o = things:get(n)
+				if not instanceof(o, "IsoWorldInventoryObject") then
+					local floor = try(function() return o:isFloor() end) == true
+					if floors == "1" or not floor then
+						list[#list + 1] = {
+							x = x, y = y, z = pz, index = n,
+							sprite = spriteOf(o),
+							name = objectName(o),
+							kind = objectKind(sq, o, floor),
+							items = contentsOf(o),
+						}
+					end
+				end
+			end
+		end
+	end
+	return { objects = list, x = px, y = py, z = pz, radius = radius }
+end
+
+-- removeobject <x> <y> <z> <index> <sprite>: the object at that place of the square's list, if it still has
+-- that sprite; when the list changed since it was read, the only object of the square with that sprite. What
+-- its containers hold is put on the ground first, as the game does when a sledgehammer destroys furniture.
+local function removeObject(x, y, z, index, sprite)
+	x, y, z, index = tonumber(x), tonumber(y), tonumber(z), tonumber(index)
+	if not (x and y and z and index) or not sprite then error("removeobject needs x, y, z, the place in the square and the sprite") end
+	local sq = getCell():getGridSquare(math.floor(x), math.floor(y), math.floor(z))
+	if not sq then error("the square " .. math.floor(x) .. ", " .. math.floor(y) .. " is not loaded on the server (it only keeps the surroundings of players)") end
+	local things = sq:getObjects()
+	local o = index >= 0 and index < things:size() and things:get(index) or nil
+	if not o or spriteOf(o) ~= sprite or instanceof(o, "IsoWorldInventoryObject") then
+		o = nil
+		local found = 0
+		for n = 0, things:size() - 1 do
+			local candidate = things:get(n)
+			if spriteOf(candidate) == sprite and not instanceof(candidate, "IsoWorldInventoryObject") then
+				o = candidate
+				found = found + 1
+			end
+		end
+		if found == 0 then error("that object is no longer there") end
+		if found > 1 then error("the square changed since it was read: read the objects again") end
+	end
+	local name = objectName(o) or sprite
+	local dumped = contentsOf(o)
+	if dumped > 0 then try(function() o:dumpContentsInSquare() end) end
+	sq:transmitRemoveItemFromSquare(o)
+	audit("removed the object " .. name .. " (" .. sprite .. ") at " .. math.floor(x) .. ", " .. math.floor(y) .. ", " .. math.floor(z)
+		.. (dumped > 0 and (", its " .. dumped .. " items left on the ground") or ""))
+	return { removed = name, sprite = sprite, dumped = dumped }
+end
+
+-- ---- generators (bridge v18) ----
+-- The generators within the radius of the players online, and what their own window does to one: fuel to
+-- the top (IsoGenerator.setFuel, 10 is full), repaired (setCondition), turned on or off (setActivated, then
+-- sync as ISActivateGenerator does), connected to the building or not (setConnected). The setters tell the
+-- players themselves on a server.
+
+local function generatorInfo(g)
+	local sq = g:getSquare()
+	return {
+		x = sq:getX(), y = sq:getY(), z = sq:getZ(),
+		fuel = try(function() return round(g:getFuelPercentage(), 0.1) end),
+		condition = try(function() return g:getCondition() end),
+		on = try(function() return g:isActivated() end) == true,
+		connected = try(function() return g:isConnected() end) == true,
+		power = try(function() return round(g:getTotalPowerUsing(), 0.001) end),
+	}
+end
+
+local function eachGenerator(radius, visit)
+	local seen, loaded = {}, 0
+	local online = getOnlinePlayers()
+	for i = 0, online:size() - 1 do
+		local p = online:get(i)
+		loaded = loaded + eachSquare(math.floor(p:getX()), math.floor(p:getY()), radius, function(sq)
+			local g = try(function() return sq:getGenerator() end)
+			if g and not seen[g] then
+				seen[g] = true
+				visit(g)
+			end
+		end)
+	end
+	return loaded
+end
+
+local function generatorRadius(action, radius)
+	radius = tonumber(radius)
+	if not radius or not (radius >= 0) then error(action .. " needs a radius") end
+	return math.max(1, math.min(MAX_AREA_RADIUS, math.floor(radius)))
+end
+
+-- generators <radius>
+local function listGenerators(radius)
+	radius = generatorRadius("generators", radius)
+	local list = array()
+	local loaded = eachGenerator(radius, function(g) list[#list + 1] = generatorInfo(g) end)
+	return { generators = list, loaded = loaded, radius = radius }
+end
+
+local GENERATOR_ACTIONS = {
+	refuel = function(g) g:setFuel(g:getMaxFuel()) end,
+	repair = function(g) g:setCondition(100) end,
+	-- one that is out of fuel or broken would stop at once
+	on = function(g)
+		if g:getFuel() <= 0 then error("it has no fuel") end
+		if g:getCondition() <= 0 then error("it is broken") end
+		g:setActivated(true)
+		g:sync()
+	end,
+	off = function(g)
+		g:setActivated(false)
+		g:sync()
+	end,
+	connect = function(g) g:setConnected(true) end,
+	disconnect = function(g) g:setConnected(false) end,
+}
+
+-- generator <x> <y> <z> <refuel | repair | on | off | connect | disconnect>
+local function generatorAction(x, y, z, what)
+	x, y, z = tonumber(x), tonumber(y), tonumber(z)
+	local act = GENERATOR_ACTIONS[what or ""]
+	if not (x and y and z) or not act then error("generator needs x, y, z and what to do") end
+	local sq = getCell():getGridSquare(math.floor(x), math.floor(y), math.floor(z))
+	if not sq then error("the square " .. math.floor(x) .. ", " .. math.floor(y) .. " is not loaded on the server (it only keeps the surroundings of players)") end
+	local g = sq:getGenerator()
+	if not g then error("there is no generator at " .. math.floor(x) .. ", " .. math.floor(y) .. ", " .. math.floor(z) .. " any more") end
+	act(g)
+	audit("generator at " .. math.floor(x) .. ", " .. math.floor(y) .. ", " .. math.floor(z) .. ": " .. what)
+	return generatorInfo(g)
+end
+
+-- refuelgenerators <radius>: fuel to the top in every generator listed
+local function refuelGenerators(radius)
+	radius = generatorRadius("refuelgenerators", radius)
+	local filled = 0
+	eachGenerator(radius, function(g)
+		if try(function()
+			if g:getFuel() >= g:getMaxFuel() then return false end
+			g:setFuel(g:getMaxFuel())
+			return true
+		end) then filled = filled + 1 end
+	end)
+	audit("refuelled " .. filled .. " generators within " .. radius .. " squares of the players online")
+	return { filled = filled }
+end
+
+-- ---- zombies in a box (bridge v18) ----
+-- zombiesin <x> <y> <radius>: how many zombies are in the square of squares x - radius .. x + radius, floor by
+-- floor. Removing them is RCON's own "removezombies" (it tells the players' games, which Lua can't): this
+-- only says how many there are and on which floors, so that it is asked and sent for those.
+local function zombiesIn(x, y, radius)
+	x, y, radius = tonumber(x), tonumber(y), tonumber(radius)
+	if not (x and y and radius) or not (radius >= 0) then error("zombiesin needs x, y and a radius") end
+	x, y, radius = math.floor(x), math.floor(y), math.min(MAX_AREA_RADIUS, math.floor(radius))
+	local byFloor, floors, total = {}, array(), 0
+	local zombies = getCell():getZombieList()
+	for i = 0, zombies:size() - 1 do
+		local zombie = zombies:get(i)
+		local zx, zy = math.floor(zombie:getX()), math.floor(zombie:getY())
+		if zx >= x - radius and zx <= x + radius and zy >= y - radius and zy <= y + radius then
+			local z = math.floor(try(function() return zombie:getZ() end) or 0)
+			local floor = byFloor[z]
+			if not floor then
+				floor = { z = z, n = 0 }
+				byFloor[z] = floor
+				floors[#floors + 1] = floor
+			end
+			floor.n = floor.n + 1
+			total = total + 1
+		end
+	end
+	return { total = total, floors = floors, radius = radius }
+end
+
+-- ---- how the server is doing (bridge v18) ----
+-- The bridge is called at every update of the server (OnTick): it notes, second by second, how many
+-- updates there were and how long the longest wait between two was. A server in good health makes about
+-- ten a second (GlobalObject.getServerFPS), 100 ms apart; a wait of a second is a second in which nothing
+-- moved for anybody. The last minute is kept.
+local PERF_SECONDS = 60
+local perfSlots = {}
+local perfLast = nil
+-- the second the notes begin at: what is before it is not known, which is not the same as nothing
+local perfFirst = nil
+
+local function perfTick(now)
+	if perfLast then
+		local second = math.floor(now / 1000)
+		local slot = perfSlots[second % PERF_SECONDS]
+		if not slot or slot.second ~= second then
+			slot = { second = second, ticks = 0, worst = 0 }
+			perfSlots[second % PERF_SECONDS] = slot
+		end
+		slot.ticks = slot.ticks + 1
+		local wait = now - perfLast
+		-- a server with nobody on it is paused, and the game's clock may be set: neither is a slow update
+		if wait < 0 or wait > PERF_SECONDS * 1000 then
+			perfSlots, perfFirst = {}, second
+		elseif wait > slot.worst then
+			slot.worst = wait
+		end
+	elseif not perfFirst then
+		perfFirst = math.floor(now / 1000)
+	end
+	perfLast = now
+end
+
+-- perf: the last minute second by second (oldest first; the second that is not over yet is left out), what is
+-- loaded, and what the game says of its own memory (megabytes) and update times when it keeps them
+local function perfReport()
+	local now = math.floor(getTimestampMs() / 1000)
+	local seconds = array()
+	for second = math.max(now - PERF_SECONDS + 1, perfFirst or now), now - 1 do
+		local slot = perfSlots[second % PERF_SECONDS]
+		if slot and slot.second == second then
+			seconds[#seconds + 1] = { ticks = slot.ticks, worst = slot.worst }
+		else
+			seconds[#seconds + 1] = { ticks = 0, worst = 0 }
+		end
+	end
+	local report = {
+		seconds = seconds,
+		target = try(function() return getServerFPS() end),
+		players = try(function() return getOnlinePlayers():size() end),
+		zombies = try(function() return getCell():getZombieList():size() end),
+		vehicles = try(function() return loadedVehicles():size() end),
+	}
+	try(function()
+		local stats = getPerformanceLocal()
+		local function number(key)
+			local v = stats[key]
+			return type(v) == "number" and v or nil
+		end
+		report.memoryUsed, report.memoryMax = number("memory-used"), number("memory-max")
+		report.updateAverage, report.updateMax = number("avg-update-period"), number("max-update-period")
+	end)
+	return report
+end
+
 -- ---- chat (bridge v17) ----
 -- chat <author> <text>: a line in the General chat, as a player's. The server can send an alert by itself
 -- (servermsg: large in the middle of the screen); an ordinary line of chat it cannot write from Lua
@@ -2322,14 +2618,29 @@ local function cut(s, max)
 	return s:sub(1, max)
 end
 
-local function chat(author, text)
+-- the name and the text as they go: trimmed, no longer than the chat takes
+local function chatLine(author, text)
 	-- the name is put between quotes in the log and between brackets in the chat
 	author = tostring(author or ""):gsub("[%c'<>%[%]]", ""):gsub("^%s+", ""):gsub("%s+$", "")
 	if author == "" then author = "Admin" end
 	author = cut(author, 32)
 	text = tostring(text or ""):gsub("%c", " "):gsub("^%s+", ""):gsub("%s+$", "")
 	if text == "" then error("nothing to say") end
-	text = cut(text, CHAT_MAX)
+	return author, cut(text, CHAT_MAX)
+end
+
+-- tell <username> <author> <text>: the same line, shown to one player only (bridge v18)
+local function tell(username, author, text)
+	local p = requirePlayer(username)
+	author, text = chatLine(author, text)
+	sendServerCommand(p, "SpiffoCON", "chat", { author = author, text = text, private = true })
+	try(function() writeLog("chat", "Got message:ChatMessage{chat=Private to " .. username .. ", author='" .. author .. "', text='" .. text .. "'}") end)
+	audit("wrote to " .. username .. " alone as " .. author .. ": " .. text)
+	return { author = author, text = text, players = 1 }
+end
+
+local function chat(author, text)
+	author, text = chatLine(author, text)
 	local online = getOnlinePlayers():size()
 	sendServerCommand("SpiffoCON", "chat", { author = author, text = text })
 	try(function() writeLog("chat", "Got message:ChatMessage{chat=General, author='" .. author .. "', text='" .. text .. "'}") end)
@@ -2339,6 +2650,14 @@ end
 
 local actions = {
 	chat = chat,
+	tell = tell,
+	objects = listObjects,
+	removeobject = removeObject,
+	generators = listGenerators,
+	generator = generatorAction,
+	refuelgenerators = refuelGenerators,
+	zombiesin = zombiesIn,
+	perf = perfReport,
 	hairstyles = hairStyles,
 	setbeard = setBeard,
 	sethaircolor = setHairColor,
@@ -2452,6 +2771,7 @@ local function poll()
 		end)
 	end
 	local now = getTimestampMs()
+	pcall(perfTick, now)
 	if now < nextPoll then return end
 	nextPoll = now + POLL_MS
 	local ok, err = pcall(function()
