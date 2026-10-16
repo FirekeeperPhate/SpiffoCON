@@ -1676,6 +1676,9 @@
                         <TextBlock Text="radius" VerticalAlignment="Center" Margin="8,0,0,0" />
                         <TextBox Text="{Binding HordeRadius, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
                                  ToolTip="Squares around the clicked spot where zombies are placed or removed (1-50), or their corpses removed (1-100)" />
+                        <TextBlock Text="floor" VerticalAlignment="Center" Margin="8,0,0,0" />
+                        <TextBox Text="{Binding HordeFloor, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
+                                 ToolTip="The floor Spawn zombies here puts them on: 0 the ground floor, 1 the one above, -1 a basement. Above the ground keep the radius small: one landing outside the building falls to the floor below. Removing zombies clears every floor (bridge v18)" />
                         <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
                         <Button Content="Download from server" Command="{Binding DownloadCommand}" Margin="0,0,8,0" VerticalAlignment="Center"
                                 Visibility="{Binding CanDownload, Converter={StaticResource BoolToVisibility}}"

@@ -82,6 +82,9 @@ public class EventCommandTests
     {
         Assert.Equal("createhorde2 -x 10640 -y 9560 -z 0 -count 500 -radius 5", EventCommands.HordeAt(10640, 9560, 0, 900, 5));
         Assert.Equal("createhorde2 -x 1 -y 2 -z 0 -count 1 -radius 1", EventCommands.HordeAt(1, 2, 0, 0, 0));
+        Assert.Equal("createhorde2 -x 1 -y 2 -z 3 -count 4 -radius 2", EventCommands.HordeAt(1, 2, 3, 4, 2));
+        Assert.Equal("createhorde2 -x 1 -y 2 -z -1 -count 4 -radius 2", EventCommands.HordeAt(1, 2, -1, 4, 2));
+        Assert.Equal("createhorde2 -x 1 -y 2 -z 31 -count 4 -radius 2", EventCommands.HordeAt(1, 2, 99, 4, 2));
         Assert.Equal("removezombies -x 10640 -y 9560 -z 0 -radius 50", EventCommands.RemoveZombiesAt(10640, 9560, 0, 80));
     }
 }

@@ -66,12 +66,17 @@ public static class EventCommands
     /// <summary>Squares around the spot where createhorde2 places the zombies (and removezombies clears).</summary>
     public const int MaxRadius = 50;
 
+    /// <summary>The floors of a Build 42 map: basements down to -32, 0 the ground floor, up to 31.</summary>
+    public const int MinFloor = -32, MaxFloor = 31;
+
     /// <summary>
     /// createhorde2: zombies around a square. The server accepts only squares of a loaded area (near a player)
-    /// and answers "invalid location" elsewhere; it caps the count at 500 too.
+    /// and answers "invalid location" elsewhere; it caps the count at 500 too. Only the middle square has to
+    /// exist: the zombies go to random squares of the radius on that floor, and one where there is no floor
+    /// falls to the one below.
     /// </summary>
     public static string HordeAt(int x, int y, int z, int count, int radius) =>
-        string.Create(CultureInfo.InvariantCulture, $"createhorde2 -x {x} -y {y} -z {z} -count {Math.Clamp(count, 1, MaxHorde)} -radius {Math.Clamp(radius, 1, MaxRadius)}");
+        string.Create(CultureInfo.InvariantCulture, $"createhorde2 -x {x} -y {y} -z {Math.Clamp(z, MinFloor, MaxFloor)} -count {Math.Clamp(count, 1, MaxHorde)} -radius {Math.Clamp(radius, 1, MaxRadius)}");
 
     /// <summary>removezombies: the zombies within a radius of a square ("Zombies removed.", also when there were none).</summary>
     public static string RemoveZombiesAt(int x, int y, int z, int radius) =>

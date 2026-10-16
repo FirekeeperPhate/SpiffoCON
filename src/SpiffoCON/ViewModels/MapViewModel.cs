@@ -398,7 +398,20 @@ public sealed partial class MapViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SpawnHordeText), nameof(RemoveZombiesText), nameof(RemoveCorpsesText), nameof(RemoveGroundItemsText), nameof(StopFiresText), nameof(RemoveWrecksText))]
     private string hordeRadius = "5";
 
-    public string SpawnHordeText => $"Spawn {HordeCount.Trim()} zombies here";
+    /// <summary>The floor Spawn zombies here puts them on: 0 the ground floor, 1 the one above, -1 a basement.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpawnHordeText))]
+    private string hordeFloor = "0";
+
+    public string SpawnHordeText => $"Spawn {HordeCount.Trim()} zombies here"
+        + (int.TryParse(HordeFloor.Trim(), out var floor) && floor != 0 ? " " + FloorText(floor) : "");
+
+    static string FloorText(int floor) => floor switch
+    {
+        0 => "on the ground floor",
+        < 0 => $"in the basement (floor {floor})",
+        _ => $"on floor {floor}",
+    };
 
     public string RemoveZombiesText => $"Remove the zombies within {HordeRadius.Trim()} squares";
 
@@ -591,10 +604,19 @@ public sealed partial class MapViewModel : ObservableObject
     {
         if (!ReadHorde(out var count, out var radius))
             return Task.CompletedTask;
+        if (!int.TryParse(HordeFloor.Trim(), out var floor) || floor < EventCommands.MinFloor || floor > EventCommands.MaxFloor)
+        {
+            StatusText = $"Floor: a whole number from {EventCommands.MinFloor} to {EventCommands.MaxFloor} (0 the ground floor, 1 the one above, -1 a basement).";
+            return Task.CompletedTask;
+        }
         int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
-        return RunZombieCommandAsync(EventCommands.HordeAt(x, y, 0, count, radius),
-            $"Spawn {count} zombies within {radius} squares of {x}, {y}?",
-            $"{count} zombies spawned at {x}, {y}.");
+        // the server picks the squares at random within the radius and doesn't look for a floor there
+        string fall = floor != 0
+            ? "\n\nThe server puts them on random squares within the radius without looking for a floor: any that land outside the building fall to the floor below. Keep the radius within the rooms."
+            : "";
+        return RunZombieCommandAsync(EventCommands.HordeAt(x, y, floor, count, radius),
+            $"Spawn {count} zombies within {radius} squares of {x}, {y}, {FloorText(floor)}?{fall}",
+            $"{count} zombies spawned at {x}, {y}, {FloorText(floor)}.");
     }
 
     [RelayCommand]
