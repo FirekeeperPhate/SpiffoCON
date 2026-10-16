@@ -191,8 +191,8 @@ instead.
     drive).
 
   Bridge v14 finds and replaces the containers that lost their liquid part (the Bridge tab's
-  **Fix liquid containers…**, and the same in the player menu for one player). A bucket, a bottle or a
-  pot holds liquids through a part of its own; while the item is put down in the world the game keeps
+  **Fix containers and stations…**, *Fix liquid containers…* before 0.26.0, and the same in the
+  player menu for one player). A bucket, a bottle or a pot holds liquids through a part of its own; while the item is put down in the world the game keeps
   that part on the object on the square, saved apart from the item, and after a server crash some
   come back without it. Such a bucket shows as a plain "Bucket" (a whole one is "Empty Bucket" or
   "Bucket of Water"), is left out of the game's *Fill* menu, and stays so. The bridge looks at what
@@ -211,7 +211,7 @@ instead.
   water, empty, recharge. Each is told to the player's game the way the game's own actions do it.
 
   Bridge v15 adds:
-  - built things to *Fix liquid containers*: a feeding trough that lost its water part (it has one
+  - built things to *Fix containers and stations*: a feeding trough that lost its water part (it has one
     unless it holds feed; without it no water can be poured in) and anything built from a script
     that gives it one, such as a rain collector. Their part is made again in place, the way the
     game's own code does it; nothing is replaced;
@@ -270,6 +270,12 @@ instead.
   It also fixes the food put on the ground, which was rotten on a server that had run for a
   while: the game aged it like the loot it lays out itself, as old as the world. It is put
   down new now, as the food given to a player always was.
+
+  Bridge v19 extends *Fix containers and stations* to every built station: a drying rack, a
+  workbench, a furnace, anything built from an entity script, that lost any of its parts and
+  became a picture nobody can use. What it should have comes from its own script, as the game
+  makes it (the parts of an object of several squares on its main one), and only what is missing
+  is made again in place, empty: what a lost part held (the grain on a rack) went with it.
 
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to

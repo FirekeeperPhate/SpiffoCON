@@ -1381,11 +1381,11 @@
                         <!-- on the selected player; health, skills, equipment and inventory are in Character details -->
                         <DockPanel Grid.Row="1" Margin="0,8,0,0">
                             <!-- for everybody online, whoever is selected -->
-                            <Button DockPanel.Dock="Right" Content="Fix liquid containers…" Command="{Binding FixFluidsOfAllCommand}" IsEnabled="{Binding IsConnected}"
+                            <Button DockPanel.Dock="Right" Content="Fix containers and stations…" Command="{Binding FixFluidsOfAllCommand}" IsEnabled="{Binding IsConnected}"
                                     ToolTipService.ShowOnDisabled="True" ToolTipService.ShowDuration="30000">
                                 <Button.ToolTip>
                                     <TextBlock MaxWidth="420" TextWrapping="Wrap"
-                                               Text="Buckets, bottles and pots that lost the part that holds liquids: after a server crash one that was put down shows as a plain &quot;Bucket&quot; (not &quot;Empty Bucket&quot;) and can't be filled any more. Counted first, then replaced with new, empty ones where they are: what the players online carry, and what is put down or stored within 50 squares of each (bridge v14)." />
+                                               Text="Buckets, bottles and pots that lost the part that holds liquids: after a server crash one that was put down shows as a plain &quot;Bucket&quot; (not &quot;Empty Bucket&quot;) and can't be filled any more. And built things that lost a part: troughs and rain collectors that take no water, drying racks, workbenches and furnaces nobody can use (bridge v19). Counted first, then the containers are replaced with new, empty ones where they are, and the built things get their parts back in place, empty: what the players online carry, and what is put down, stored or built within 50 squares of each (bridge v14)." />
                                 </Button.ToolTip>
                             </Button>
                             <WrapPanel IsEnabled="{Binding HasPlayer}">
@@ -1976,8 +1976,8 @@
                                     <CheckBox Content="Connection lost and server back" IsChecked="{Binding NotifyConnection}" Margin="0,6,0,0" />
                                     <CheckBox Content="A player dies" IsChecked="{Binding NotifyDeaths}" Margin="0,6,0,0"
                                               ToolTip="Where and, when the game says, by whom (bridge v8)" />
-                                    <CheckBox Content="Containers that can't hold liquids any more" IsChecked="{Binding NotifyContainers}" Margin="0,6,0,0"
-                                              ToolTip="Buckets, bottles, troughs that lost their liquid part, as happens after a server crash: looked for when the bridge connects and when the first player is back (bridge v14)" />
+                                    <CheckBox Content="Containers and stations that lost a part" IsChecked="{Binding NotifyContainers}" Margin="0,6,0,0"
+                                              ToolTip="Buckets, bottles, troughs that lost their liquid part, and drying racks, workbenches and other stations that lost a part (bridge v19), as happens after a server crash: looked for when the bridge connects and when the first player is back (bridge v14)" />
                                     <CheckBox Content="Only while SpiffoCON is in the background" IsChecked="{Binding NotifyOnlyWhenInactive}" Margin="0,6,0,0" />
                                     <Button Content="Try one" Command="{Binding TestNotificationCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
                                 </StackPanel>

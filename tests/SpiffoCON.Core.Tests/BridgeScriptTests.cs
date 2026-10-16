@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(18, await _client.PingAsync());
+        Assert.Equal(19, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -762,24 +762,33 @@ public sealed class BridgeScriptTests
     {
         _game.DoString("BUILT()");
 
-        // a trough without its part and without feed, and two rain collectors: one lost that part only, one all
-        // of them. A trough with feed has no water part by design; the side square of a wide tank, a chair and
-        // a wall are nobody's business
+        // a trough without its part and without feed, two rain collectors (one lost that part only, one all of
+        // them) and two drying racks (one lost the parts it dries with, one everything on its four squares,
+        // counted once). A trough with feed has no water part by design; the side square of a wide tank, a
+        // chair, a wall and the whole ones are nobody's business
         var count = await _client.FixFluidsAsync(apply: false, radius: 5, username: "rj");
-        Assert.Equal((3, 3, 0), (count.Found, count.Built, count.OnSquares + count.InContainers + count.InInventories));
-        Assert.Equal("2 × Rain Collector Barrel, 1 × Feeding Trough", count.Describe());
+        Assert.Equal((5, 5, 0), (count.Found, count.Built, count.OnSquares + count.InContainers + count.InInventories));
+        Assert.Equal("2 × Drying Rack, 2 × Rain Collector Barrel, 1 × Feeding Trough", count.Describe());
         Assert.Empty(Told());
 
         // each made again the way the game does it, and sent to the players
         var done = await _client.FixFluidsAsync(apply: true, radius: 5, username: "rj");
-        Assert.Equal((3, 3, 0), (done.Found, done.Fixed, done.Failed));
+        Assert.Equal((5, 5, 0), (done.Found, done.Fixed, done.Failed));
         var told = Told();
         Assert.Contains("createFluidContainer broken trough", told);
         Assert.Contains("syncEntity broken trough", told);
-        Assert.Contains("addComponent Rain Collector Barrel", told);
+        Assert.Contains("addComponent Rain Collector Barrel FluidContainer", told);
         Assert.Contains("createEntity Rain Collector Barrel", told);
         Assert.Equal(2, told.Count(l => l == "syncEntity Rain Collector Barrel"));
-        Assert.True(_game.DoString("return TROUGH_BROKEN.fluid ~= nil and BARREL_PART.fluid ~= nil and BARREL_ALL.fluid ~= nil").Boolean);
+        // only the missing parts of the first rack; the second made whole on each of its squares
+        Assert.Equal(["addComponent Drying Rack DryingCraftLogic", "addComponent Drying Rack Resources"],
+            told.Where(l => l.StartsWith("addComponent Drying Rack")).Order());
+        Assert.Equal(4, told.Count(l => l == "createEntity Drying Rack"));
+        Assert.Equal(5, told.Count(l => l == "syncEntity Drying Rack"));
+        Assert.True(_game.DoString("return TROUGH_BROKEN.fluid ~= nil and BARREL_PART.parts.FluidContainer and BARREL_ALL.parts.FluidContainer").Boolean);
+        Assert.Equal("DryingCraftLogic,Resources,SpriteConfig,UiConfig", _game.DoString("return PARTS(RACK_PART)").String);
+        Assert.Equal("DryingCraftLogic,Resources,SpriteConfig,UiConfig", _game.DoString("return PARTS(RACK_ALL[1])").String);
+        Assert.Equal("SpriteConfig", _game.DoString("return PARTS(RACK_ALL[4])").String);
         Assert.Equal(0, (await _client.FixFluidsAsync(apply: false, radius: 5, username: "rj")).Found);
     }
 

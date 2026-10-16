@@ -65,8 +65,19 @@ local function item(fullType, name)
 	end } end
 	return it
 end
--- the kind of part that holds liquids; it can make one from the script of an entity (bridge v15)
-ComponentType = { FluidContainer = { CreateComponentFromScript = function(self, script) return { fromScript = script } end } }
+-- the kinds of parts of an entity; each can be made from the script of an entity (bridge v15, all of them v19)
+local COMPONENT_TYPES = { "FluidContainer", "SpriteConfig", "UiConfig", "Resources", "DryingCraftLogic" }
+ComponentType = {}
+for _, name in ipairs(COMPONENT_TYPES) do
+	ComponentType[name] = setmetatable({ name = name,
+		CreateComponentFromScript = function(self, script) return { type = self, fromScript = script } end,
+	}, { __tostring = function() return name end })
+end
+ComponentType.GetList = function()
+	local all = {}
+	for _, name in ipairs(COMPONENT_TYPES) do all[#all + 1] = ComponentType[name] end
+	return list(all)
+end
 FLUID_TYPES = { ["Base.Bucket"] = true, ["Base.WaterBottle"] = true, ["Base.OldPot"] = true }
 local function bag(fullType, name)
 	local b = item(fullType, name)
@@ -785,38 +796,63 @@ end
 
 -- ---- bridge v15: built things that hold water, the gear of a player, animals ----
 FluidType = { Water = "Water" }
--- the entity scripts of the sprites that have one: a rain collector gives its object a FluidContainer; a
--- wide tank gives it to its main square only
+-- the entity scripts of the sprites that have one, and the parts each gives: SpriteConfig on every square, the
+-- rest on the main square of an object (isoMasterOnly). A rain collector gives its object a FluidContainer; a
+-- wide tank gives it to its main square only; a drying rack has four squares, its parts on the one at the top
+local MASTER_ONLY = { isoMasterOnly = function() return true end }
+local EVERY_SQUARE = { isoMasterOnly = function() return false end }
+local WATER = { SpriteConfig = EVERY_SQUARE, FluidContainer = MASTER_ONLY }
+local RACK = { SpriteConfig = EVERY_SQUARE, UiConfig = MASTER_ONLY, Resources = MASTER_ONLY, DryingCraftLogic = MASTER_ONLY }
 local ENTITY_SCRIPTS = {
-	carpentry_02_54 = { master = true, part = { isoMasterOnly = function() return true end } },
-	industry_02_10 = { master = false, part = { isoMasterOnly = function() return true end } },
-	furniture_01_1 = {},
+	carpentry_02_54 = { name = "RainCollectorBarrel", master = true, parts = WATER },
+	industry_02_10 = { name = "WideTank", master = false, parts = WATER },
+	furniture_01_1 = { name = "Chair", master = true, parts = {} },
+	vegetation_drying_01_17 = { name = "Drying_Rack", master = true, parts = RACK },
+	vegetation_drying_01_16 = { name = "Drying_Rack", master = false, parts = RACK },
 }
 SpriteConfigManager = { getObjectInfoFromSprite = function(sprite)
 	local script = ENTITY_SCRIPTS[sprite]
 	if not script then return nil end
-	script.getComponentScriptFor = function(self, kind) return kind == ComponentType.FluidContainer and script.part or nil end
+	script.getName = function() return script.name end
+	script.containsComponent = function(self, kind) return script.parts[kind.name] ~= nil end
+	script.getComponentScriptFor = function(self, kind) return script.parts[kind.name] end
 	return {
 		getScript = function() return { getParent = function() return script end } end,
 		getFaceForSprite = function(self, name) return { getTileInfoForSprite = function() return { isMaster = function() return script.master == true end } end } end,
 	}
 end }
 GameEntityFactory = {
-	AddComponent = function(object, sync, part) assert(sync == true); object.fluid = part; note("addComponent " .. object.name) end,
-	CreateIsoObjectEntity = function(object, script, first) assert(first == false); object.fluid, object.components = {}, true; note("createEntity " .. object.name) end,
+	AddComponent = function(object, sync, part)
+		assert(sync == true and part.fromScript ~= nil)
+		object.parts[part.type.name] = true
+		note("addComponent " .. object.name .. " " .. part.type.name)
+	end,
+	-- as GameEntityFactory.instanceComponents: only for a thing with no parts left
+	CreateIsoObjectEntity = function(object, script, first)
+		assert(first == false and next(object.parts) == nil)
+		for name, part in pairs(script.parts) do
+			if name == "SpriteConfig" or script.master or not part:isoMasterOnly() then object.parts[name] = true end
+		end
+		note("createEntity " .. object.name)
+	end,
 }
--- a built thing: the sprite says what it is; fluid is its part that holds liquids
-local function builtThing(name, sprite, fluid, components)
-	local o = { name = name, fluid = fluid, components = components }
+-- a built thing: the sprite says what it is; parts are the kinds of parts it has. One without a name of its
+-- own (unnamed) goes by its entity script's
+local function builtThing(name, sprite, parts, unnamed)
+	local o = { name = name, parts = {} }
+	for _, part in ipairs(parts) do o.parts[part] = true end
 	o.getSprite = function() return { getName = function() return sprite end } end
-	o.getFluidContainer = function() return o.fluid end
-	o.hasComponents = function() return o.components end
-	o.getProperties = function() return { get = function(self, key) return key == "CustomName" and name or nil end } end
+	o.getFluidContainer = function() return o.parts.FluidContainer and {} or nil end
+	o.hasComponent = function(self, kind) return o.parts[kind.name] == true end
+	o.hasComponents = function() return next(o.parts) ~= nil end
+	o.getProperties = function() return { get = function(self, key) return key == "CustomName" and not unnamed and name or nil end } end
 	o.sendSyncEntity = function(self, to) note("syncEntity " .. name) end
 	return o
 end
 local function trough(name, fluid, feed)
-	local t = builtThing(name, "location_farm_accesories_01_4", fluid, true)
+	local t = builtThing(name, "location_farm_accesories_01_4", { "SpriteConfig" })
+	t.fluid = fluid
+	t.getFluidContainer = function() return t.fluid end
 	t.class = "IsoFeedingTrough"
 	t.feed = container(name)
 	for i = 1, feed or 0 do t.feed:AddItem(item("Base.AnimalFeedBag", "Feed")) end
@@ -838,13 +874,30 @@ function BUILT()
 	TROUGH_WHOLE = put(101, 104, trough("whole trough", {}, 0))
 	TROUGH_WHOLE.water = 15
 	-- a rain collector that lost only that part, one that lost every part, a whole one
-	BARREL_PART = put(99, 101, builtThing("Rain Collector Barrel", "carpentry_02_54", nil, true))
-	BARREL_ALL = put(99, 103, builtThing("Rain Collector Barrel", "carpentry_02_54", nil, false))
-	put(98, 103, builtThing("Rain Collector Barrel", "carpentry_02_54", {}, true))
+	BARREL_PART = put(99, 101, builtThing("Rain Collector Barrel", "carpentry_02_54", { "SpriteConfig" }))
+	BARREL_ALL = put(99, 103, builtThing("Rain Collector Barrel", "carpentry_02_54", {}))
+	put(98, 103, builtThing("Rain Collector Barrel", "carpentry_02_54", { "SpriteConfig", "FluidContainer" }))
 	-- not ours to judge: the side square of a wide tank, a chair, a thing with no entity script
-	put(98, 101, builtThing("Tank", "industry_02_10", nil, true))
-	put(98, 102, builtThing("Chair", "furniture_01_1", nil, true))
-	put(97, 102, builtThing("Wall", "walls_01_1", nil, false))
+	put(98, 101, builtThing("Tank", "industry_02_10", { "SpriteConfig" }))
+	put(98, 102, builtThing("Chair", "furniture_01_1", {}))
+	put(97, 102, builtThing("Wall", "walls_01_1", {}))
+	-- bridge v19, stations: a drying rack that lost what it dries with, one that lost everything on its four
+	-- squares, a whole one
+	RACK_PART = put(102, 101, builtThing("Drying Rack", "vegetation_drying_01_17", { "SpriteConfig", "UiConfig" }, true))
+	RACK_ALL = { put(102, 103, builtThing("Drying Rack", "vegetation_drying_01_17", {}, true)) }
+	for _, xy in ipairs({ { 103, 103 }, { 102, 104 }, { 103, 104 } }) do
+		RACK_ALL[#RACK_ALL + 1] = put(xy[1], xy[2], builtThing("Drying Rack", "vegetation_drying_01_16", {}, true))
+	end
+	put(96, 101, builtThing("Drying Rack", "vegetation_drying_01_17", { "SpriteConfig", "UiConfig", "Resources", "DryingCraftLogic" }, true))
+	put(97, 101, builtThing("Drying Rack", "vegetation_drying_01_16", { "SpriteConfig" }, true))
+end
+
+-- the parts of a built thing, by name, in order
+function PARTS(thing)
+	local names = {}
+	for name in pairs(thing.parts) do names[#names + 1] = name end
+	table.sort(names)
+	return table.concat(names, ",")
 end
 
 -- rj holds, wears and has attached things that remember what is done to them

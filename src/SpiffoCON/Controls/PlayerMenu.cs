@@ -119,7 +119,7 @@ public static class PlayerMenu
             Tip(actions.ObjectsProblem(player), "What stands on the squares around them (furniture, walls, lights): to remove the one the game no longer lets anybody pick up"));
         Add(items, "Write to them…", () => actions.WriteTo(player), online && actions.TellProblem(player) is null,
             Tip(actions.TellProblem(player), "A line of chat only they see, written in the Logs tab"));
-        Add(items, "Fix liquid containers…", () => actions.FixFluidsAsync(player), online && actions.FluidsProblem(player) is null,
+        Add(items, "Fix containers and stations…", () => actions.FixFluidsAsync(player), online && actions.FluidsProblem(player) is null,
             Tip(actions.FluidsProblem(player), BridgeViewModel.FixFluidsTip + $": what they carry, and {BridgeViewModel.FluidsRadius} squares around them"));
         // through the bridge (corpses: v6, the rest: v7): what RCON has no command for, within a radius
         // of where the player is now

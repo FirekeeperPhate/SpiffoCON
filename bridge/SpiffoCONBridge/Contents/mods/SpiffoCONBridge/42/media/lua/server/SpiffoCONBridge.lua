@@ -15,7 +15,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 18
+local VERSION = 19
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -1346,9 +1346,14 @@ end
 -- fails on the missing part). Anything else built from an entity script that gives it a FluidContainer (a
 -- rain collector) should have one.
 
--- the entity script of the sprite of an object, when it gives the object a FluidContainer: asked once per sprite
+-- Since bridge v19 every built station, not only those holding liquids: a drying rack, a workbench, a furnace
+-- loses its parts the same way and is left a picture nobody can use. What an object should have comes from the
+-- entity script of its sprite, as the game makes it (GameEntityFactory.instanceComponents): SpriteConfig on
+-- every square of it, the rest on its main square, or on every square for a part that is not isoMasterOnly.
+
+-- the entity script of the sprite of an object and the parts that square should carry: asked once per sprite
 local builtScripts = {}
-local function fluidScriptOf(object)
+local function entityOf(object)
 	local sprite = try(function() return object:getSprite():getName() end)
 	if not sprite then return nil end
 	local known = builtScripts[sprite]
@@ -1356,66 +1361,97 @@ local function fluidScriptOf(object)
 		known = try(function()
 			local info = SpriteConfigManager.getObjectInfoFromSprite(sprite)
 			local script = info and info:getScript() and info:getScript():getParent()
-			local part = script and script:getComponentScriptFor(ComponentType.FluidContainer)
-			if not part then return nil end
-			if part:isoMasterOnly() then
-				-- a part only the main square of an object carries (GameEntityFactory.instanceComponents): the
-				-- sprite says whether it is that square. A rain collector is one square, its own main one.
-				local face = info:getFaceForSprite(sprite)
-				local tile = face and face:getTileInfoForSprite(sprite)
-				if not (tile and tile:isMaster()) then return nil end
+			if not script then return nil end
+			-- the main square of an object of several: the sprite says whether it is that one
+			local face = info:getFaceForSprite(sprite)
+			local tile = face and face:getTileInfoForSprite(sprite)
+			local master = tile ~= nil and tile:isMaster()
+			local parts, types = {}, ComponentType.GetList()
+			for i = 0, types:size() - 1 do
+				local t = types:get(i)
+				if script:containsComponent(t) then
+					local part = script:getComponentScriptFor(t)
+					if t == ComponentType.SpriteConfig or master or not part:isoMasterOnly() then
+						parts[#parts + 1] = t
+					end
+				end
 			end
-			return script
+			if #parts == 0 then return nil end
+			return { script = script, parts = parts, master = master }
 		end) or false
 		builtScripts[sprite] = known
 	end
 	return known or nil
 end
 
--- "trough" or "built" for a built thing that should hold liquids and can not; nil for everything else
+-- the parts an object built from an entity script should have and has not; nil when it lacks none, or when
+-- the game did not answer (a call that fails is not "it has none")
+local function missingParts(object, entity)
+	local missing = {}
+	for _, t in ipairs(entity.parts) do
+		local asked, has = pcall(function() return object:hasComponent(t) end)
+		if not asked then return nil end
+		if not has then missing[#missing + 1] = t end
+	end
+	if #missing == 0 then return nil end
+	return missing
+end
+
+-- "trough" or "built" for a built thing that lost a part it needs (to hold liquids, to dry, to craft); nil
+-- for everything else
 local function lostBuiltPart(object)
-	local trough = instanceof(object, "IsoFeedingTrough")
-	if not trough and not fluidScriptOf(object) then return nil end
-	-- only when the game answered: a call that fails is not "it has none"
-	local asked, part = pcall(function() return object:getFluidContainer() end)
-	if not asked or part ~= nil then return nil end
-	if trough then
+	if instanceof(object, "IsoFeedingTrough") then
+		local asked, part = pcall(function() return object:getFluidContainer() end)
+		if not asked or part ~= nil then return nil end
 		-- with feed in it a trough has no water part, by design
 		local feed = try(function() local c = object:getContainer() return c ~= nil and not c:isEmpty() end)
 		if feed then return nil end
 		return "trough"
 	end
-	return "built"
+	local entity = entityOf(object)
+	if entity and missingParts(object, entity) then return "built" end
+	return nil
 end
 
--- the part made again in place, and told to the clients as the game does after it changes a trough
--- (Commands.feedingThrough.addWaterDebug: createFluidContainer, sendSyncEntity)
+-- the parts made again in place, and told to the clients as the game does after it changes a trough
+-- (Commands.feedingThrough.addWaterDebug: createFluidContainer, sendSyncEntity). What a lost part held (the
+-- grain on a drying rack, the water of a rain collector) is gone with it: the part comes back empty.
 local function restoreBuilt(object, kind)
 	if kind == "trough" then
 		object:createFluidContainer()
+		if object:getFluidContainer() == nil then return false end
 	else
-		local script = fluidScriptOf(object)
+		local entity = entityOf(object)
 		if object:hasComponents() then
-			-- the other parts are there: only this one, from the script (GameEntityFactory.instanceComponents)
-			local part = ComponentType.FluidContainer:CreateComponentFromScript(script:getComponentScriptFor(ComponentType.FluidContainer))
-			GameEntityFactory.AddComponent(object, true, part)
+			-- the others are there: only those missing, each from the script
+			for _, t in ipairs(missingParts(object, entity) or {}) do
+				GameEntityFactory.AddComponent(object, true, t:CreateComponentFromScript(entity.script:getComponentScriptFor(t)))
+			end
 		else
-			-- none left: all of them, as a rain collector of the map gets them (MORainCollectorBarrel)
-			GameEntityFactory.CreateIsoObjectEntity(object, script, false)
+			-- none left: all of them, as an object of the map gets them (MORainCollectorBarrel)
+			GameEntityFactory.CreateIsoObjectEntity(object, entity.script, false)
 		end
+		if missingParts(object, entity) then return false end
 	end
-	if object:getFluidContainer() == nil then return false end
 	object:sendSyncEntity(nil)
 	if kind == "trough" then try(function() object:checkOverlayAfterAnimalEat() end) end
 	return true
 end
 
--- what to call a built thing in the reply
+-- what to call a built thing in the reply: the name the game shows when moving it, else its entity script's
+-- ("Drying_Rack" as "Drying Rack")
 local function builtName(object, kind)
 	if kind == "trough" then return "Feeding Trough" end
-	return try(function() return object:getProperties():get("CustomName") end)
-		or try(function() return object:getName() end)
-		or "Built container"
+	local props = try(function() return object:getProperties() end)
+	local custom = props and try(function() return props:get("CustomName") end)
+	if custom and custom ~= "" then
+		local group = try(function() return props:get("GroupName") end)
+		return ((group and group ~= "") and (group .. " ") or "") .. custom
+	end
+	local entity = entityOf(object)
+	local script = entity and try(function() return entity.script:getName() end)
+	if script then return (script:gsub("_", " ")) end
+	return try(function() return object:getName() end) or "Built object"
 end
 
 -- fixfluids <apply: 0 | 1> <radius> [username]: the containers that lost their liquid part, in the
@@ -1424,7 +1460,8 @@ end
 -- apply 1 each is replaced by a new, empty one of the same type in the same place; one that is worn or
 -- attached is left and counted. With apply 0 it only counts, so SpiffoCON can say what before asking.
 -- Since bridge v15 also the built things there (a feeding trough, a rain collector): their part is made
--- again in place, nothing is replaced.
+-- again in place, nothing is replaced. Since v19 every built thing made from an entity script (a drying
+-- rack, a workbench, a furnace) that lost any of its parts.
 local function fixFluids(apply, radius, username)
 	apply = apply == "1"
 	radius = tonumber(radius)
@@ -1501,7 +1538,11 @@ local function fixFluids(apply, radius, username)
 			for i = 0, things:size() - 1 do
 				local thing = things:get(i)
 				local kind = lostBuiltPart(thing)
-				if kind then
+				if kind == "built" and not entityOf(thing).master then
+					-- another square of a thing of several (a drying rack has four): mended with it, counted
+					-- once, by its main square
+					if apply then try(restoreBuilt, thing, kind) end
+				elseif kind then
 					local name = builtName(thing, kind)
 					noteAs("", "built:" .. name, name)
 					built = built + 1
@@ -1523,7 +1564,7 @@ local function fixFluids(apply, radius, username)
 	end
 
 	if apply then
-		audit("replaced " .. fixed .. " containers that had lost their liquid part"
+		audit("fixed " .. fixed .. " containers and built things that had lost a part"
 			.. ((username and username ~= "") and (", " .. username .. " and " .. radius .. " squares around")
 				or (", the players online and " .. radius .. " squares around each")))
 	end

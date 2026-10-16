@@ -1015,10 +1015,9 @@ public sealed partial class BridgeViewModel : ObservableObject
                 FluidsNotice = "";
                 return;
             }
-            FluidsNotice = $"{fixable} container{(fixable == 1 ? " has" : "s have")} lost the part that holds liquids ({count.Describe()}): "
-                + "they can't be filled any more. Fix liquid containers… puts them right.";
-            _main.Notify(NotificationKind.Containers, "Broken liquid containers",
-                $"{fixable} container{(fixable == 1 ? "" : "s")} can't hold liquids any more ({count.Describe()}). Bridge tab: Fix liquid containers…");
+            FluidsNotice = $"{BrokenSummary(count, fixable)} ({count.Describe()}). Fix containers and stations… puts them right.";
+            _main.Notify(NotificationKind.Containers, "Broken containers or stations",
+                $"{BrokenSummary(count, fixable)} ({count.Describe()}). Bridge tab: Fix containers and stations…");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -1545,7 +1544,7 @@ public sealed partial class BridgeViewModel : ObservableObject
             var (filled, withFeed, full) = await c.FillTroughsAsync(AnimalsRadius);
             return (filled == 0 ? "No trough filled" : $"{filled} trough{(filled == 1 ? "" : "s")} filled with water")
                 + (full > 0 ? $", {full} full already" : "")
-                + (withFeed > 0 ? $", {withFeed} left (feed in {(withFeed == 1 ? "it" : "them")}, or no water part: Fix liquid containers…)" : "") + ".";
+                + (withFeed > 0 ? $", {withFeed} left (feed in {(withFeed == 1 ? "it" : "them")}, or no water part: Fix containers and stations…)" : "") + ".";
         });
 
     /// <summary>Why the containers that lost their liquid part can't be looked for now (null: they can): bridge v14.</summary>
@@ -1557,10 +1556,24 @@ public sealed partial class BridgeViewModel : ObservableObject
     /// <summary>How far around each player the containers put down or stored are looked at.</summary>
     public const int FluidsRadius = 50;
 
-    /// <summary>What Fix liquid containers is for, for its tooltips.</summary>
+    /// <summary>What Fix containers and stations is for, for its tooltips.</summary>
     public const string FixFluidsTip =
         "Buckets, bottles and pots that lost the part that holds liquids: after a server crash one that was put down shows as a plain "
-        + "\"Bucket\" (not \"Empty Bucket\") and can't be filled any more. Counted first, then replaced with new, empty ones where they are";
+        + "\"Bucket\" (not \"Empty Bucket\") and can't be filled any more. And built things that lost a part: troughs and rain collectors "
+        + "that take no water, drying racks, workbenches and furnaces nobody can use (these need bridge v19). Counted first, then the "
+        + "containers are replaced with new, empty ones where they are, and the built things get their parts back in place, empty";
+
+    /// <summary>"3 containers can't be filled any more and 2 built things can't be used": what a look found.</summary>
+    static string BrokenSummary(BridgeFluidFix count, int found)
+    {
+        int built = Math.Min(count.Built, found), items = found - built;
+        var parts = new List<string>();
+        if (items > 0)
+            parts.Add($"{items} container{(items == 1 ? "" : "s")} lost the part that holds liquids and can't be filled any more");
+        if (built > 0)
+            parts.Add($"{built} built thing{(built == 1 ? "" : "s")} (troughs, rain collectors, drying racks, workbenches) lost a part and can't be used as {(built == 1 ? "it" : "they")} should");
+        return string.Join("; ", parts);
+    }
 
     /// <summary>
     /// Counts the containers that lost their liquid part, asks, and replaces them with whole ones where they
@@ -1575,14 +1588,14 @@ public sealed partial class BridgeViewModel : ObservableObject
         string who = username is null ? "the players online" : username;
         string around = username is null ? "each of them" : "them";
         string carry = username is null ? "carry" : "carries";
-        static string S(int n) => n == 1 ? "" : "s";
         try
         {
             var count = await client.FixFluidsAsync(apply: false, FluidsRadius, username);
             if (count.Players == 0)
                 return "Nobody is online: the server only keeps the surroundings of players, and what they carry.";
             if (count.Found == 0)
-                return $"No container has lost its liquid part: looked at what {who} {carry} and at {FluidsRadius} squares around {around}.";
+                return $"No container or built thing has lost a part: looked at what {who} {carry} and at {FluidsRadius} squares around {around}"
+                    + (BridgeVersion < 19 ? " (the stations, as drying racks and workbenches, only with bridge v19)." : ".");
             var where = new List<string>();
             if (count.InInventories > 0)
             {
@@ -1594,13 +1607,15 @@ public sealed partial class BridgeViewModel : ObservableObject
             if (count.InContainers > 0)
                 where.Add($"{count.InContainers} in crates, shelves or fridges");
             if (count.Built > 0)
-                where.Add($"{count.Built} built (a feeding trough, a rain collector)");
-            string question = $"{count.Found} container{S(count.Found)} lost the part that holds liquids, and can't be filled: {count.Describe()}.\n\n"
+                where.Add($"{count.Built} built (troughs, rain collectors, drying racks, workbenches...)");
+            // what was in a lost part (the grain on a rack, the water in a collector) went with it
+            const string builtBack = "built things stay where they are and get the missing parts back, empty";
+            string question = $"{BrokenSummary(count, count.Found)}: {count.Describe()}.\n\n"
                 + $"{string.Join(", ", where)}; looked at what {who} {carry} and at {FluidsRadius} squares around {around}.\n\n"
-                + (count.Built == count.Found ? "Give " + (count.Found == 1 ? "it its" : "each its") + " part back? Nothing is replaced: built things stay as they are."
-                    : (count.Found == 1 ? "Replace it with a new, empty one of the same type, in the same place?"
-                        : "Replace each with a new, empty one of the same type, in the same place?")
-                        + (count.Built > 0 ? " The built ones are not replaced: their part is made again in place." : ""))
+                + (count.Built == count.Found ? "Give " + (count.Found == 1 ? "it its" : "each its") + " parts back? Nothing is replaced: " + builtBack + "."
+                    : (count.Found - count.Built == 1 ? "Replace the container with a new, empty one of the same type, in the same place?"
+                        : "Replace each container with a new, empty one of the same type, in the same place?")
+                        + (count.Built > 0 ? " The " + builtBack + "." : ""))
                 + (count.Skipped > 0 ? $"\n\n{count.Skipped} worn or attached (a bottle on a belt) will be left: the player has to take it off first." : "");
             if (_main.Confirm?.Invoke(question) != true)
                 return null;
@@ -1608,9 +1623,9 @@ public sealed partial class BridgeViewModel : ObservableObject
                 return ConnectionChanged;
             var done = await client.FixFluidsAsync(apply: true, FluidsRadius, username);
             FluidsNotice = "";
-            return (done.Fixed == 0 ? "No container fixed." : $"{done.Fixed} container{S(done.Fixed)} fixed.")
+            return (done.Fixed == 0 ? "Nothing fixed." : $"{done.Fixed} fixed ({done.Describe()}).")
                 + (done.Skipped > 0 ? $" {done.Skipped} worn or attached left as {(done.Skipped == 1 ? "it is" : "they are")}." : "")
-                + (done.Failed > 0 ? $" {done.Failed} could not be replaced: the game made no whole item of that type." : "");
+                + (done.Failed > 0 ? $" {done.Failed} could not be put right: the game made no whole one of that type." : "");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -1618,7 +1633,7 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
     }
 
-    /// <summary>Fix liquid containers, for everybody online (the Bridge tab's button).</summary>
+    /// <summary>Fix containers and stations, for everybody online (the Bridge tab's button).</summary>
     [RelayCommand]
     private async Task FixFluidsOfAllAsync()
     {

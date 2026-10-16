@@ -633,7 +633,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>
     /// Says so when the run of the server before the one going on did not stop as it should: its log ends
     /// without the shutdown lines, so it crashed, was killed, or lost power, and what was not saved is gone
-    /// (and containers put down may have lost their liquid part). Each start of the server is judged once.
+    /// (and containers put down or built stations may have lost a part). Each start of the server is judged once.
     /// </summary>
     async Task CheckPreviousRunAsync()
     {
@@ -651,7 +651,7 @@ public sealed partial class MainViewModel : ObservableObject
             string when = run.Ended is { } ended ? $" Its last line is of {ended.ToString("d MMM, HH:mm:ss", english)}." : "";
             Log(ConsoleKind.Warning, "The server did not stop as it should before its last start: the log of the run before "
                 + $"({run.File}) ends without the shutdown lines, so it crashed or was killed.{when} What was not saved is lost; "
-                + "containers that were put down may have lost their liquid part (Bridge tab: Fix liquid containers…). Its last lines:\n"
+                + "containers that were put down and built stations (drying racks, workbenches) may have lost a part (Bridge tab: Fix containers and stations…). Its last lines:\n"
                 + string.Join("\n", run.LastLines.Select(l => "  " + l)));
             Notify(NotificationKind.Connection, "The server crashed",
                 $"{_profile.DisplayName} did not stop as it should before its last start{(run.Ended is { } at ? $" ({at.ToString("d MMM, HH:mm", english)})" : "")}. See the Console tab.");
