@@ -1388,6 +1388,13 @@
                                                Text="Buckets, bottles and pots that lost the part that holds liquids: after a server crash one that was put down shows as a plain &quot;Bucket&quot; (not &quot;Empty Bucket&quot;) and can't be filled any more. And built things that lost a part: troughs and rain collectors that take no water, drying racks, workbenches and furnaces nobody can use (bridge v19). Counted first, then the containers are replaced with new, empty ones where they are, and the built things get their parts back in place, empty: what the players online carry, and what is put down, stored or built within 50 squares of each (bridge v14)." />
                                 </Button.ToolTip>
                             </Button>
+                            <CheckBox DockPanel.Dock="Right" Content="By itself" IsChecked="{Binding AutoFixOn}" IsEnabled="{Binding CanAutoFix}" MinWidth="0"
+                                      VerticalAlignment="Center" Margin="0,0,10,0" ToolTipService.ShowOnDisabled="True" ToolTipService.ShowDuration="30000">
+                                <CheckBox.ToolTip>
+                                    <TextBlock MaxWidth="420" TextWrapping="Wrap"
+                                               Text="The bridge does what Fix containers and stations does by itself, on the server: every 10 minutes with players online (the first a minute after the first player is back), with SpiffoCON closed too, and after a restart. What it fixes goes to the admin log, and SpiffoCON tells it in the console. Things whose parts the game is still giving back are left alone (bridge v20)." />
+                                </CheckBox.ToolTip>
+                            </CheckBox>
                             <WrapPanel IsEnabled="{Binding HasPlayer}">
                                 <Button Content="Character details…" Command="{Binding ShowDetailsCommand}" CommandParameter="{Binding SelectedPlayer}"
                                         ToolTip="Everything about the selected player in one window: health, skills, equipment, inventory and every action (also a double click on the row)" Margin="0,0,6,0" />

@@ -887,7 +887,7 @@ public sealed partial class MainViewModel : ObservableObject
         return folder;
     }
 
-    void Log(ConsoleKind kind, string text)
+    internal void Log(ConsoleKind kind, string text)
     {
         foreach (var line in text.ReplaceLineEndings("\n").Split('\n'))
             ConsoleLines.Add(new ConsoleLine(DateTime.Now, kind, line));

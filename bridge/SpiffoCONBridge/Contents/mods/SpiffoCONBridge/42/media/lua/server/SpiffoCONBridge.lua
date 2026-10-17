@@ -15,7 +15,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 19
+local VERSION = 20
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -1397,9 +1397,23 @@ local function missingParts(object, entity)
 	return missing
 end
 
+-- Why things lose their parts (found in bridge v20's time): while nobody is near, a thing whose parts keep
+-- working (drying, crafting, a furnace, water: ComponentType.isRunInMeta) has them all taken off and kept in
+-- the server's memory (GameEntityManager.UnregisterEntity, MetaEntity); it is saved without them, with a
+-- MetaTag that names them. They go to disk only with the server's full save (save, quit, SaveWorldEveryMinutes):
+-- a server killed before it comes back with things that point to parts nobody kept. When the area is loaded
+-- again the game gives the parts back (GameEntityManager.RegisterEntity) and drops the MetaTag.
+
+-- whether a thing is still waiting for its parts from the server's memory: then it is not broken
+local function partsOnTheirWay(object)
+	local tag = ComponentType.MetaTag
+	return tag ~= nil and try(function() return object:hasComponent(tag) end) == true
+end
+
 -- "trough" or "built" for a built thing that lost a part it needs (to hold liquids, to dry, to craft); nil
 -- for everything else
 local function lostBuiltPart(object)
+	if partsOnTheirWay(object) then return nil end
 	if instanceof(object, "IsoFeedingTrough") then
 		local asked, part = pcall(function() return object:getFluidContainer() end)
 		if not asked or part ~= nil then return nil end
@@ -1462,7 +1476,7 @@ end
 -- Since bridge v15 also the built things there (a feeding trough, a rain collector): their part is made
 -- again in place, nothing is replaced. Since v19 every built thing made from an entity script (a drying
 -- rack, a workbench, a furnace) that lost any of its parts.
-local function fixFluids(apply, radius, username)
+local function fixFluids(apply, radius, username, byItself)
 	apply = apply == "1"
 	radius = tonumber(radius)
 	if not radius or not (radius >= 0) then error("fixfluids needs a radius") end
@@ -1563,8 +1577,9 @@ local function fixFluids(apply, radius, username)
 		end)
 	end
 
-	if apply then
-		audit("fixed " .. fixed .. " containers and built things that had lost a part"
+	-- the look the bridge does by itself (v20) says so only when it fixed something
+	if apply and (fixed > 0 or not byItself) then
+		audit((byItself and "by itself, " or "") .. "fixed " .. fixed .. " containers and built things that had lost a part"
 			.. ((username and username ~= "") and (", " .. username .. " and " .. radius .. " squares around")
 				or (", the players online and " .. radius .. " squares around each")))
 	end
@@ -1572,6 +1587,64 @@ local function fixFluids(apply, radius, username)
 		found = found, fixed = fixed, skipped = skipped, failed = failed,
 		inInventories = inInventories, onSquares = onSquares, inContainers = inContainers, built = built,
 		players = #players, loaded = loaded, radius = radius, items = list,
+	}
+end
+
+-- ---- fixing them by itself (bridge v20) ----
+-- Switched on from SpiffoCON, kept in the world's own data so that it goes on with SpiffoCON closed and after
+-- a restart: every AUTOFIX_MINUTES, with players online, the same as Fix containers and stations for all of
+-- them. First a minute after the first player is back on an empty server (as after a restart): the areas
+-- around them are loaded by then and the parts kept in memory given back.
+
+local AUTOFIX_MINUTES = 10
+local AUTOFIX_FIRST_MS = 60 * 1000
+-- squares around each player, as SpiffoCON's button
+local AUTOFIX_RADIUS = 50
+local autoFixNext, autoFixPlayers, autoFixLast = nil, 0, nil
+
+local function autoFixData()
+	return ModData.getOrCreate("SpiffoCONBridge")
+end
+
+local function autoFixOn()
+	return try(function() return autoFixData().autoFix == true end) == true
+end
+
+local function autoFixState()
+	return { enabled = autoFixOn(), minutes = AUTOFIX_MINUTES, last = autoFixLast }
+end
+
+-- autofix [on | off]: switches it, or says how it is
+local function setAutoFix(mode)
+	if mode == "on" or mode == "off" then
+		autoFixData().autoFix = mode == "on"
+		-- the first look soon, not ten minutes from now
+		autoFixNext = nil
+		audit("fixing broken containers and built things by itself: " .. mode)
+	elseif mode ~= nil and mode ~= "" then
+		error("autofix takes on or off")
+	end
+	return autoFixState()
+end
+
+local function autoFixTick(now)
+	local players = getOnlinePlayers():size()
+	local back = players > 0 and autoFixPlayers == 0
+	autoFixPlayers = players
+	if players == 0 then return end
+	-- someone back on an empty server, or just switched on: the first look a minute from now, when the
+	-- surroundings are loaded and the parts kept in memory given back
+	if back or autoFixNext == nil then
+		autoFixNext = now + AUTOFIX_FIRST_MS
+		return
+	end
+	if now < autoFixNext then return end
+	autoFixNext = now + AUTOFIX_MINUTES * 60 * 1000
+	if not autoFixOn() then return end
+	local result = fixFluids("1", AUTOFIX_RADIUS, nil, true)
+	autoFixLast = {
+		at = string.format("%.0f", now), found = result.found, fixed = result.fixed, failed = result.failed,
+		skipped = result.skipped, items = result.items,
 	}
 end
 
@@ -2709,6 +2782,7 @@ local actions = {
 	zombiecells = zombieCells,
 	removewrecks = removeWrecks,
 	fixfluids = fixFluids,
+	autofix = setAutoFix,
 	itemaction = itemAction,
 	repairgear = repairGear,
 	restoreneeds = restoreNeeds,
@@ -2729,7 +2803,12 @@ local actions = {
 	players = function() return listPlayers() end,
 	inventory = function(username) return inventory(username) end,
 	vehicles = function() return vehicles() end,
-	world = function() return world() end,
+	world = function()
+		local w = world()
+		-- bridge v20: whether containers and built things are fixed by themselves, and the last time
+		w.autoFix = autoFixState()
+		return w
+	end,
 	heal = heal,
 	removeitem = removeItem,
 	repairvehicle = repairVehicle,
@@ -2815,6 +2894,9 @@ local function poll()
 	pcall(perfTick, now)
 	if now < nextPoll then return end
 	nextPoll = now + POLL_MS
+	-- bridge v20: the containers and built things fixed by themselves, when switched on
+	local fixed, fixErr = pcall(autoFixTick, now)
+	if not fixed then print("SpiffoCON bridge: " .. tostring(fixErr)) end
 	local ok, err = pcall(function()
 		local seq, requests, complete = readRequests()
 		if lastSeq == nil then

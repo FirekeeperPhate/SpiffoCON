@@ -531,6 +531,16 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return data.Deserialize(BridgeJson.Default.BridgeFluidFix) ?? new BridgeFluidFix();
     }
 
+    /// <summary>
+    /// Bridge v20: switches on or off the bridge's own look for broken containers and built things (every few
+    /// minutes with players online, SpiffoCON open or not; kept with the world), or with null only asks.
+    /// </summary>
+    public async Task<BridgeAutoFix> AutoFixAsync(bool? on)
+    {
+        var data = await SendAsync("autofix", on switch { true => "on", false => "off", null => "" }).ConfigureAwait(false);
+        return data.Deserialize(BridgeJson.Default.BridgeAutoFix) ?? new BridgeAutoFix();
+    }
+
     /// <summary>Puts out the fires within a radius (every floor). Returns the burning squares put out, and the loaded squares.</summary>
     public async Task<(int Stopped, int LoadedSquares)> StopFiresAsync(int x, int y, int radius, string? aroundPlayer = null)
     {
@@ -1015,6 +1025,21 @@ public sealed record BridgeFluidFix
         .Select(g => (Name: g.Key, Count: g.Sum(i => i.Count)))
         .OrderByDescending(g => g.Count).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
         .Select(g => $"{g.Count} × {g.Name}"));
+
+    /// <summary>Bridge v20, only in the look the bridge did by itself: when, in the server's milliseconds since 1970.</summary>
+    public string? At { get; init; }
+}
+
+/// <summary>Bridge v20: whether the bridge fixes the broken containers and built things by itself, and its last look.</summary>
+public sealed record BridgeAutoFix
+{
+    public bool Enabled { get; init; }
+
+    /// <summary>How often it looks, with players online.</summary>
+    public int Minutes { get; init; }
+
+    /// <summary>The last look since the server started; null before the first.</summary>
+    public BridgeFluidFix? Last { get; init; }
 }
 
 /// <summary>Bridge v18: the objects around a player.</summary>
@@ -1511,6 +1536,9 @@ public sealed record BridgeWorld
     public double? SkippedHours { get; init; }
     public int? ZombiesLoaded { get; init; }
     public int? Players { get; init; }
+
+    /// <summary>Bridge v20: the bridge's own look for broken containers and built things.</summary>
+    public BridgeAutoFix? AutoFix { get; init; }
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, NumberHandling = JsonNumberHandling.AllowReadingFromString)]
@@ -1530,6 +1558,7 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgeVehicleDetails))]
 [JsonSerializable(typeof(BridgePartRepair))]
 [JsonSerializable(typeof(BridgeFluidFix))]
+[JsonSerializable(typeof(BridgeAutoFix))]
 [JsonSerializable(typeof(BridgeGearRepair))]
 [JsonSerializable(typeof(List<BridgeTrait>))]
 [JsonSerializable(typeof(BridgeAnimals))]

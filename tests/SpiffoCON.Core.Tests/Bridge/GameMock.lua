@@ -36,6 +36,9 @@ end
 ArrayList = { new = function() return list({}) end }
 function instanceof(o, class) return type(o) == "table" and o.class == class end
 function writeLog(category, text) note("log " .. category .. ": " .. text) end
+-- the world's own data, saved with it (bridge v20)
+MODDATA = {}
+ModData = { getOrCreate = function(name) MODDATA[name] = MODDATA[name] or {}; return MODDATA[name] end }
 function sendAddItemToContainer(container, item) note("sendAdd " .. item.name) end
 function sendRemoveItemFromContainer(container, item) note("sendRemove " .. item.name .. " from " .. container.name) end
 function getSteamIDFromUsername(name) return "76561198000000001" end
@@ -66,7 +69,7 @@ local function item(fullType, name)
 	return it
 end
 -- the kinds of parts of an entity; each can be made from the script of an entity (bridge v15, all of them v19)
-local COMPONENT_TYPES = { "FluidContainer", "SpriteConfig", "UiConfig", "Resources", "DryingCraftLogic" }
+local COMPONENT_TYPES = { "FluidContainer", "SpriteConfig", "UiConfig", "Resources", "DryingCraftLogic", "MetaTag" }
 ComponentType = {}
 for _, name in ipairs(COMPONENT_TYPES) do
 	ComponentType[name] = setmetatable({ name = name,
@@ -890,6 +893,8 @@ function BUILT()
 	end
 	put(96, 101, builtThing("Drying Rack", "vegetation_drying_01_17", { "SpriteConfig", "UiConfig", "Resources", "DryingCraftLogic" }, true))
 	put(97, 101, builtThing("Drying Rack", "vegetation_drying_01_16", { "SpriteConfig" }, true))
+	-- one whose parts the game is still giving back from its memory (a MetaTag): not broken (bridge v20)
+	RACK_WAITING = put(101, 102, builtThing("Drying Rack", "vegetation_drying_01_17", { "MetaTag" }, true))
 end
 
 -- the parts of a built thing, by name, in order

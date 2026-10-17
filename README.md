@@ -277,6 +277,19 @@ instead.
   makes it (the parts of an object of several squares on its main one), and only what is missing
   is made again in place, empty: what a lost part held (the grain on a rack) went with it.
 
+  Why they break: while nobody is near, the game takes every part off a thing whose parts keep
+  working (drying, crafting, a furnace, water) and keeps them in the server's memory, saving the
+  thing without them; they reach the disk only with the server's full save (`save`, a clean
+  `quit`, or `SaveWorldEveryMinutes`, which is 0 unless set). A server killed before that loses
+  them. Restarting with `save` and `quit` (SpiffoCON's maintenance restart does) and setting
+  `SaveWorldEveryMinutes` make it rare.
+
+  Bridge v20 can do it by itself: **By itself**, next to the button, makes the bridge look every
+  10 minutes with players online (the first a minute after the first player is back on an empty
+  server) and fix what it finds, on the server, with SpiffoCON closed too. The switch is kept
+  with the world. A thing whose parts the game is still giving back is left alone; what it fixes
+  goes to the admin log and SpiffoCON tells it in the console and with a notification.
+
   The bridge runs while the server runs a game: an empty server with `PauseEmpty=true` is
   paused and the bridge waits; while it is connected to the server (RCON), SpiffoCON connects to
   the bridge by itself when someone joins.

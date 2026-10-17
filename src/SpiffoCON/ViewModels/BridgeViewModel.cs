@@ -276,6 +276,8 @@ public sealed partial class BridgeViewModel : ObservableObject
             _failures = 0;
             var w = snapshot.World;
             World = w;
+            if (BridgeVersion >= 20)
+                ShowAutoFix(w.AutoFix);
             WorldText = $"{w.Year}-{w.Month:00}-{w.Day:00} {w.Hour:00}:{w.Minute:00} in game · {w.Temperature:0.#} °C"
                 + (w.Rain > 0 ? $" · rain {w.Rain:P0}" : "") + (w.Fog > 0 ? $" · fog {w.Fog:P0}" : "")
                 + $" · {w.Players} online · {w.ZombiesLoaded} zombies loaded · world age {w.WorldAgeHours} h";
@@ -631,6 +633,7 @@ public sealed partial class BridgeViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(CanSetWeather));
         OnPropertyChanged(nameof(CanSetTime));
+        OnPropertyChanged(nameof(CanAutoFix));
     }
 
     /// <summary>Sets (or with <paramref name="reset"/> gives back to the game) the weather; null when it worked, else why not.</summary>
@@ -995,6 +998,9 @@ public sealed partial class BridgeViewModel : ObservableObject
         _playersAtLastCheck = players;
         if (BridgeVersion < 14 || players == 0)
             return;
+        // the bridge looks by itself and fixes what it finds: no alarm for what is about to be fixed
+        if (AutoFixOn)
+            return;
         if (_fluidsCheckedAt != default && (!back || DateTime.UtcNow - _fluidsCheckedAt < TimeSpan.FromMinutes(10)))
             return;
         _fluidsCheckedAt = DateTime.UtcNow;
@@ -1023,6 +1029,79 @@ public sealed partial class BridgeViewModel : ObservableObject
         {
             // a look nobody asked for: its failure is not news
         }
+    }
+
+    // ---- the bridge fixing them by itself (bridge v20) ----
+
+    /// <summary>The bridge fixes the broken containers and built things by itself, on the server, SpiffoCON open or not.</summary>
+    [ObservableProperty] private bool autoFixOn;
+
+    /// <summary>The switch can be used: bridge v20 connected.</summary>
+    public bool CanAutoFix => IsConnected && BridgeVersion >= 20;
+
+    // set from what the bridge says, not by the person: not sent back to it
+    bool _autoFixFromBridge;
+
+    // the last look of the bridge that was told, so each is told once
+    string? _autoFixToldAt;
+
+    partial void OnAutoFixOnChanged(bool value)
+    {
+        if (!_autoFixFromBridge)
+            _ = SetAutoFixAsync(value);
+    }
+
+    async Task SetAutoFixAsync(bool on)
+    {
+        if (!CanAutoFix || _client is not { } client)
+        {
+            StatusText = BridgeVersion < 20 && IsConnected
+                ? $"Fixing them by itself needs bridge v20 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+                : "Connect the bridge first.";
+            ShowAutoFix(null);
+            return;
+        }
+        try
+        {
+            var state = await client.AutoFixAsync(on);
+            if (!ReferenceEquals(client, _client))
+                return;
+            ShowAutoFix(state);
+            StatusText = state.Enabled
+                ? $"The bridge now looks every {state.Minutes} minutes with players online, and fixes the broken containers and built things it finds by itself. The first look is a minute from now."
+                : "The bridge no longer fixes them by itself.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            StatusText = "The bridge could not be switched: " + ex.Message;
+            ShowAutoFix(null);
+        }
+    }
+
+    /// <summary>What the bridge says about its own look: the switch as it is there, and its last fixes told once.</summary>
+    void ShowAutoFix(BridgeAutoFix? state)
+    {
+        _autoFixFromBridge = true;
+        try
+        {
+            AutoFixOn = state?.Enabled ?? false;
+        }
+        finally
+        {
+            _autoFixFromBridge = false;
+        }
+        if (state?.Last is not { At: { } at } last || at == _autoFixToldAt)
+            return;
+        _autoFixToldAt = at;
+        if (last.Fixed <= 0)
+            return;
+        FluidsNotice = "";
+        string when = long.TryParse(at, out var ms) ? DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime().ToString("HH:mm") : "";
+        string text = $"The bridge fixed by itself{(when.Length > 0 ? " at " + when : "")}: {last.Describe()}"
+            + (last.Failed > 0 ? $"; {last.Failed} could not be put right" : "")
+            + (last.Skipped > 0 ? $"; {last.Skipped} worn or attached left" : "") + ".";
+        _main.Log(ConsoleKind.Info, text);
+        _main.Notify(NotificationKind.Containers, "Broken containers or stations fixed", text);
     }
 
     // ---- what a player carries, repaired in one go (bridge v15) ----

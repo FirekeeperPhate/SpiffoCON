@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(19, await _client.PingAsync());
+        Assert.Equal(20, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -790,6 +790,55 @@ public sealed class BridgeScriptTests
         Assert.Equal("DryingCraftLogic,Resources,SpriteConfig,UiConfig", _game.DoString("return PARTS(RACK_ALL[1])").String);
         Assert.Equal("SpriteConfig", _game.DoString("return PARTS(RACK_ALL[4])").String);
         Assert.Equal(0, (await _client.FixFluidsAsync(apply: false, radius: 5, username: "rj")).Found);
+    }
+
+    [Fact]
+    public async Task Switched_on_the_bridge_fixes_broken_things_by_itself_every_ten_minutes()
+    {
+        _game.DoString("BUILT()");
+
+        // off until SpiffoCON switches it on: time goes by, nothing is touched
+        var off = await _client.AutoFixAsync(null);
+        Assert.Equal((false, 10), (off.Enabled, off.Minutes));
+        Assert.Null(off.Last);
+        _game.DoString("NOW = NOW + 30 * 60000");
+        await _client.PingAsync();
+        _game.DoString("NOW = NOW + 30 * 60000");
+        await _client.PingAsync();
+        Assert.Equal(5, (await _client.FixFluidsAsync(apply: false, radius: 5, username: "rj")).Found);
+
+        // on: kept with the world, written to the admin log; the first look a minute later
+        var on = await _client.AutoFixAsync(true);
+        Assert.True(on.Enabled);
+        Assert.True(_game.DoString("return MODDATA.SpiffoCONBridge.autoFix").Boolean);
+        Assert.Contains(Logged(), l => l == "log admin: SpiffoCON bridge: fixing broken containers and built things by itself: on");
+        await _client.PingAsync();
+        Assert.Null((await _client.AutoFixAsync(null)).Last);
+        _game.DoString("LOG = {}; NOW = NOW + 61000");
+        await _client.PingAsync();
+        var first = (await _client.AutoFixAsync(null)).Last;
+        Assert.NotNull(first?.At);
+        Assert.True(first!.Fixed >= 5);
+        Assert.Contains("2 × Drying Rack", first.Describe());
+        Assert.Contains(Logged(), l => l.StartsWith("log admin: SpiffoCON bridge: by itself, fixed "));
+        // the rack still waiting for its parts from the game's memory was left alone
+        Assert.Equal("MetaTag", _game.DoString("return PARTS(RACK_WAITING)").String);
+        Assert.Equal(0, (await _client.FixFluidsAsync(apply: false, radius: 5, username: "rj")).Found);
+
+        // ten minutes on, the next look: nothing to fix, nothing written
+        _game.DoString("LOG = {}; NOW = NOW + 10 * 60000");
+        await _client.PingAsync();
+        var second = (await _client.AutoFixAsync(null)).Last;
+        Assert.NotEqual(first.At, second?.At);
+        Assert.Equal(0, second!.Fixed);
+        Assert.DoesNotContain(Logged(), l => l.Contains("by itself, fixed"));
+
+        // off again: what breaks stays broken
+        Assert.False((await _client.AutoFixAsync(false)).Enabled);
+        _game.DoString("BUILT(); NOW = NOW + 30 * 60000");
+        await _client.PingAsync();
+        Assert.Equal(second.At, (await _client.AutoFixAsync(null)).Last?.At);
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SendAsync("autofix", "maybe"));
     }
 
     [Fact]
