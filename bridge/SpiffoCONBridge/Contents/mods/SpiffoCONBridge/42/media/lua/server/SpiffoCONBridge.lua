@@ -15,7 +15,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 20
+local VERSION = 21
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -1173,9 +1173,21 @@ end
 -- thirst are stats of the animal, 0 (fine) to 1; the game's own cheats set them the same way
 -- (Commands.animal.setHunger / setThirst). Animals inside a hutch or a trailer are not on a square: not listed.
 
+-- bridge v21: whether it has young in it and how far along, 0 to 1, as the game's own card of an animal says it; nil
+-- for those that can't: males, and the kinds that lay eggs (those are fertilized, not pregnant)
+local function pregnancyOf(a)
+	if not a:isFemale() or not a:getBabyType() or a:getEggsPerDay() > 0 then return nil end
+	local data = a:getData()
+	if not data:isPregnant() then return false end
+	local period = data:getPregnantPeriod()
+	return true, period > 0 and hundredths(data:getPregnancyTime() / period) or nil
+end
+
 local function animalInfo(a, place, holder)
 	local kind = try(function() return a:getAnimalType() end)
 	local breed = try(function() return a:getData():getBreed():getName() end)
+	local read, pregnant, along = pcall(pregnancyOf, a)
+	if not read then pregnant = nil end
 	return {
 		id = try(function() return a:getAnimalID() end),
 		type = kind,
@@ -1194,6 +1206,8 @@ local function animalInfo(a, place, holder)
 		female = try(function() return a:isFemale() end),
 		baby = try(function() return a:isBaby() end),
 		zone = try(function() local zone = a:getDZone() return zone and zone:getName() end),
+		pregnant = pregnant,
+		pregnancy = along,
 	}
 end
 

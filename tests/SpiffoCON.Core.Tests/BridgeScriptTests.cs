@@ -38,7 +38,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(20, await _client.PingAsync());
+        Assert.Equal(21, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -874,6 +874,12 @@ public sealed class BridgeScriptTests
         // a type the game has no name for is shown as it is
         Assert.Equal(("hen", "Hen", 0.75), (hen.TypeName, hen.Name, hen.Thirst));
         Assert.Equal(3, (await _client.AnimalsAsync(20)).Animals.Count);
+
+        // pregnant, how far along; not pregnant; a kind that lays eggs can't be
+        Assert.Equal((true, 0.45, "45%"), (cow.Pregnant, cow.Pregnancy, cow.PregnantText));
+        var other = (await _client.AnimalsAsync(20)).Animals.Single(a => a.Id == 5);
+        Assert.Equal((false, null, "No"), (other.Pregnant, other.Pregnancy, other.PregnantText));
+        Assert.Equal((null, null, ""), (hen.Pregnant, hen.Pregnancy, hen.PregnantText));
 
         // one animal, then all of them: the wild one and the far one are left as they were
         Assert.Equal(1, await _client.FeedAnimalsAsync(5, id: 2));

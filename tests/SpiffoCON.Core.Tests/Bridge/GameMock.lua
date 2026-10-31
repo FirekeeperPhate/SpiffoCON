@@ -936,7 +936,14 @@ function ANIMALS_HERE()
 		local a = { id = id, hunger = hunger, thirst = thirst }
 		a.getAnimalID = function() return id end
 		a.getAnimalType = function() return kind end
-		a.getData = function() return { getBreed = function() return { getName = function() return "holstein" end } end } end
+		a.getData = function() return {
+			getBreed = function() return { getName = function() return "holstein" end } end,
+			isPregnant = function() return id == 1 end,
+			getPregnancyTime = function() return 90 end,
+			getPregnantPeriod = function() return 200 end,
+		} end
+		a.getBabyType = function() return kind .. "_baby" end
+		a.getEggsPerDay = function() return kind == "hen" and 1 or 0 end
 		a.getFullName = function() return name end
 		a.getCustomName = function() return id == 1 and "Bessie" or nil end
 		a.getX = function() return x + 0.5 end

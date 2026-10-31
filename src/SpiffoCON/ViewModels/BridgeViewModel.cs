@@ -1558,11 +1558,12 @@ public sealed partial class BridgeViewModel : ObservableObject
             // the ones that need something first
             foreach (var a in read.Animals.OrderByDescending(a => Math.Max(a.Hunger ?? 0, a.Thirst ?? 0)).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase))
                 Animals.Add(a);
-            int hungry = read.Animals.Count(a => a.IsHungry), thirsty = read.Animals.Count(a => a.IsThirsty);
+            int hungry = read.Animals.Count(a => a.IsHungry), thirsty = read.Animals.Count(a => a.IsThirsty), pregnant = read.Animals.Count(a => a.Pregnant == true);
             AnimalsText = read.Loaded == 0 ? "Nobody is online: the server only keeps the surroundings of players."
                 : read.Animals.Count == 0 ? $"No animals of the players within {read.Radius} squares of the players online (wild ones, and those in a hutch or a trailer, are not listed)."
                 : $"{read.Animals.Count} animal{(read.Animals.Count == 1 ? "" : "s")} within {read.Radius} squares of the players online"
                     + (hungry + thirsty == 0 ? ", none hungry or thirsty" : $": {hungry} hungry, {thirsty} thirsty")
+                    + (pregnant > 0 ? $", {pregnant} pregnant" : "")
                     + $" · read at {DateTime.Now:HH:mm:ss}";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

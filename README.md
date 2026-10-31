@@ -221,7 +221,8 @@ instead.
     kind, position, health, hunger and thirst, the hungry and thirsty ones first; one or all of
     them fed and watered (hunger and thirst to nothing, as the game's own cheats set them), and the
     feeding troughs filled with water (one with feed in it is left). Animals inside a hutch or a
-    trailer are not on the map: they are listed since bridge v16.
+    trailer are not on the map: they are listed since bridge v16. Since bridge v21 the list says
+    which are pregnant and how far along (those that lay eggs are not told).
 
   Bridge v16 adds:
   - *Restore their needs…* in the player menu: hunger, thirst, tiredness, exertion, stress, panic,

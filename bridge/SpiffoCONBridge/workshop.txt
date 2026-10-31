@@ -3,7 +3,7 @@ id=3809683986
 title=SpiffoCON Bridge
 description=Server-side helper for SpiffoCON, a free remote admin tool for Project Zomboid servers (Windows).
 description=
-description=Bridge version 20.
+description=Bridge version 21.
 description=SpiffoCON, latest release: [url=https://github.com/FirekeeperPhate/SpiffoCON/releases/latest]github.com/FirekeeperPhate/SpiffoCON/releases/latest[/url]
 description=
 description=[h2]What it is for[/h2]
@@ -14,7 +14,7 @@ description=[*]open a player's sheet: health part by part, needs, traits, skills
 description=[*]heal a player, cure a zombie infection, take hunger, thirst and tiredness away, give or take a trait, set a skill level, set hair and beard;
 description=[*]repair, clean, fill or recharge the items a player carries, or remove them;
 description=[*]show a vehicle part by part and repair it (missing wheels and windows are put back), refuel it, give its key;
-description=[*]list the animals near the players, feed and water them, fill their troughs;
+description=[*]list the animals near the players, with which ones are pregnant, feed and water them, fill their troughs;
 description=[*]put right the buckets, bottles, troughs and rain collectors that can't hold liquids any more, and the drying racks, workbenches and other stations that can't be used any more, after a server crash; when switched on, also by itself every ten minutes, with SpiffoCON closed too;
 description=[*]clean up around a spot: zombie corpses, items on the ground, fires, wrecks;
 description=[*]set the weather and the time of day, put items on the ground, list and remove safehouses;

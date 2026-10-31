@@ -1264,6 +1264,12 @@ public sealed record BridgeAnimal
     /// <summary>Bridge v16: "hutch" or "trailer" for an animal inside one (its position is the hutch's, the trailer's).</summary>
     public string? Place { get; init; }
 
+    /// <summary>Bridge v21: whether it has young in it; null for those that can't (males, the kinds that lay eggs).</summary>
+    public bool? Pregnant { get; init; }
+
+    /// <summary>Bridge v21: how far along, 0 to 1.</summary>
+    public double? Pregnancy { get; init; }
+
     /// <summary>The zone, or where it is kept: "in a hutch", "in a trailer".</summary>
     [JsonIgnore]
     public string WhereText => Place switch
@@ -1282,6 +1288,9 @@ public sealed record BridgeAnimal
     [JsonIgnore] public string HealthText => Percent(Health);
     [JsonIgnore] public string HungerText => Percent(Hunger);
     [JsonIgnore] public string ThirstText => Percent(Thirst);
+
+    /// <summary>How far along ("45%"), "No", or nothing for those that can't be.</summary>
+    [JsonIgnore] public string PregnantText => Pregnant switch { true => Pregnancy is null ? "Yes" : Percent(Pregnancy), false => "No", _ => "" };
 
     /// <summary>Hungry or thirsty enough to worry about.</summary>
     [JsonIgnore] public bool IsHungry => Hunger is >= 0.6;

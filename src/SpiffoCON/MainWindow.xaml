@@ -1525,6 +1525,7 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
+                                        <GridViewColumn Header="Pregnant" Width="72" DisplayMemberBinding="{Binding PregnantText}" />
                                         <GridViewColumn Header="Where" Width="140" DisplayMemberBinding="{Binding WhereText}" />
                                         <GridViewColumn Width="80">
                                             <GridViewColumn.CellTemplate>
