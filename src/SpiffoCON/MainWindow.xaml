@@ -1691,6 +1691,8 @@
                                   ToolTip="Where players died, a red cross each: the last 100 the bridge keeps (bridge v8)" />
                         <CheckBox Content="Safehouses" IsChecked="{Binding ShowSafehouses}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="The players' safehouses as green areas, with the owner's name (bridge v7)" />
+                        <CheckBox Content="Animal zones" IsChecked="{Binding ShowAnimalZones}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
+                                  ToolTip="The zones designated for animals as orange areas, with their names, all over the map (bridge v22)" />
                         <CheckBox Content="Follow" IsChecked="{Binding Follow}" Margin="12,0,0,0" MinWidth="0" VerticalAlignment="Center"
                                   ToolTip="Keep the selected player in the middle of the map as they move" />
                         <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
@@ -1703,6 +1705,10 @@
                         <TextBlock Text="floor" VerticalAlignment="Center" Margin="8,0,0,0" />
                         <TextBox Text="{Binding HordeFloor, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
                                  ToolTip="The floor Spawn zombies here puts them on: 0 the ground floor, 1 the one above, -1 a basement. Above the ground keep the radius small: one landing outside the building falls to the floor below. Removing zombies clears every floor (bridge v18)" />
+                        <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
+                        <TextBlock Text="Animals" VerticalAlignment="Center" ToolTip="For the right-click menu: how many animals Put an animal here creates" />
+                        <TextBox Text="{Binding AnimalCount, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberField}" Margin="8,0,0,0"
+                                 ToolTip="How many animals Put an animal here creates (1-20)" />
                         <Border Style="{StaticResource ToolSeparatorLine}" Height="24" />
                         <Button Content="Download from server" Command="{Binding DownloadCommand}" Margin="0,0,8,0" VerticalAlignment="Center"
                                 Visibility="{Binding CanDownload, Converter={StaticResource BoolToVisibility}}"
@@ -1720,6 +1726,7 @@
                     <Border Grid.Row="1" CornerRadius="6" ClipToBounds="True" Background="#18808080">
                         <Grid>
                             <controls:WorldMapView x:Name="MapView" ContextMenuOpening="MapView_ContextMenuOpening" Scene="{Binding Scene}" Players="{Binding Bridge.Players}" Vehicles="{Binding Bridge.Vehicles}" Safehouses="{Binding Bridge.Safehouses}" ShowSafehouses="{Binding ShowSafehouses}"
+                                                   AnimalZones="{Binding Bridge.AnimalZones}" ShowAnimalZones="{Binding ShowAnimalZones}"
                                                    Deaths="{Binding Bridge.Deaths}" ShowDeaths="{Binding ShowDeaths}" ZombieCells="{Binding Bridge.ZombieCells}" ShowZombies="{Binding ShowZombies}"
                                                    ShowVehicles="{Binding ShowVehicles}" Satellite="{Binding Satellite}" SelectedPlayer="{Binding SelectedPlayer}"
                                                    PointerText="{Binding PointerText}" ContextSquare="{Binding ContextSquare}">
@@ -1750,6 +1757,16 @@
                                                     <Setter Property="Header" Value="{Binding Name}" />
                                                     <Setter Property="Command" Value="{Binding DataContext.SpawnKitCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                                     <Setter Property="CommandParameter" Value="{Binding}" />
+                                                </Style>
+                                            </MenuItem.ItemContainerStyle>
+                                        </MenuItem>
+                                        <MenuItem Header="{Binding SpawnAnimalText}" ItemsSource="{Binding AnimalMenu}" IsEnabled="{Binding HasAnimalMenu}" ToolTipService.ShowOnDisabled="True"
+                                                  ToolTip="New animals on this square, as many as the Animals box says (bridge v22; only near a player, on a free square)">
+                                            <MenuItem.ItemContainerStyle>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                    <Setter Property="Header" Value="{Binding Header}" />
+                                                    <Setter Property="ItemsSource" Value="{Binding Children}" />
+                                                    <Setter Property="Command" Value="{Binding Command}" />
                                                 </Style>
                                             </MenuItem.ItemContainerStyle>
                                         </MenuItem>

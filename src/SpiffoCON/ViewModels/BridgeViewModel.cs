@@ -158,6 +158,8 @@ public sealed partial class BridgeViewModel : ObservableObject
         _allDeaths = [];
         Deaths.Clear();
         ZombieCells.Clear();
+        AnimalZones.Clear();
+        AnimalKinds = [];
         _lastDeath = null;
         _client = new BridgeClient(files);
         // a new connection: the containers are looked at again, the animals read again
@@ -271,7 +273,7 @@ public sealed partial class BridgeViewModel : ObservableObject
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            var snapshot = await client.SnapshotAsync(timeout.Token, safehouses: BridgeVersion >= 7, deathsAndZombies: BridgeVersion >= 8);
+            var snapshot = await client.SnapshotAsync(timeout.Token, safehouses: BridgeVersion >= 7, deathsAndZombies: BridgeVersion >= 8, animalZones: BridgeVersion >= 22);
             // connected to another folder or server meanwhile: this answer is not for the lists any more
             if (!ReferenceEquals(client, _client))
                 return;
@@ -304,8 +306,16 @@ public sealed partial class BridgeViewModel : ObservableObject
                 foreach (var cell in cells)
                     ZombieCells.Add(cell);
             }
+            if (snapshot.AnimalZones is { } zones)
+            {
+                AnimalZones.Clear();
+                foreach (var zone in zones)
+                    AnimalZones.Add(zone);
+            }
             if (snapshot.Deaths is { } deaths)
                 ShowDeaths(deaths);
+            if (BridgeVersion >= 22 && AnimalKinds.Count == 0)
+                await ReadAnimalKindsAsync(client);
             CheckFluidsWhenDue(client);
             if (BridgeVersion >= 21 && w.Players > 0 && _main.NotifyBirths && DateTime.UtcNow >= _birthsLookAt)
                 await LookForBirthsAsync(client);
@@ -672,6 +682,12 @@ public sealed partial class BridgeViewModel : ObservableObject
     /// <summary>The zombies of the loaded areas, per 10 x 10 squares (v8).</summary>
     public ObservableCollection<BridgeZombieCell> ZombieCells { get; } = [];
 
+    /// <summary>The zones designated for animals, for the map (bridge v22).</summary>
+    public ObservableCollection<BridgeAnimalZone> AnimalZones { get; } = [];
+
+    /// <summary>The kinds of animal the server knows, read once a connection (bridge v22).</summary>
+    [ObservableProperty] private IReadOnlyList<BridgeAnimalKind> animalKinds = [];
+
     /// <summary>The newest death seen (null: none read yet, so the first list is the past, not news).</summary>
     long? _lastDeath;
 
@@ -898,6 +914,43 @@ public sealed partial class BridgeViewModel : ObservableObject
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return "The bridge could not put the items down: " + ex.Message;
+        }
+    }
+
+    // (not read now: the next refresh asks again; only the map's menu waits for it)
+    async Task ReadAnimalKindsAsync(BridgeClient client)
+    {
+        try
+        {
+            var kinds = await client.AnimalKindsAsync();
+            if (ReferenceEquals(client, _client))
+                AnimalKinds = kinds;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+    }
+
+    /// <summary>Why animals can't be put down now (null: they can): that came with bridge v22.</summary>
+    public string? V22Problem =>
+        _client is null || !IsConnected ? "This is done through the SpiffoCON Bridge: connect it in the Bridge tab."
+        : BridgeVersion < 22 ? $"This needs bridge v22 (the server runs v{BridgeVersion}): the Workshop item has to be updated and the server restarted."
+        : null;
+
+    /// <summary>New animals on a square (ground floor), after asking.</summary>
+    internal async Task<string?> SpawnAnimalAsync(BridgeAnimalKind kind, BridgeAnimalBreed breed, int x, int y, int count)
+    {
+        if (V22Problem is { } problem)
+            return problem;
+        string what = $"{count} × {kind.Name}" + (kind.Breeds.Count > 1 ? $" ({breed.Name})" : "");
+        if (_main.Confirm?.Invoke($"Put {what} at {x}, {y}?") != true)
+            return null;
+        try
+        {
+            int done = await _client!.SpawnAnimalAsync(kind.Type, breed.Id, x, y, 0, count);
+            return $"{done} × {kind.Name} put at {x}, {y}.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return "The bridge could not put the animals down: " + ex.Message;
         }
     }
 

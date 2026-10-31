@@ -607,6 +607,21 @@ public sealed partial class BridgeClient(IBridgeFiles files)
         return data.Deserialize(BridgeJson.Default.BridgeSpawn) ?? new BridgeSpawn();
     }
 
+    /// <summary>The most animals the bridge puts down at once (its MAX_ANIMALS).</summary>
+    public const int MaxAnimals = 20;
+
+    /// <summary>The kinds of animal the server knows, with their breeds (bridge v22).</summary>
+    public async Task<IReadOnlyList<BridgeAnimalKind>> AnimalKindsAsync() =>
+        Deserialize(await SendAsync("animalkinds").ConfigureAwait(false), BridgeJson.Default.ListBridgeAnimalKind);
+
+    /// <summary>New animals on a square (bridge v22); it must be loaded, near a player, and free.</summary>
+    public async Task<int> SpawnAnimalAsync(string type, string breed, int x, int y, int z, int count)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var data = await SendAsync("spawnanimal", type, breed, x.ToString(inv), y.ToString(inv), z.ToString(inv), count.ToString(inv)).ConfigureAwait(false);
+        return data.Deserialize(BridgeJson.Default.BridgeAnimalSpawn)?.Spawned ?? 0;
+    }
+
     /// <summary>The burnt and smashed vehicles within a radius: counted, or with <paramref name="apply"/> removed.</summary>
     public async Task<BridgeWrecks> RemoveWrecksAsync(int x, int y, int radius, bool apply, string? aroundPlayer = null)
     {
@@ -694,7 +709,8 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     /// <summary>World, players and vehicles in one round trip.</summary>
     /// <param name="safehouses">Also the safehouses (bridge v7: an older bridge would answer "unknown action").</param>
     /// <param name="deathsAndZombies">Also the deaths and the zombies per area (bridge v8).</param>
-    public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default, bool safehouses = false, bool deathsAndZombies = false)
+    /// <param name="animalZones">Also the animal zones (bridge v22, which has all of the above too).</param>
+    public async Task<BridgeSnapshot> SnapshotAsync(CancellationToken ct = default, bool safehouses = false, bool deathsAndZombies = false, bool animalZones = false)
     {
         var requests = new List<(string, string[])> { ("world", []), ("players", []), ("vehicles", []) };
         // always in these places: the replies are read by position
@@ -705,11 +721,13 @@ public sealed partial class BridgeClient(IBridgeFiles files)
             requests.Add(("deaths", []));
             requests.Add(("zombiecells", []));
         }
+        if (animalZones)
+            requests.Add(("animalzones", []));
         var replies = await SendAsync(requests, ct).ConfigureAwait(false);
         // one part failing (bridge v3 on B42 can't list vehicles) must not hide the others
         if (replies.All(r => !r.Ok))
             throw new BridgeException(replies[0].Error ?? "The bridge reported an error.");
-        var problems = new[] { "world", "players", "vehicles", safehouses ? "safehouses" : "ping", "deaths", "zombies" }.Zip(replies)
+        var problems = new[] { "world", "players", "vehicles", safehouses ? "safehouses" : "ping", "deaths", "zombies", "animal zones" }.Zip(replies)
             .Where(p => !p.Second.Ok).Select(p => $"{p.First}: {p.Second.Error}").ToList();
         return new BridgeSnapshot(
             replies[0].Ok ? replies[0].Data.Deserialize(BridgeJson.Default.BridgeWorld) ?? new BridgeWorld() : new BridgeWorld(),
@@ -719,6 +737,7 @@ public sealed partial class BridgeClient(IBridgeFiles files)
             Safehouses = safehouses && replies.Count > 3 && replies[3].Ok ? Deserialize(replies[3].Data, BridgeJson.Default.ListBridgeSafehouse) : null,
             Deaths = replies.Count > 4 && replies[4].Ok ? Deserialize(replies[4].Data, BridgeJson.Default.ListBridgeDeath) : null,
             ZombieCells = replies.Count > 5 && replies[5].Ok ? Deserialize(replies[5].Data, BridgeJson.Default.ListBridgeZombieCell) : null,
+            AnimalZones = replies.Count > 6 && replies[6].Ok ? Deserialize(replies[6].Data, BridgeJson.Default.ListBridgeAnimalZone) : null,
             Problem = problems.Count == 0 ? null : string.Join("; ", problems),
         };
     }
@@ -756,6 +775,9 @@ public sealed record BridgeSnapshot(BridgeWorld World, IReadOnlyList<BridgePlaye
 
     /// <summary>The zombies of the loaded areas per 10 x 10 squares (bridge v8); null when not asked for.</summary>
     public IReadOnlyList<BridgeZombieCell>? ZombieCells { get; init; }
+
+    /// <summary>The zones designated for animals (bridge v22); null when not asked for.</summary>
+    public IReadOnlyList<BridgeAnimalZone>? AnimalZones { get; init; }
 }
 
 public sealed record BridgePlayer
@@ -1348,6 +1370,45 @@ public sealed record BridgeAnimal
     [JsonIgnore] public bool IsThirsty => Thirst is >= 0.6;
 }
 
+/// <summary>A zone players designated for animals; a pasture of several joined zones is one of these each.</summary>
+public sealed record BridgeAnimalZone
+{
+    public string? Name { get; init; }
+    public int? X { get; init; }
+    public int? Y { get; init; }
+    public int? Z { get; init; }
+    public int? W { get; init; }
+    public int? H { get; init; }
+
+    /// <summary>"North pasture, 20 x 15".</summary>
+    [JsonIgnore]
+    public string Description => $"{(string.IsNullOrEmpty(Name) ? "Animal zone" : Name)}, {W} x {H}" + (Z is { } z and not 0 ? $", floor {z}" : "");
+}
+
+public sealed record BridgeAnimalKind
+{
+    /// <summary>The game's type ("cow", "hen"), and its name for players.</summary>
+    public string Type { get; init; } = "";
+    public string Name { get; init; } = "";
+
+    /// <summary>The group it is filed under ("cow" for cows, bulls and calves), and its name for players.</summary>
+    public string? Group { get; init; }
+    public string? GroupName { get; init; }
+    public List<BridgeAnimalBreed> Breeds { get => _breeds ?? []; init => _breeds = value; }
+    readonly List<BridgeAnimalBreed>? _breeds;
+}
+
+public sealed record BridgeAnimalBreed
+{
+    public string Id { get; init; } = "";
+    public string Name { get; init; } = "";
+}
+
+public sealed record BridgeAnimalSpawn
+{
+    public int Spawned { get; init; }
+}
+
 public sealed record BridgeBrokenFluid
 {
     /// <summary>The player who carries it; empty for one in the world.</summary>
@@ -1610,6 +1671,9 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgePlayerDetails))]
 [JsonSerializable(typeof(BridgeGroundItems))]
 [JsonSerializable(typeof(BridgeSpawn))]
+[JsonSerializable(typeof(List<BridgeAnimalZone>))]
+[JsonSerializable(typeof(List<BridgeAnimalKind>))]
+[JsonSerializable(typeof(BridgeAnimalSpawn))]
 [JsonSerializable(typeof(List<BridgeDeath>))]
 [JsonSerializable(typeof(List<BridgeZombieCell>))]
 [JsonSerializable(typeof(BridgeWrecks))]

@@ -130,6 +130,8 @@ public sealed partial class MapViewModel : ObservableObject
     {
         if (e.PropertyName == nameof(BridgeViewModel.IsConnected))
             OnPropertyChanged(nameof(BridgeHint));
+        else if (e.PropertyName == nameof(BridgeViewModel.AnimalKinds))
+            BuildAnimalMenu();
     }
 
     bool _playersQueued;
@@ -551,6 +553,54 @@ public sealed partial class MapViewModel : ObservableObject
             StatusText = result;
     }
 
+    // ---- animals (bridge v22) ----
+
+    [ObservableProperty] private bool showAnimalZones = true;
+
+    /// <summary>How many "Put an animal here" creates.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpawnAnimalText))]
+    private string animalCount = "1";
+
+    /// <summary>The "Put an animal here" submenu: group, kind, breed (a kind of one breed is the last step).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAnimalMenu), nameof(SpawnAnimalText))]
+    private IReadOnlyList<AnimalMenuItem> animalMenu = [];
+
+    public bool HasAnimalMenu => AnimalMenu.Count > 0;
+
+    public string SpawnAnimalText => !HasAnimalMenu ? "Put an animal here (needs bridge v22)"
+        : int.TryParse(AnimalCount.Trim(), out var count) && count > 1 ? $"Put {count} animals here" : "Put an animal here";
+
+    void BuildAnimalMenu()
+    {
+        var byName = StringComparer.CurrentCultureIgnoreCase;
+        AnimalMenu = Bridge.AnimalKinds.Where(k => k.Breeds.Count > 0)
+            .GroupBy(k => k.GroupName ?? k.Group ?? "")
+            .OrderBy(g => g.Key, byName)
+            .Select(g => new AnimalMenuItem(MenuText(g.Key), [.. g.OrderBy(k => k.Name, byName).Select(KindItem)]))
+            .ToList();
+
+        AnimalMenuItem KindItem(BridgeAnimalKind kind) => kind.Breeds.Count == 1
+            ? Leaf(kind, kind.Breeds[0], kind.Name)
+            : new(MenuText(kind.Name), [.. kind.Breeds.OrderBy(b => b.Name, byName).Select(b => Leaf(kind, b, b.Name))]);
+
+        AnimalMenuItem Leaf(BridgeAnimalKind kind, BridgeAnimalBreed breed, string header) =>
+            new(MenuText(header), null, new AsyncRelayCommand(() => SpawnAnimalAsync(kind, breed)));
+    }
+
+    async Task SpawnAnimalAsync(BridgeAnimalKind kind, BridgeAnimalBreed breed)
+    {
+        if (!int.TryParse(AnimalCount.Trim(), out var count) || count < 1 || count > BridgeClient.MaxAnimals)
+        {
+            StatusText = $"Animals: a whole number from 1 to {BridgeClient.MaxAnimals}.";
+            return;
+        }
+        int x = (int)ContextSquare.X, y = (int)ContextSquare.Y;
+        if (await Bridge.SpawnAnimalAsync(kind, breed, x, y, count) is { } result)
+            StatusText = result;
+    }
+
     // ---- safehouses (bridge v7) ----
 
     [ObservableProperty]
@@ -687,3 +737,6 @@ public sealed partial class MapViewModel : ObservableObject
         Scene?.Dispose();
     }
 }
+
+/// <summary>A step of the "Put an animal here" submenu: with <see cref="Children"/> a menu, with <see cref="Command"/> the last step.</summary>
+public sealed record AnimalMenuItem(string Header, IReadOnlyList<AnimalMenuItem>? Children = null, System.Windows.Input.ICommand? Command = null);

@@ -100,6 +100,25 @@ public sealed class WorldMapView : FrameworkElement
         set => SetValue(ShowDeathsProperty, value);
     }
 
+    /// <summary>The zones designated for animals (bridge v22), orange.</summary>
+    public static readonly DependencyProperty AnimalZonesProperty = DependencyProperty.Register(
+        nameof(AnimalZones), typeof(IEnumerable), typeof(WorldMapView), new PropertyMetadata(null, OnCollectionChanged));
+
+    public IEnumerable? AnimalZones
+    {
+        get => (IEnumerable?)GetValue(AnimalZonesProperty);
+        set => SetValue(AnimalZonesProperty, value);
+    }
+
+    public static readonly DependencyProperty ShowAnimalZonesProperty = DependencyProperty.Register(
+        nameof(ShowAnimalZones), typeof(bool), typeof(WorldMapView), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public bool ShowAnimalZones
+    {
+        get => (bool)GetValue(ShowAnimalZonesProperty);
+        set => SetValue(ShowAnimalZonesProperty, value);
+    }
+
     /// <summary>The zombies of the loaded areas per 10 x 10 squares (bridge v8): red, deeper where there are more.</summary>
     public static readonly DependencyProperty ZombieCellsProperty = DependencyProperty.Register(
         nameof(ZombieCells), typeof(IEnumerable), typeof(WorldMapView), new PropertyMetadata(null, OnCollectionChanged));
@@ -363,6 +382,8 @@ public sealed class WorldMapView : FrameworkElement
                 + ViewModels.BridgeViewModel.DescribeKiller(death.Killer);
         else if (ShowSafehouses && SafehouseAt(world) is { } safehouse)
             text += " · " + ViewModels.BridgeViewModel.Describe(safehouse);
+        if (ShowAnimalZones && AnimalZoneAt(world) is { } zone)
+            text += " · " + zone.Description;
         if (ShowZombies && ZombieCellAt(world) is { } cell)
             text += $" · {cell.N} zombie{(cell.N == 1 ? "" : "s")} in this area";
         PointerText = text;
@@ -386,6 +407,11 @@ public sealed class WorldMapView : FrameworkElement
     /// <summary>The safehouse a square is in.</summary>
     BridgeSafehouse? SafehouseAt(Point world) =>
         Safehouses?.OfType<BridgeSafehouse>().FirstOrDefault(s => s is { X: { } x, Y: { } y, W: { } w, H: { } h }
+            && world.X >= x && world.X < x + w && world.Y >= y && world.Y < y + h);
+
+    /// <summary>The animal zone a square is in.</summary>
+    BridgeAnimalZone? AnimalZoneAt(Point world) =>
+        AnimalZones?.OfType<BridgeAnimalZone>().FirstOrDefault(z => z is { X: { } x, Y: { } y, W: { } w, H: { } h }
             && world.X >= x && world.X < x + w && world.Y >= y && world.Y < y + h);
 
     /// <summary>The player whose marker is at a point of the view (for the right-click menu).</summary>
@@ -443,6 +469,8 @@ public sealed class WorldMapView : FrameworkElement
 
         if (ShowZombies)
             DrawZombies(dc);
+        if (ShowAnimalZones)
+            DrawAnimalZones(dc);
         if (ShowSafehouses)
             DrawSafehouses(dc);
         DrawLabels(dc, scene, satellite);
@@ -711,33 +739,42 @@ public sealed class WorldMapView : FrameworkElement
     static readonly Brush SafehouseFill = Frozen(Color.FromArgb(0x38, 0x2E, 0xCC, 0x71));
     static readonly Pen SafehouseOutline = Frozen(new Pen(Frozen(Color.FromRgb(0x1E, 0x9E, 0x55)), 2));
 
+    static readonly Brush AnimalZoneFill = Frozen(Color.FromArgb(0x38, 0xF3, 0x9C, 0x12));
+    static readonly Pen AnimalZoneOutline = Frozen(new Pen(Frozen(Color.FromRgb(0xC8, 0x7A, 0x0A)), 2));
+
     void DrawSafehouses(DrawingContext dc)
     {
-        if (Safehouses is null)
+        foreach (var s in Safehouses?.OfType<BridgeSafehouse>() ?? [])
+            if (s is { X: { } x, Y: { } y, W: { } w, H: { } h })
+                DrawArea(dc, x, y, w, h, s.Owner, SafehouseFill, SafehouseOutline);
+    }
+
+    void DrawAnimalZones(DrawingContext dc)
+    {
+        foreach (var z in AnimalZones?.OfType<BridgeAnimalZone>() ?? [])
+            if (z is { X: { } x, Y: { } y, W: { } w, H: { } h })
+                DrawArea(dc, x, y, w, h, z.Name, AnimalZoneFill, AnimalZoneOutline);
+    }
+
+    void DrawArea(DrawingContext dc, int x, int y, int w, int h, string? name, Brush fill, Pen outline)
+    {
+        var rect = new Rect(ToScreen(x, y), ToScreen(x + w, y + h));
+        if (rect.Right < 0 || rect.Bottom < 0 || rect.Left > ActualWidth || rect.Top > ActualHeight)
             return;
-        double dip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        foreach (var s in Safehouses.OfType<BridgeSafehouse>())
+        // far out it is a dot: kept visible
+        if (rect.Width < 8 || rect.Height < 8)
+            rect.Inflate(Math.Max(0, (8 - rect.Width) / 2), Math.Max(0, (8 - rect.Height) / 2));
+        dc.DrawRectangle(fill, outline, rect);
+        // its name, once there is room for it
+        if (rect.Width < 60 || string.IsNullOrEmpty(name))
+            return;
+        var text = new FormattedText(name, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip)
         {
-            if (s is not { X: { } x, Y: { } y, W: { } w, H: { } h })
-                continue;
-            var rect = new Rect(ToScreen(x, y), ToScreen(x + w, y + h));
-            if (rect.Right < 0 || rect.Bottom < 0 || rect.Left > ActualWidth || rect.Top > ActualHeight)
-                continue;
-            // far out it is a dot: kept visible
-            if (rect.Width < 8 || rect.Height < 8)
-                rect.Inflate(Math.Max(0, (8 - rect.Width) / 2), Math.Max(0, (8 - rect.Height) / 2));
-            dc.DrawRectangle(SafehouseFill, SafehouseOutline, rect);
-            // whose it is, once there is room for it
-            if (rect.Width < 60 || string.IsNullOrEmpty(s.Owner))
-                continue;
-            var text = new FormattedText(s.Owner, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, Brushes.White, dip)
-            {
-                MaxTextWidth = Math.Max(1, rect.Width - 6), MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis,
-            };
-            var box = new Rect(Math.Round(rect.Left + 2), Math.Round(rect.Top + 2), text.Width + 6, text.Height + 2);
-            dc.DrawRoundedRectangle(NameBackground, null, box, 3, 3);
-            dc.DrawText(text, new Point(box.X + 3, box.Y + 1));
-        }
+            MaxTextWidth = Math.Max(1, rect.Width - 6), MaxLineCount = 1, Trimming = TextTrimming.CharacterEllipsis,
+        };
+        var box = new Rect(Math.Round(rect.Left + 2), Math.Round(rect.Top + 2), text.Width + 6, text.Height + 2);
+        dc.DrawRoundedRectangle(NameBackground, null, box, 3, 3);
+        dc.DrawText(text, new Point(box.X + 3, box.Y + 1));
     }
 
     void DrawVehicles(DrawingContext dc)

@@ -172,6 +172,7 @@ SPAWNED_AT = {}
 local function square(x, y, z)
 	local sq = { x = x, y = y, z = z, corpses = {}, ground = {}, fires = {}, furniture = {}, animals = {} }
 	sq.getAnimals = function() return list(sq.animals) end
+	sq.isFree = function(self, others) return not sq.blocked end
 	sq.getX = function() return x end
 	sq.getY = function() return y end
 	sq.getZ = function() return z end
@@ -1140,3 +1141,45 @@ function GENERATORS()
 	GEN_A = generator(101, 101, 0, 2.5, 40, false, true)
 	GEN_B = generator(103, 104, 1, 0, 0, false, false)
 end
+-- ---- bridge v22: animal zones, the kinds of animal, new animals ----
+ANIMAL_ZONES = {}
+function animalZone(name, x, y, z, w, h)
+	local zone = {}
+	zone.getName = function() return name end
+	zone.getX = function() return x end
+	zone.getY = function() return y end
+	zone.getZ = function() return z end
+	zone.getW = function() return w end
+	zone.getH = function() return h end
+	ANIMAL_ZONES[#ANIMAL_ZONES + 1] = zone
+end
+DesignationZoneAnimal = { getAllZones = function() return list(ANIMAL_ZONES) end }
+
+local function animalDef(kind, group, breeds)
+	local def = {}
+	def.getAnimalType = function() return kind end
+	def.getGroup = function() return group end
+	def.getBreeds = function()
+		local all = {}
+		for _, name in ipairs(breeds) do all[#all + 1] = { getName = function() return name end } end
+		return list(all)
+	end
+	def.getBreedByName = function(self, name)
+		for _, b in ipairs(breeds) do if b == name then return { getName = function() return name end } end end
+		return nil
+	end
+	return def
+end
+local ANIMAL_DEFS = { animalDef("cow", "cow", { "angus", "holstein" }), animalDef("hen", "chicken", { "leghorn" }) }
+function getAllAnimalsDefinitions() return list(ANIMAL_DEFS) end
+AnimalDefinitions = {
+	getDef = function(kind)
+		for _, def in ipairs(ANIMAL_DEFS) do if def.getAnimalType() == kind then return def end end
+		return nil
+	end,
+}
+NEW_ANIMALS = {}
+function addAnimal(cell, x, y, z, kind, breed)
+	return { addToWorld = function() NEW_ANIMALS[#NEW_ANIMALS + 1] = kind .. " " .. breed.getName() .. " " .. x .. "," .. y .. "," .. z end }
+end
+function blockSquare(x, y, z) getCell():getGridSquare(x, y, z).blocked = true end

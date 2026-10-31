@@ -15,7 +15,7 @@
 -- starts are ignored, so nothing runs twice after a restart.
 if not isServer() then return end
 
-local VERSION = 21
+local VERSION = 22
 local IN_FILE = "spiffocon_in.txt"
 local OUT_FILE = "spiffocon_out.txt"
 local POLL_MS = 1000
@@ -2062,6 +2062,80 @@ local function spawnItems(x, y, z, list)
 	return { spawned = spawned, unknown = unknown }
 end
 
+-- ---- animal zones and new animals (bridge v22) ----
+
+-- the most animals in one request: each one is a character the server keeps moving
+local MAX_ANIMALS = 20
+
+-- The zones players have designated for animals, all of them: the server keeps them with the world, not with
+-- the squares. A pasture made of several joined zones comes as one entry each, as the game keeps them.
+local function listAnimalZones()
+	local result = array()
+	local zones = DesignationZoneAnimal.getAllZones()
+	for i = 0, zones:size() - 1 do
+		local zone = zones:get(i)
+		result[#result + 1] = {
+			name = try(function() return zone:getName() end),
+			x = try(function() return zone:getX() end),
+			y = try(function() return zone:getY() end),
+			z = try(function() return zone:getZ() end),
+			w = try(function() return zone:getW() end),
+			h = try(function() return zone:getH() end),
+		}
+	end
+	return result
+end
+
+-- Every kind the server knows, mods' too, with its breeds and the group the game's debug menu files it under.
+local function listAnimalKinds()
+	local result = array()
+	local defs = getAllAnimalsDefinitions()
+	for i = 0, defs:size() - 1 do
+		local def = defs:get(i)
+		local kind, group = def:getAnimalType(), def:getGroup()
+		local breeds = array()
+		local list = def:getBreeds()
+		for b = 0, list:size() - 1 do
+			local id = list:get(b):getName()
+			breeds[#breeds + 1] = { id = id, name = try(function() return getTextOrNull("IGUI_Breed_" .. id) end) or id }
+		end
+		result[#result + 1] = {
+			type = kind,
+			name = try(function() return getTextOrNull("IGUI_AnimalType_" .. kind) end) or kind,
+			group = group,
+			groupName = try(function() return getTextOrNull("IGUI_Animal_Group_" .. tostring(group)) end) or group,
+			breeds = breeds,
+		}
+	end
+	return result
+end
+
+-- spawnanimal <type> <breed> <x> <y> <z> <count>: new animals on that square, as the game's own "animal add"
+-- client command does for an admin. The square must be loaded, that is near a player, and free: the zone's own
+-- random free square asks the same (IsoGridSquare.isFree).
+local function spawnAnimal(kind, breed, x, y, z, count)
+	x, y, z, count = tonumber(x), tonumber(y), tonumber(z) or 0, tonumber(count) or 1
+	-- written this way round so that "nan" fails too
+	if not (x and y and math.abs(x) < 1e7 and math.abs(y) < 1e7 and math.abs(z) < 64) then error("spawnanimal needs x, y and z") end
+	if not (count >= 1 and count <= MAX_ANIMALS) then error("spawnanimal: from 1 to " .. MAX_ANIMALS .. " animals at once") end
+	if not kind or kind == "" then error("spawnanimal needs the type of animal") end
+	x, y, z, count = math.floor(x), math.floor(y), math.floor(z), math.floor(count)
+	local def = try(function() return AnimalDefinitions.getDef(kind) end)
+	if not def then error("the server does not know the animal \"" .. kind .. "\"") end
+	local chosen = try(function() return def:getBreedByName(breed) end)
+	if not chosen then error("the animal \"" .. kind .. "\" has no breed \"" .. tostring(breed) .. "\"") end
+	local sq = getCell():getGridSquare(x, y, z)
+	if not sq then error("the square " .. x .. ", " .. y .. " is not loaded on the server (it only keeps the surroundings of players)") end
+	if not sq:isFree(false) then error("the square " .. x .. ", " .. y .. " is not free: a wall, a tree or water") end
+	local spawned = 0
+	for _ = 1, count do
+		addAnimal(getCell(), x, y, z, kind, chosen):addToWorld()
+		spawned = spawned + 1
+	end
+	audit("put " .. spawned .. " " .. kind .. " (" .. tostring(breed) .. ") at " .. x .. ", " .. y .. ", " .. z)
+	return { spawned = spawned }
+end
+
 -- ---- deaths (bridge v8) ----
 -- IsoGameCharacter.DoDeath runs on the server for a player who dies (it writes "<name> died at" to the
 -- user log there) and begins with OnDeath, which fires OnCharacterDeath: kept here, the last
@@ -2870,6 +2944,9 @@ local actions = {
 	cureinfection = cureInfection,
 	sethair = setHair,
 	spawnitems = spawnItems,
+	animalzones = listAnimalZones,
+	animalkinds = listAnimalKinds,
+	spawnanimal = spawnAnimal,
 	deaths = listDeaths,
 	zombiecells = zombieCells,
 	removewrecks = removeWrecks,

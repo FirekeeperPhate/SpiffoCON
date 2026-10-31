@@ -225,7 +225,10 @@ instead.
     which are pregnant or have fertilized eggs and how far along, their milk and wool (in bold
     when they can be taken), their age and weight; a notification tells when one is close to
     giving birth (85% of the way, looked at every 15 minutes while the Bridge tab refreshes by
-    itself). A click on a column's title sorts the list, a second click the other way.
+    itself). A click on a column's title sorts the list, a second click the other way;
+  - since bridge v22 the zones designated for animals on the map, in orange with their names, all
+    over the world, and new animals from the map's right-click menu: group, kind, breed, up to 20
+    at once, on a free square near a player.
 
   Bridge v21 keeps a black box: every minute one line in `Zomboid/Lua/spiffocon_blackbox.txt`
   (who is where, what is loaded, the memory, the slowest update), written whatever else happens.

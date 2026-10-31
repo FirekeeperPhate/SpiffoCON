@@ -93,7 +93,7 @@ public sealed class BridgeScriptTests
     [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
-        Assert.Equal(21, await _client.PingAsync());
+        Assert.Equal(22, await _client.PingAsync());
         var snapshot = await _client.SnapshotAsync(safehouses: true);
         Assert.Null(snapshot.Problem);
         var rj = Assert.Single(snapshot.Players, p => p.Username == "rj");
@@ -912,6 +912,50 @@ public sealed class BridgeScriptTests
         // nothing left to do; nothing for someone who is not there
         Assert.Equal((4, 0), ((await _client.RepairGearAsync("rj")) is var again ? (again.Items, again.Repaired) : default));
         await Assert.ThrowsAsync<BridgeException>(() => _client.RepairGearAsync("ghost"));
+    }
+
+    [Fact]
+    public async Task The_animal_zones_come_with_the_snapshot()
+    {
+        _game.DoString("animalZone('North field', 90, 95, 0, 20, 15)");
+        var snapshot = await _client.SnapshotAsync(safehouses: true, deathsAndZombies: true, animalZones: true);
+        Assert.Null(snapshot.Problem);
+        var zone = Assert.Single(snapshot.AnimalZones!);
+        Assert.Equal(("North field", 90, 95, 0, 20, 15), (zone.Name, zone.X, zone.Y, zone.Z, zone.W, zone.H));
+        Assert.Equal("North field, 20 x 15", zone.Description);
+        // not asked for: an older bridge knows nothing of them
+        Assert.Null((await _client.SnapshotAsync(safehouses: true, deathsAndZombies: true)).AnimalZones);
+    }
+
+    [Fact]
+    public async Task The_kinds_of_animal_come_with_their_breeds()
+    {
+        _game.DoString("TRANSLATIONS.IGUI_AnimalType_cow = 'Cow'; TRANSLATIONS.IGUI_Breed_holstein = 'Holstein'; TRANSLATIONS.IGUI_Animal_Group_cow = 'Cattle'");
+        var kinds = await _client.AnimalKindsAsync();
+        Assert.Equal(["cow", "hen"], kinds.Select(k => k.Type));
+        var cow = kinds[0];
+        Assert.Equal(("Cow", "cow", "Cattle"), (cow.Name, cow.Group, cow.GroupName));
+        Assert.Equal(("holstein", "Holstein"), (cow.Breeds[1].Id, cow.Breeds[1].Name));
+        // what the game has no name for is shown as it is
+        Assert.Equal(("hen", "chicken", "leghorn"), (kinds[1].Name, kinds[1].GroupName, kinds[1].Breeds[0].Name));
+    }
+
+    [Fact]
+    public async Task New_animals_go_on_a_free_loaded_square()
+    {
+        Assert.Equal(3, await _client.SpawnAnimalAsync("cow", "holstein", 100, 100, 0, 3));
+        Assert.Equal(3, Lua("#NEW_ANIMALS"));
+        Assert.Equal("cow holstein 100,100,0", _game.DoString("return NEW_ANIMALS[1]").String);
+
+        var unloaded = await Assert.ThrowsAsync<BridgeException>(() => _client.SpawnAnimalAsync("cow", "holstein", 5000, 5000, 0, 1));
+        Assert.Contains("not loaded", unloaded.Message);
+        _game.DoString("blockSquare(100, 100, 0)");
+        var blocked = await Assert.ThrowsAsync<BridgeException>(() => _client.SpawnAnimalAsync("cow", "holstein", 100, 100, 0, 1));
+        Assert.Contains("not free", blocked.Message);
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SpawnAnimalAsync("dragon", "red", 100, 101, 0, 1));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SpawnAnimalAsync("cow", "tartan", 100, 101, 0, 1));
+        await Assert.ThrowsAsync<BridgeException>(() => _client.SpawnAnimalAsync("cow", "holstein", 100, 101, 0, BridgeClient.MaxAnimals + 1));
+        Assert.Equal(3, Lua("#NEW_ANIMALS"));
     }
 
     [Fact]
