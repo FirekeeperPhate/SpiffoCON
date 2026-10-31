@@ -1313,6 +1313,11 @@ public sealed record BridgeAnimal
         : Fertilized == true ? ("Fertilized " + Percent(Pregnancy)).Trim()
         : Pregnant == false || Fertilized == false ? "No" : "";
 
+    /// <summary>For the list's order: those expecting by how far along, after them those not, nothing for those that can't be.</summary>
+    [JsonIgnore]
+    public double? ExpectingOrder => Pregnant == true || Fertilized == true ? 1 + (Pregnancy ?? 0)
+        : Pregnant == false || Fertilized == false ? 0 : null;
+
     /// <summary>The game calls one this far along ready.</summary>
     [JsonIgnore] public bool IsDue => Pregnant == true && Pregnancy is >= 0.85;
 
@@ -1320,6 +1325,10 @@ public sealed record BridgeAnimal
     [JsonIgnore]
     public string ProduceText => Milk is > 0.1 ? "Milk " + Milk.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " L"
         : Wool is >= 1 ? "Wool " + Wool.Value.ToString("0", System.Globalization.CultureInfo.InvariantCulture) : "";
+
+    /// <summary>For the list's order: milk apart from wool, by the amount <see cref="ProduceText"/> says.</summary>
+    [JsonIgnore] public string ProduceKind => Milk is > 0.1 ? "Milk" : Wool is >= 1 ? "Wool" : "";
+    [JsonIgnore] public double? ProduceAmount => Milk is > 0.1 ? Milk : Wool is >= 1 ? Wool : null;
 
     [JsonIgnore] public bool HasProduce => CanMilk == true || Wool is >= 1;
 

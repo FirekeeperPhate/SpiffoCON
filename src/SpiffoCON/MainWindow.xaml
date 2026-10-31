@@ -1485,13 +1485,13 @@
                                         ToolTip="Water to the top in the feeding troughs near the players; one with feed in it is left (asked first; bridge v15)" />
                                 <TextBlock Text="{Binding AnimalsText}" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.75" TextWrapping="Wrap" />
                             </DockPanel>
-                            <ListView ItemsSource="{Binding Animals}" MaxHeight="220" ItemContainerStyle="{StaticResource GridRow}" SelectionMode="Single"
+                            <ListView ItemsSource="{Binding Animals}" MaxHeight="220" ItemContainerStyle="{StaticResource GridRow}" SelectionMode="Single" controls:ColumnSort.Enabled="True"
                                       Visibility="{Binding Animals.Count, Converter={StaticResource PositiveToVisible}}">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="Animal" Width="170" DisplayMemberBinding="{Binding Name}" />
-                                        <GridViewColumn Header="Kind" Width="190" DisplayMemberBinding="{Binding KindText}" />
-                                        <GridViewColumn Header="Position" Width="118">
+                                        <GridViewColumn Header="Animal" Width="170" controls:ColumnSort.By="Name" DisplayMemberBinding="{Binding Name}" />
+                                        <GridViewColumn Header="Kind" Width="190" controls:ColumnSort.By="KindText,Name" DisplayMemberBinding="{Binding KindText}" />
+                                        <GridViewColumn Header="Position" Width="118" controls:ColumnSort.By="X,Y,Z">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <TextBlock FontFamily="{StaticResource MonoFont}" FontSize="12">
@@ -1500,8 +1500,8 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Header="Health" Width="64" DisplayMemberBinding="{Binding HealthText}" />
-                                        <GridViewColumn Header="Hunger" Width="74">
+                                        <GridViewColumn Header="Health" Width="88" controls:ColumnSort.By="Health,Name" DisplayMemberBinding="{Binding HealthText}" />
+                                        <GridViewColumn Header="Hunger" Width="94" controls:ColumnSort.By="Hunger,Name">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <TextBlock x:Name="Value" Text="{Binding HungerText}" />
@@ -1514,7 +1514,7 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Header="Thirst" Width="66">
+                                        <GridViewColumn Header="Thirst" Width="76" controls:ColumnSort.By="Thirst,Name">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <TextBlock x:Name="Value" Text="{Binding ThirstText}" />
@@ -1527,8 +1527,8 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Header="Expecting" Width="104" DisplayMemberBinding="{Binding ExpectingText}" />
-                                        <GridViewColumn Header="Milk / wool" Width="84">
+                                        <GridViewColumn Header="Expecting" Width="104" controls:ColumnSort.By="ExpectingOrder,Name" DisplayMemberBinding="{Binding ExpectingText}" />
+                                        <GridViewColumn Header="Milk / wool" Width="112" controls:ColumnSort.By="ProduceKind,ProduceAmount,Name">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <TextBlock x:Name="Value" Text="{Binding ProduceText}" />
@@ -1540,9 +1540,9 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Header="Age" Width="56" DisplayMemberBinding="{Binding AgeText}" />
-                                        <GridViewColumn Header="Weight" Width="68" DisplayMemberBinding="{Binding WeightText}" />
-                                        <GridViewColumn Header="Where" Width="140" DisplayMemberBinding="{Binding WhereText}" />
+                                        <GridViewColumn Header="Age" Width="64" controls:ColumnSort.By="Age,Name" DisplayMemberBinding="{Binding AgeText}" />
+                                        <GridViewColumn Header="Weight" Width="94" controls:ColumnSort.By="Weight,Name" DisplayMemberBinding="{Binding WeightText}" />
+                                        <GridViewColumn Header="Where" Width="140" controls:ColumnSort.By="WhereText,Name" DisplayMemberBinding="{Binding WhereText}" />
                                         <GridViewColumn Width="80">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
