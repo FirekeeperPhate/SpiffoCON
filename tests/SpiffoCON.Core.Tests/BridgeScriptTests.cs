@@ -36,6 +36,61 @@ public sealed class BridgeScriptTests
     double Lua(string expression) => _game.DoString("return " + expression).Number;
 
     [Fact]
+    public async Task The_black_box_has_every_start_and_minute_and_keeps_its_last_lines()
+    {
+        // written when the bridge is loaded, then on the first poll, a minute at a time
+        var lines = await _client.BlackBoxAsync();
+        Assert.Equal(2, lines.Count);
+        Assert.True(lines[0].Start);
+        Assert.Null(lines[1].Start);
+        Assert.NotNull(lines[1].When);
+        var rj = Assert.Single(lines[1].Players!, p => p.Name == "rj");
+        Assert.Equal((100, 102, 0), (rj.X, rj.Y, rj.Z));
+        new GameFiles(_game).Tick();
+        Assert.Equal(2, (await _client.BlackBoxAsync()).Count);
+
+        // a Lua reload is not a new run of the server
+        string bridge = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Bridge", "SpiffoCONBridge.lua"));
+        _game.DoString(bridge);
+        Assert.Equal(2, (await _client.BlackBoxAsync()).Count);
+
+        // a new run, of a file that grew: its last 600 lines, then the start
+        _game.DoString("""
+            local all = {}
+            for i = 1, 700 do all[i] = '{"time":"' .. i .. '","players":[]}' end
+            FILES["spiffocon_blackbox.txt"] = table.concat(all, "\n") .. "\n"
+            SpiffoCONBridgeStarted = nil
+            """);
+        _game.DoString(bridge);
+        lines = await _client.BlackBoxAsync();
+        Assert.Equal(601, lines.Count);
+        Assert.Equal("101", lines[0].Time);
+        Assert.True(lines[^1].Start);
+    }
+
+    [Fact]
+    public void The_black_box_tells_the_last_minutes_of_the_run_before()
+    {
+        const string line = """{"time":"1700000000000","players":[{"name":"rj","x":1,"y":2,"z":0,"car":true}],"zombies":12,"vehicles":3,"worst":420,"memoryUsed":3000,"memoryMax":8192}""";
+        string text = $$"""
+            {"time":"1","start":true}
+            {"time":"2","players":[]}
+            {"time":"3","start":true}
+            {{line}}
+            {"time":"5","start":true}
+            {"time":"6","players":[]}
+            {"time":"7","pla
+            """;
+        var run = BlackBox.RunBefore(BlackBox.Parse(text));
+        var told = BlackBox.Describe(Assert.Single(run) is var only ? [only] : []);
+        Assert.EndsWith("  1 player, 12 zombies loaded, 3 vehicles, memory 3000 of 8192 MB, slowest update 420 ms", told[0]);
+        Assert.Equal("Last seen: rj at 1,2,0 in a vehicle", told[1]);
+        // nothing before the only start, or no start at all
+        Assert.Empty(BlackBox.RunBefore(BlackBox.Parse("""{"time":"1","start":true}""")));
+        Assert.Empty(BlackBox.RunBefore([]));
+    }
+
+    [Fact]
     public async Task The_snapshot_has_the_zombies_near_each_player_and_the_safehouses()
     {
         Assert.Equal(21, await _client.PingAsync());
@@ -875,11 +930,14 @@ public sealed class BridgeScriptTests
         Assert.Equal(("hen", "Hen", 0.75), (hen.TypeName, hen.Name, hen.Thirst));
         Assert.Equal(3, (await _client.AnimalsAsync(20)).Animals.Count);
 
-        // pregnant, how far along; not pregnant; a kind that lays eggs can't be
-        Assert.Equal((true, 0.45, "45%"), (cow.Pregnant, cow.Pregnancy, cow.PregnantText));
+        // pregnant, how far along; not pregnant; a kind that lays eggs: fertilized, not pregnant
+        Assert.Equal((true, 0.45, "Pregnant 45%", false), (cow.Pregnant, cow.Pregnancy, cow.ExpectingText, cow.IsDue));
         var other = (await _client.AnimalsAsync(20)).Animals.Single(a => a.Id == 5);
-        Assert.Equal((false, null, "No"), (other.Pregnant, other.Pregnancy, other.PregnantText));
-        Assert.Equal((null, null, ""), (hen.Pregnant, hen.Pregnancy, hen.PregnantText));
+        Assert.Equal((false, null, "No"), (other.Pregnant, other.Pregnancy, other.ExpectingText));
+        Assert.Equal((null, true, 0.3, "Fertilized 30%"), (hen.Pregnant, hen.Fertilized, hen.Pregnancy, hen.ExpectingText));
+        // what can be taken from it, its age and weight
+        Assert.Equal(("Milk 3.5 L", true, "400 d", "540 kg"), (cow.ProduceText, cow.HasProduce, cow.AgeText, cow.WeightText));
+        Assert.Equal(("", false, "850 g"), (other.ProduceText, other.HasProduce, hen.WeightText));
 
         // one animal, then all of them: the wild one and the far one are left as they were
         Assert.Equal(1, await _client.FeedAnimalsAsync(5, id: 2));

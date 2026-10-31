@@ -18,7 +18,7 @@ public sealed record ConsoleLine(DateTime Time, ConsoleKind Kind, string Text)
     public string TimeText => Time.ToString("HH:mm:ss");
 }
 
-public enum NotificationKind { Players, Chat, Connection, Deaths, Containers, Test }
+public enum NotificationKind { Players, Chat, Connection, Deaths, Containers, Births, Test }
 
 /// <summary>A desktop notification; <paramref name="OnlyWhenInactive"/> skips it while SpiffoCON is the active window.</summary>
 public sealed record AppNotification(NotificationKind Kind, string Title, string Text, bool OnlyWhenInactive);
@@ -88,6 +88,7 @@ public sealed partial class MainViewModel : ObservableObject
         NotifyConnection = notifications.Connection;
         NotifyDeaths = notifications.Deaths;
         NotifyContainers = notifications.Containers;
+        NotifyBirths = notifications.Births;
         NotifyOnlyWhenInactive = notifications.OnlyWhenInactive;
 
         UpdateMessagePreview();
@@ -460,6 +461,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool notifyConnection;
     [ObservableProperty] private bool notifyDeaths;
     [ObservableProperty] private bool notifyContainers;
+    [ObservableProperty] private bool notifyBirths;
     [ObservableProperty] private bool notifyOnlyWhenInactive;
 
     partial void OnNotifyPlayerJoinsChanged(bool value) => _book.Notifications.PlayerJoins = value;
@@ -468,6 +470,7 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnNotifyConnectionChanged(bool value) => _book.Notifications.Connection = value;
     partial void OnNotifyDeathsChanged(bool value) => _book.Notifications.Deaths = value;
     partial void OnNotifyContainersChanged(bool value) => _book.Notifications.Containers = value;
+    partial void OnNotifyBirthsChanged(bool value) => _book.Notifications.Births = value;
     partial void OnNotifyOnlyWhenInactiveChanged(bool value) => _book.Notifications.OnlyWhenInactive = value;
 
     internal void Notify(NotificationKind kind, string title, string text)
@@ -482,6 +485,7 @@ public sealed partial class MainViewModel : ObservableObject
             NotificationKind.Connection => NotifyConnection,
             NotificationKind.Deaths => NotifyDeaths,
             NotificationKind.Containers => NotifyContainers,
+            NotificationKind.Births => NotifyBirths,
             _ => true,
         };
         if (wanted)
@@ -653,6 +657,8 @@ public sealed partial class MainViewModel : ObservableObject
                 + $"({run.File}) ends without the shutdown lines, so it crashed or was killed.{when} What was not saved is lost; "
                 + "containers that were put down and built stations (drying racks, workbenches) may have lost a part (Bridge tab: Fix containers and stations…). Its last lines:\n"
                 + string.Join("\n", run.LastLines.Select(l => "  " + l)));
+            if (await Bridge.BlackBoxOfRunBeforeAsync() is { Count: > 0 } box)
+                Log(ConsoleKind.Warning, "Its last minutes, from the bridge's black box (times of this PC):\n" + string.Join("\n", box.Select(l => "  " + l)));
             Notify(NotificationKind.Connection, "The server crashed",
                 $"{_profile.DisplayName} did not stop as it should before its last start{(run.Ended is { } at ? $" ({at.ToString("d MMM, HH:mm", english)})" : "")}. See the Console tab.");
             StatusText = "The server did not stop as it should before its last start: see the Console tab.";

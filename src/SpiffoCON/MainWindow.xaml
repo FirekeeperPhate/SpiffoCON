@@ -1388,6 +1388,8 @@
                                                Text="Buckets, bottles and pots that lost the part that holds liquids: after a server crash one that was put down shows as a plain &quot;Bucket&quot; (not &quot;Empty Bucket&quot;) and can't be filled any more. And built things that lost a part: troughs and rain collectors that take no water, drying racks, workbenches and furnaces nobody can use (bridge v19). Counted first, then the containers are replaced with new, empty ones where they are, and the built things get their parts back in place, empty: what the players online carry, and what is put down, stored or built within 50 squares of each (bridge v14)." />
                                 </Button.ToolTip>
                             </Button>
+                            <Button DockPanel.Dock="Right" Content="Black box" Command="{Binding ShowBlackBoxCommand}" Margin="0,0,10,0"
+                                    ToolTip="What the bridge wrote minute by minute in the run of the server before this one: who was where, what was loaded, the memory, the slowest update. Written in the Console tab; shown by itself after a crash (bridge v21)" />
                             <CheckBox DockPanel.Dock="Right" Content="By itself" IsChecked="{Binding AutoFixOn}" IsEnabled="{Binding CanAutoFix}" MinWidth="0"
                                       VerticalAlignment="Center" Margin="0,0,10,0" ToolTipService.ShowOnDisabled="True" ToolTipService.ShowDuration="30000">
                                 <CheckBox.ToolTip>
@@ -1525,7 +1527,21 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Header="Pregnant" Width="72" DisplayMemberBinding="{Binding PregnantText}" />
+                                        <GridViewColumn Header="Expecting" Width="104" DisplayMemberBinding="{Binding ExpectingText}" />
+                                        <GridViewColumn Header="Milk / wool" Width="84">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock x:Name="Value" Text="{Binding ProduceText}" />
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding HasProduce}" Value="True">
+                                                            <Setter TargetName="Value" Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Age" Width="56" DisplayMemberBinding="{Binding AgeText}" />
+                                        <GridViewColumn Header="Weight" Width="68" DisplayMemberBinding="{Binding WeightText}" />
                                         <GridViewColumn Header="Where" Width="140" DisplayMemberBinding="{Binding WhereText}" />
                                         <GridViewColumn Width="80">
                                             <GridViewColumn.CellTemplate>
@@ -1986,6 +2002,8 @@
                                               ToolTip="Where and, when the game says, by whom (bridge v8)" />
                                     <CheckBox Content="Containers and stations that lost a part" IsChecked="{Binding NotifyContainers}" Margin="0,6,0,0"
                                               ToolTip="Buckets, bottles, troughs that lost their liquid part, and drying racks, workbenches and other stations that lost a part (bridge v19), as happens after a server crash: looked for when the bridge connects and when the first player is back (bridge v14)" />
+                                    <CheckBox Content="An animal is close to giving birth" IsChecked="{Binding NotifyBirths}" Margin="0,6,0,0"
+                                              ToolTip="The animals near the players online, 85% of the way or more, looked at every 15 minutes while the Bridge tab's automatic refresh is on (bridge v21)" />
                                     <CheckBox Content="Only while SpiffoCON is in the background" IsChecked="{Binding NotifyOnlyWhenInactive}" Margin="0,6,0,0" />
                                     <Button Content="Try one" Command="{Binding TestNotificationCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
                                 </StackPanel>

@@ -222,7 +222,15 @@ instead.
     them fed and watered (hunger and thirst to nothing, as the game's own cheats set them), and the
     feeding troughs filled with water (one with feed in it is left). Animals inside a hutch or a
     trailer are not on the map: they are listed since bridge v16. Since bridge v21 the list says
-    which are pregnant and how far along (those that lay eggs are not told).
+    which are pregnant or have fertilized eggs and how far along, their milk and wool (in bold
+    when they can be taken), their age and weight; a notification tells when one is close to
+    giving birth (85% of the way, looked at every 15 minutes while the Bridge tab refreshes by
+    itself).
+
+  Bridge v21 keeps a black box: every minute one line in `Zomboid/Lua/spiffocon_blackbox.txt`
+  (who is where, what is loaded, the memory, the slowest update), written whatever else happens.
+  After a crash SpiffoCON shows the last ten minutes in the Console tab, and **Black box** in the
+  Bridge tab shows those of the run before at any time. The last 600 lines are kept.
 
   Bridge v16 adds:
   - *Restore their needs…* in the player menu: hunger, thirst, tiredness, exertion, stress, panic,

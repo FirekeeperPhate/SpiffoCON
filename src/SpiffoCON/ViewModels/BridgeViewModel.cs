@@ -162,6 +162,8 @@ public sealed partial class BridgeViewModel : ObservableObject
         _client = new BridgeClient(files);
         // a new connection: the containers are looked at again, the animals read again
         _fluidsCheckedAt = default;
+        _birthsLookAt = default;
+        _birthsTold.Clear();
         FluidsNotice = "";
         Animals.Clear();
         AnimalsText = "";
@@ -305,6 +307,8 @@ public sealed partial class BridgeViewModel : ObservableObject
             if (snapshot.Deaths is { } deaths)
                 ShowDeaths(deaths);
             CheckFluidsWhenDue(client);
+            if (BridgeVersion >= 21 && w.Players > 0 && _main.NotifyBirths && DateTime.UtcNow >= _birthsLookAt)
+                await LookForBirthsAsync(client);
             StatusText = $"Updated at {DateTime.Now:HH:mm:ss}" + (AutoRefresh ? " · every 15 s" : "")
                 + (snapshot.Problem is { } problem ? $" · not available: {problem}" + (BridgeVersion < 4 && problem.Contains("vehicles") ? " (fixed in bridge v4: upload it to the Workshop)" : "") : "");
         }
@@ -1558,12 +1562,14 @@ public sealed partial class BridgeViewModel : ObservableObject
             // the ones that need something first
             foreach (var a in read.Animals.OrderByDescending(a => Math.Max(a.Hunger ?? 0, a.Thirst ?? 0)).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase))
                 Animals.Add(a);
-            int hungry = read.Animals.Count(a => a.IsHungry), thirsty = read.Animals.Count(a => a.IsThirsty), pregnant = read.Animals.Count(a => a.Pregnant == true);
+            int hungry = read.Animals.Count(a => a.IsHungry), thirsty = read.Animals.Count(a => a.IsThirsty), pregnant = read.Animals.Count(a => a.Pregnant == true),
+                produce = read.Animals.Count(a => a.HasProduce);
             AnimalsText = read.Loaded == 0 ? "Nobody is online: the server only keeps the surroundings of players."
                 : read.Animals.Count == 0 ? $"No animals of the players within {read.Radius} squares of the players online (wild ones, and those in a hutch or a trailer, are not listed)."
                 : $"{read.Animals.Count} animal{(read.Animals.Count == 1 ? "" : "s")} within {read.Radius} squares of the players online"
                     + (hungry + thirsty == 0 ? ", none hungry or thirsty" : $": {hungry} hungry, {thirsty} thirsty")
                     + (pregnant > 0 ? $", {pregnant} pregnant" : "")
+                    + (produce > 0 ? $", {produce} to milk or shear" : "")
                     + $" · read at {DateTime.Now:HH:mm:ss}";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -1598,6 +1604,58 @@ public sealed partial class BridgeViewModel : ObservableObject
         }
         await ReadAnimalsAsync();
         StatusText = result;
+    }
+
+    // bridge v21: an animal close to giving birth told once. The list goes through a lot of squares: every quarter of an hour,
+    // and only with the notification on
+    static readonly TimeSpan BirthsEvery = TimeSpan.FromMinutes(15);
+    DateTime _birthsLookAt;
+    readonly HashSet<int> _birthsTold = [];
+
+    async Task LookForBirthsAsync(BridgeClient client)
+    {
+        _birthsLookAt = DateTime.UtcNow + BirthsEvery;
+        try
+        {
+            var read = await client.AnimalsAsync(AnimalsRadius);
+            if (!ReferenceEquals(client, _client))
+                return;
+            var due = read.Animals.Where(a => a.IsDue && a.Id is not null).ToList();
+            // (no longer due: its next one is told too)
+            _birthsTold.IntersectWith(due.Select(a => a.Id!.Value));
+            foreach (var a in due.Where(a => _birthsTold.Add(a.Id!.Value)))
+                _main.Notify(NotificationKind.Births, "An animal is close to giving birth",
+                    $"{a.Name ?? a.KindText} ({a.KindText}), {a.ExpectingText}, at {a.X}, {a.Y}.");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // a look nobody asked for; the next refresh tells what is wrong
+        }
+    }
+
+    // ---- black box (bridge v21) ----
+
+    /// <summary>What the bridge wrote of the run of the server before this one, to show; empty when it has nothing.</summary>
+    internal async Task<List<string>> BlackBoxOfRunBeforeAsync()
+    {
+        if (_client is not { } client)
+            return [];
+        try { return BlackBox.Describe(BlackBox.RunBefore(await client.BlackBoxAsync())); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return []; }
+    }
+
+    [RelayCommand]
+    private async Task ShowBlackBoxAsync()
+    {
+        var lines = await BlackBoxOfRunBeforeAsync();
+        if (lines.Count == 0)
+        {
+            StatusText = "Nothing in the black box of the run before this one: it needs the bridge's files reached, and bridge v21 on the server during that run.";
+            return;
+        }
+        _main.Log(ConsoleKind.Info, "The last minutes of the run of the server before this one, from the bridge's black box (times of this PC):\n"
+            + string.Join("\n", lines.Select(l => "  " + l)));
+        StatusText = "Black box written in the Console tab.";
     }
 
     /// <summary>One animal fed and watered (no question: one animal, and the click says which).</summary>

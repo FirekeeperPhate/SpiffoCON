@@ -436,6 +436,10 @@ public sealed partial class BridgeClient(IBridgeFiles files)
     static string Number(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>The animals of the players (not the wild ones) within a radius of each player online (bridge v15).</summary>
+    /// <summary>The black box as the bridge left it (bridge v21): read from its file, the server need not be running.</summary>
+    public async Task<List<BlackBoxLine>> BlackBoxAsync(CancellationToken ct = default) =>
+        await Files.ReadAsync(BlackBox.File, ct).ConfigureAwait(false) is { } text ? BlackBox.Parse(text) : [];
+
     public async Task<BridgeAnimals> AnimalsAsync(int radius) =>
         (await SendAsync("animals", Number(radius)).ConfigureAwait(false)).Deserialize(BridgeJson.Default.BridgeAnimals) ?? new BridgeAnimals();
 
@@ -1267,8 +1271,22 @@ public sealed record BridgeAnimal
     /// <summary>Bridge v21: whether it has young in it; null for those that can't (males, the kinds that lay eggs).</summary>
     public bool? Pregnant { get; init; }
 
-    /// <summary>Bridge v21: how far along, 0 to 1.</summary>
+    /// <summary>Bridge v21: whether its eggs are fertilized; null for those that can't (males, the kinds that don't lay).</summary>
+    public bool? Fertilized { get; init; }
+
+    /// <summary>Bridge v21: how far along, 0 to 1 (the young, or the fertilized eggs).</summary>
     public double? Pregnancy { get; init; }
+
+    /// <summary>Bridge v21: its milk in litres, for those that have some to give; whether it can be milked now.</summary>
+    public double? Milk { get; init; }
+    public bool? CanMilk { get; init; }
+
+    /// <summary>Bridge v21: its wool, for those that can be sheared.</summary>
+    public double? Wool { get; init; }
+
+    /// <summary>Bridge v21: its age in days, its weight in kilograms.</summary>
+    public int? Age { get; init; }
+    public double? Weight { get; init; }
 
     /// <summary>The zone, or where it is kept: "in a hutch", "in a trailer".</summary>
     [JsonIgnore]
@@ -1289,8 +1307,32 @@ public sealed record BridgeAnimal
     [JsonIgnore] public string HungerText => Percent(Hunger);
     [JsonIgnore] public string ThirstText => Percent(Thirst);
 
-    /// <summary>How far along ("45%"), "No", or nothing for those that can't be.</summary>
-    [JsonIgnore] public string PregnantText => Pregnant switch { true => Pregnancy is null ? "Yes" : Percent(Pregnancy), false => "No", _ => "" };
+    /// <summary>"Pregnant 45%", "Fertilized 30%", "No", or nothing for those that can't be.</summary>
+    [JsonIgnore]
+    public string ExpectingText => Pregnant == true ? ("Pregnant " + Percent(Pregnancy)).Trim()
+        : Fertilized == true ? ("Fertilized " + Percent(Pregnancy)).Trim()
+        : Pregnant == false || Fertilized == false ? "No" : "";
+
+    /// <summary>The game calls one this far along ready.</summary>
+    [JsonIgnore] public bool IsDue => Pregnant == true && Pregnancy is >= 0.85;
+
+    /// <summary>What can be taken from it: "Milk 3.5 L", "Wool 6".</summary>
+    [JsonIgnore]
+    public string ProduceText => Milk is > 0.1 ? "Milk " + Milk.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " L"
+        : Wool is >= 1 ? "Wool " + Wool.Value.ToString("0", System.Globalization.CultureInfo.InvariantCulture) : "";
+
+    [JsonIgnore] public bool HasProduce => CanMilk == true || Wool is >= 1;
+
+    [JsonIgnore] public string AgeText => Age is { } days ? days.ToString(System.Globalization.CultureInfo.InvariantCulture) + " d" : "";
+
+    /// <summary>In kilograms, under one in grams, as the game says it.</summary>
+    [JsonIgnore]
+    public string WeightText => Weight switch
+    {
+        null => "",
+        > 1 => Weight.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " kg",
+        _ => (Weight.Value * 1000).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + " g",
+    };
 
     /// <summary>Hungry or thirsty enough to worry about.</summary>
     [JsonIgnore] public bool IsHungry => Hunger is >= 0.6;
@@ -1571,6 +1613,7 @@ public sealed record BridgeWorld
 [JsonSerializable(typeof(BridgeGearRepair))]
 [JsonSerializable(typeof(List<BridgeTrait>))]
 [JsonSerializable(typeof(BridgeAnimals))]
+[JsonSerializable(typeof(BlackBoxLine))]
 [JsonSerializable(typeof(BridgeObjects))]
 [JsonSerializable(typeof(BridgeGenerators))]
 [JsonSerializable(typeof(BridgeGenerator))]

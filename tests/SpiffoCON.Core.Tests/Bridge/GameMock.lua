@@ -18,8 +18,8 @@ function getFileReader(name)
 	local i = 0
 	return { readLine = function() i = i + 1; return lines[i] end, close = function() end }
 end
-function getFileWriter(name)
-	local parts = {}
+function getFileWriter(name, create, append)
+	local parts = { append and FILES[name] or "" }
 	return { write = function(self, text) parts[#parts + 1] = text end, close = function() FILES[name] = table.concat(parts) end }
 end
 
@@ -941,9 +941,20 @@ function ANIMALS_HERE()
 			isPregnant = function() return id == 1 end,
 			getPregnancyTime = function() return 90 end,
 			getPregnantPeriod = function() return 200 end,
+			isFertilized = function() return id == 2 end,
+			getFertilizedTime = function() return 30 end,
+			canHaveMilk = function() return id == 1 end,
+			getMilkQuantity = function() return 3.5 end,
+			getWoolQuantity = function() return 6 end,
+			getDaysSurvived = function() return 400 end,
+			getWeight = function() return kind == "hen" and 0.85 or 540 end,
 		} end
 		a.getBabyType = function() return kind .. "_baby" end
 		a.getEggsPerDay = function() return kind == "hen" and 1 or 0 end
+		a.getFertilizedTimeMax = function() return 100 end
+		a.hasUdder = function() return kind == "cow" end
+		a.canBeMilked = function() return id == 1 end
+		a.canBeSheared = function() return false end
 		a.getFullName = function() return name end
 		a.getCustomName = function() return id == 1 and "Bessie" or nil end
 		a.getX = function() return x + 0.5 end

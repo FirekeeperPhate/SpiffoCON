@@ -1173,11 +1173,16 @@ end
 -- thirst are stats of the animal, 0 (fine) to 1; the game's own cheats set them the same way
 -- (Commands.animal.setHunger / setThirst). Animals inside a hutch or a trailer are not on a square: not listed.
 
--- bridge v21: whether it has young in it and how far along, 0 to 1, as the game's own card of an animal says it; nil
--- for those that can't: males, and the kinds that lay eggs (those are fertilized, not pregnant)
-local function pregnancyOf(a)
-	if not a:isFemale() or not a:getBabyType() or a:getEggsPerDay() > 0 then return nil end
+-- bridge v21: what it carries, as the game's own card of an animal says it: pregnant, or its eggs fertilized (the kinds
+-- that lay them), and how far along, 0 to 1. Returns pregnant, how far, fertilized; nothing for males and those with no young
+local function youngOf(a)
+	if not a:isFemale() or not a:getBabyType() then return nil end
 	local data = a:getData()
+	if a:getEggsPerDay() > 0 then
+		if not data:isFertilized() then return nil, nil, false end
+		local max = a:getFertilizedTimeMax()
+		return nil, max > 0 and hundredths(data:getFertilizedTime() / max) or nil, true
+	end
 	if not data:isPregnant() then return false end
 	local period = data:getPregnantPeriod()
 	return true, period > 0 and hundredths(data:getPregnancyTime() / period) or nil
@@ -1186,7 +1191,7 @@ end
 local function animalInfo(a, place, holder)
 	local kind = try(function() return a:getAnimalType() end)
 	local breed = try(function() return a:getData():getBreed():getName() end)
-	local read, pregnant, along = pcall(pregnancyOf, a)
+	local read, pregnant, along, fertilized = pcall(youngOf, a)
 	if not read then pregnant = nil end
 	return {
 		id = try(function() return a:getAnimalID() end),
@@ -1206,8 +1211,18 @@ local function animalInfo(a, place, holder)
 		female = try(function() return a:isFemale() end),
 		baby = try(function() return a:isBaby() end),
 		zone = try(function() local zone = a:getDZone() return zone and zone:getName() end),
+		-- bridge v21: what it carries; its milk (litres) and wool, and whether they can be taken now; its age and weight
 		pregnant = pregnant,
 		pregnancy = along,
+		fertilized = fertilized,
+		milk = try(function()
+			local data = a:getData()
+			return a:hasUdder() and data:canHaveMilk() and hundredths(data:getMilkQuantity()) or nil
+		end),
+		canMilk = try(function() return a:canBeMilked() and a:getData():getMilkQuantity() > 0.1 end),
+		wool = try(function() return a:canBeSheared() and hundredths(a:getData():getWoolQuantity()) or nil end),
+		age = try(function() return math.floor(a:getData():getDaysSurvived()) end),
+		weight = try(function() return hundredths(a:getData():getWeight()) end),
 	}
 end
 
@@ -2729,6 +2744,69 @@ local function perfReport()
 	return report
 end
 
+-- ---- black box (bridge v21) ----
+-- A crash leaves no word of what was going on: every minute one line in a file of its own, on disk at once (what is
+-- written stays when the server dies): who is where, what is loaded, the memory, the slowest update of that minute. A
+-- line when the server starts tells its runs apart, and the file is cut there to its last BLACKBOX_KEEP lines.
+local BLACKBOX_FILE = "spiffocon_blackbox.txt"
+local BLACKBOX_MS = 60 * 1000
+local BLACKBOX_KEEP = 600
+local blackboxNext = nil
+
+local function blackboxWrite(line)
+	line.time = string.format("%.0f", getTimestampMs())
+	local writer = getFileWriter(BLACKBOX_FILE, true, true)
+	writer:write(encode(line) .. "\n")
+	writer:close()
+end
+
+local function blackboxStart()
+	local lines = {}
+	local reader = getFileReader(BLACKBOX_FILE, false)
+	if reader then
+		local line = reader:readLine()
+		while line do
+			lines[#lines + 1] = line
+			line = reader:readLine()
+		end
+		reader:close()
+	end
+	if #lines > BLACKBOX_KEEP then
+		local kept = {}
+		for i = #lines - BLACKBOX_KEEP + 1, #lines do kept[#kept + 1] = lines[i] end
+		local writer = getFileWriter(BLACKBOX_FILE, true, false)
+		writer:write(table.concat(kept, "\n") .. "\n")
+		writer:close()
+	end
+	blackboxWrite({ start = true, version = VERSION })
+end
+
+local function blackboxTick(now)
+	if blackboxNext and now < blackboxNext then return end
+	blackboxNext = now + BLACKBOX_MS
+	local report = perfReport()
+	local worst = 0
+	for _, second in ipairs(report.seconds) do
+		if second.worst > worst then worst = second.worst end
+	end
+	local players = array()
+	local online = getOnlinePlayers()
+	for i = 0, online:size() - 1 do
+		local p = online:get(i)
+		players[#players + 1] = {
+			name = try(function() return p:getUsername() end),
+			x = try(function() return math.floor(p:getX()) end),
+			y = try(function() return math.floor(p:getY()) end),
+			z = try(function() return math.floor(p:getZ()) end),
+			car = try(function() return p:getVehicle() ~= nil end),
+		}
+	end
+	blackboxWrite({
+		players = players, zombies = report.zombies, vehicles = report.vehicles, worst = worst,
+		memoryUsed = report.memoryUsed, memoryMax = report.memoryMax,
+	})
+end
+
 -- ---- chat (bridge v17) ----
 -- chat <author> <text>: a line in the General chat, as a player's. The server can send an alert by itself
 -- (servermsg: large in the middle of the screen); an ordinary line of chat it cannot write from Lua
@@ -2911,6 +2989,9 @@ local function poll()
 	-- bridge v20: the containers and built things fixed by themselves, when switched on
 	local fixed, fixErr = pcall(autoFixTick, now)
 	if not fixed then print("SpiffoCON bridge: " .. tostring(fixErr)) end
+	-- bridge v21: a line in the black box every minute
+	local boxed, boxErr = pcall(blackboxTick, now)
+	if not boxed then print("SpiffoCON bridge: " .. tostring(boxErr)) end
 	local ok, err = pcall(function()
 		local seq, requests, complete = readRequests()
 		if lastSeq == nil then
@@ -2930,4 +3011,11 @@ end
 if SpiffoCONBridgePoll then Events.OnTick.Remove(SpiffoCONBridgePoll) end
 SpiffoCONBridgePoll = poll
 Events.OnTick.Add(poll)
+-- bridge v21: here, not on the first tick: an empty server may stay paused, and its run must be told from the one that
+-- crashed; once for each run of the server, a Lua reload is not a new one
+if not SpiffoCONBridgeStarted then
+	SpiffoCONBridgeStarted = true
+	local started, startErr = pcall(blackboxStart)
+	if not started then print("SpiffoCON bridge: " .. tostring(startErr)) end
+end
 print("SpiffoCON bridge " .. VERSION .. " loaded")

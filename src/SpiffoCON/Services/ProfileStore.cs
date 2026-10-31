@@ -133,6 +133,9 @@ public sealed class NotificationSettings
     /// <summary>Containers that lost their liquid part were found (bridge v14).</summary>
     public bool Containers { get; set; } = true;
 
+    /// <summary>An animal is close to giving birth (bridge v21).</summary>
+    public bool Births { get; set; } = true;
+
     public bool OnlyWhenInactive { get; set; } = true;
 }
 
